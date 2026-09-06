@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../cosmetics/skins_service.dart';
 import '../../engine/engine.dart';
 import '../match_provider.dart';
 import '../theme/marge_theme.dart';
@@ -16,6 +17,7 @@ class MatchScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final view = ref.watch(matchProvider);
+    final skinTheme = ref.watch(cosmeticsProvider).equippedTheme;
     if (view == null) {
       return const Scaffold(body: Center(child: Text('No match')));
     }
@@ -85,6 +87,7 @@ class MatchScreen extends ConsumerWidget {
                             value: turn.dice.dice[i].value,
                             kept: turn.dice.dice[i].kept,
                             enabled: canInteract && turn.rollNumber < 3,
+                            theme: skinTheme,
                             onTap: () =>
                                 ref.read(matchProvider.notifier).toggleKeep(i),
                           ),
@@ -105,6 +108,7 @@ class MatchScreen extends ConsumerWidget {
                               kept: false,
                               enabled: false,
                               size: 64,
+                              theme: skinTheme,
                             ),
                           ),
                         ),
@@ -183,6 +187,41 @@ class MatchScreen extends ConsumerWidget {
             ),
           ),
           ConfettiOverlay(active: view.showConfetti),
+          if (view.unlockBanner != null)
+            Positioned(
+              top: 72,
+              left: 16,
+              right: 16,
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: MargeColors.gold,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.35),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Text(
+                    view.unlockBanner!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: MargeColors.velvet,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

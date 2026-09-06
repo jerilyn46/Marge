@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../cosmetics/skins_service.dart';
 import '../engine/engine.dart';
 import '../services/settings_service.dart';
 import '../services/sfx_service.dart';
@@ -12,21 +13,27 @@ class MatchViewState {
     required this.snapshot,
     this.showConfetti = false,
     this.busyBot = false,
+    this.unlockBanner,
   });
 
   final MatchSnapshot snapshot;
   final bool showConfetti;
   final bool busyBot;
+  final String? unlockBanner;
 
   MatchViewState copyWith({
     MatchSnapshot? snapshot,
     bool? showConfetti,
     bool? busyBot,
+    String? unlockBanner,
+    bool clearUnlockBanner = false,
   }) =>
       MatchViewState(
         snapshot: snapshot ?? this.snapshot,
         showConfetti: showConfetti ?? this.showConfetti,
         busyBot: busyBot ?? this.busyBot,
+        unlockBanner:
+            clearUnlockBanner ? null : (unlockBanner ?? this.unlockBanner),
       );
 }
 
@@ -34,6 +41,8 @@ class MatchNotifier extends Notifier<MatchViewState?> {
   MatchController? _controller;
   final SfxService _sfx = SfxService();
   Timer? _botTimer;
+  /// Seat index of the local (device) player — always 0.
+  static const int localSeat = 0;
 
   @override
   MatchViewState? build() {
@@ -70,6 +79,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       rng: Random(),
     );
     _controller!.startMatch();
+    ref.read(cosmeticsProvider.notifier).beginMatch();
     _syncSettings();
     state = MatchViewState(snapshot: _controller!.snapshot);
     _scheduleBots();
@@ -91,14 +101,39 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     _sfx.hapticsEnabled = s.hapticsEnabled;
   }
 
-  void _publish({bool confetti = false}) {
+  void _publish({bool confetti = false, String? unlockBanner}) {
     final c = _controller;
     if (c == null) return;
     state = MatchViewState(
       snapshot: c.snapshot,
       showConfetti: confetti,
       busyBot: state?.busyBot ?? false,
+      unlockBanner: unlockBanner ?? state?.unlockBanner,
     );
+  }
+
+  void clearUnlockBanner() {
+    if (state?.unlockBanner != null) {
+      state = state!.copyWith(clearUnlockBanner: true);
+    }
+  }
+
+  Future<void> _applyLocalCosmetics(int actingSeat, PayoutEvent? payout) async {
+    if (payout == null || actingSeat != localSeat) return;
+    final cos = ref.read(cosmeticsProvider.notifier);
+    List<String> toasts = const [];
+    if (payout.kind == ScoreKind.tripleOnesPotWin && payout.celebratory) {
+      toasts = await cos.recordLocalPotWin();
+    } else if (payout.kind != ScoreKind.none && payout.kind != ScoreKind.tripleOnesPotWin) {
+      // Scoring bank (trips / straight / triple-ones pay).
+      toasts = await cos.recordLocalHandWin();
+    } else if (payout.kind == ScoreKind.none) {
+      toasts = await cos.recordLocalBust();
+    }
+    if (toasts.isNotEmpty && state != null) {
+      state = state!.copyWith(unlockBanner: toasts.join('\n'));
+      Future.delayed(const Duration(seconds: 4), clearUnlockBanner);
+    }
   }
 
   void toggleKeep(int index) {
@@ -110,6 +145,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     final c = _controller;
     if (c == null) return;
     if (c.snapshot.currentPlayer.profile.isBot) return;
+    final seat = c.snapshot.currentSeatIndex;
     _syncSettings();
     await _sfx.roll();
     c.roll();
@@ -117,6 +153,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     if (payout?.celebratory == true) {
       await _sfx.potWin();
       _publish(confetti: true);
+      await _applyLocalCosmetics(seat, payout);
       Future.delayed(const Duration(seconds: 2), () {
         if (state != null) {
           state = state!.copyWith(showConfetti: false);
@@ -124,6 +161,11 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       });
     } else {
       _publish();
+      // Bust can auto-resolve on the 3rd roll.
+      if (payout != null && payout.kind == ScoreKind.none) {
+        await _sfx.bust();
+        await _applyLocalCosmetics(seat, payout);
+      }
     }
     _scheduleBots();
   }
@@ -132,6 +174,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     final c = _controller;
     if (c == null) return;
     if (c.snapshot.currentPlayer.profile.isBot) return;
+    final seat = c.snapshot.currentSeatIndex;
     final t = c.snapshot.turn;
     if (t == null || !t.hasRolled) return;
     // Do not end the turn early without a winning hand while rolls remain.
@@ -147,6 +190,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     if (payout?.celebratory == true) {
       await _sfx.potWin();
       _publish(confetti: true);
+      await _applyLocalCosmetics(seat, payout);
       Future.delayed(const Duration(seconds: 2), () {
         if (state != null) {
           state = state!.copyWith(showConfetti: false);
@@ -154,6 +198,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       });
     } else {
       _publish();
+      await _applyLocalCosmetics(seat, payout);
     }
     _scheduleBots();
   }

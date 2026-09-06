@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../cosmetics/dice_skin.dart';
 import '../theme/marge_theme.dart';
 
 class DieWidget extends StatelessWidget {
@@ -10,6 +11,7 @@ class DieWidget extends StatelessWidget {
     this.onTap,
     this.size = 72,
     this.enabled = true,
+    this.theme,
   });
 
   final int value;
@@ -17,11 +19,23 @@ class DieWidget extends StatelessWidget {
   final VoidCallback? onTap;
   final double size;
   final bool enabled;
+  final DiceSkinTheme? theme;
+
+  static const DiceSkinTheme _fallback = DiceSkinTheme(
+    face: MargeColors.cream,
+    faceKept: MargeColors.gold,
+    pip: Color(0xFF222222),
+    pipKept: MargeColors.velvet,
+    border: Color(0x42000000),
+    borderKept: MargeColors.coral,
+  );
 
   @override
   Widget build(BuildContext context) {
-    final bg = kept ? MargeColors.gold : MargeColors.cream;
-    final fg = kept ? MargeColors.velvet : const Color(0xFF222222);
+    final t = theme ?? _fallback;
+    final bg = kept ? t.faceKept : t.face;
+    final fg = kept ? t.pipKept : t.pip;
+    final border = kept ? t.borderKept : t.border;
 
     return GestureDetector(
       onTap: enabled ? onTap : null,
@@ -33,7 +47,7 @@ class DieWidget extends StatelessWidget {
           color: bg,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: kept ? MargeColors.coral : Colors.black26,
+            color: border,
             width: kept ? 3 : 1.5,
           ),
           boxShadow: [
@@ -45,22 +59,35 @@ class DieWidget extends StatelessWidget {
           ],
         ),
         child: CustomPaint(
-          painter: _PipPainter(value: value, color: fg),
+          painter: _DieFacePainter(
+            value: value,
+            pipColor: fg,
+            pattern: t.pattern,
+            patternColor: t.patternColor ?? fg.withValues(alpha: 0.2),
+          ),
         ),
       ),
     );
   }
 }
 
-class _PipPainter extends CustomPainter {
-  _PipPainter({required this.value, required this.color});
+class _DieFacePainter extends CustomPainter {
+  _DieFacePainter({
+    required this.value,
+    required this.pipColor,
+    required this.pattern,
+    required this.patternColor,
+  });
 
   final int value;
-  final Color color;
+  final Color pipColor;
+  final DiceSkinPattern pattern;
+  final Color patternColor;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = color;
+    _paintPattern(canvas, size);
+    final paint = Paint()..color = pipColor;
     final r = size.shortestSide * 0.09;
     Offset p(double x, double y) =>
         Offset(size.width * x, size.height * y);
@@ -92,7 +119,66 @@ class _PipPainter extends CustomPainter {
     }
   }
 
+  void _paintPattern(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = patternColor
+      ..style = PaintingStyle.fill;
+    switch (pattern) {
+      case DiceSkinPattern.none:
+        break;
+      case DiceSkinPattern.stripes:
+        paint.strokeWidth = size.width * 0.08;
+        paint.style = PaintingStyle.stroke;
+        for (var i = 0; i < 4; i++) {
+          final x = size.width * (0.15 + i * 0.22);
+          canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+        }
+      case DiceSkinPattern.sparkle:
+        final s = size.shortestSide * 0.06;
+        void star(double x, double y) {
+          canvas.drawCircle(Offset(size.width * x, size.height * y), s, paint);
+        }
+        star(0.18, 0.18);
+        star(0.82, 0.22);
+        star(0.2, 0.8);
+        star(0.78, 0.78);
+      case DiceSkinPattern.dots:
+        final s = size.shortestSide * 0.035;
+        for (var row = 0; row < 4; row++) {
+          for (var col = 0; col < 4; col++) {
+            canvas.drawCircle(
+              Offset(
+                size.width * (0.2 + col * 0.2),
+                size.height * (0.2 + row * 0.2),
+              ),
+              s,
+              paint,
+            );
+          }
+        }
+      case DiceSkinPattern.bones:
+        final bone = Paint()
+          ..color = patternColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = size.width * 0.045
+          ..strokeCap = StrokeCap.round;
+        canvas.drawLine(
+          Offset(size.width * 0.22, size.height * 0.22),
+          Offset(size.width * 0.78, size.height * 0.78),
+          bone,
+        );
+        canvas.drawLine(
+          Offset(size.width * 0.78, size.height * 0.22),
+          Offset(size.width * 0.22, size.height * 0.78),
+          bone,
+        );
+    }
+  }
+
   @override
-  bool shouldRepaint(covariant _PipPainter old) =>
-      old.value != value || old.color != color;
+  bool shouldRepaint(covariant _DieFacePainter old) =>
+      old.value != value ||
+      old.pipColor != pipColor ||
+      old.pattern != pattern ||
+      old.patternColor != patternColor;
 }

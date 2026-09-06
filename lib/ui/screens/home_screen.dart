@@ -8,6 +8,8 @@ import '../theme/marge_theme.dart';
 import 'match_screen.dart';
 import 'rules_screen.dart';
 import 'settings_screen.dart';
+import 'shop_screen.dart';
+import '../../cosmetics/skins_service.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -36,6 +38,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
+    final wallet = ref.watch(cosmeticsProvider).walletCents;
 
     return Scaffold(
       body: Container(
@@ -56,20 +59,40 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Align(
-                  alignment: Alignment.topRight,
-                  child: IconButton(
-                    tooltip: 'Settings',
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const SettingsScreen(),
+                Row(
+                  children: [
+                    TextButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const ShopScreen(),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.casino_rounded,
+                          color: MargeColors.gold),
+                      label: Text(
+                        'Dice · $wallet¢',
+                        style: const TextStyle(
+                          color: MargeColors.gold,
+                          fontWeight: FontWeight.w800,
                         ),
-                      );
-                    },
-                    icon: const Icon(Icons.settings_rounded),
-                    color: MargeColors.cream,
-                  ),
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      tooltip: 'Settings',
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const SettingsScreen(),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.settings_rounded),
+                      color: MargeColors.cream,
+                    ),
+                  ],
                 ),
                 const Spacer(flex: 2),
                 Text(
@@ -221,6 +244,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         }
                       : null,
                   child: const Text('START MATCH'),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: MargeColors.cream,
+                    side: const BorderSide(color: MargeColors.gold),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                  ),
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const ShopScreen()),
+                    );
+                  },
+                  child: const Text('Cosmetics / Dice shop'),
                 ),
                 const SizedBox(height: 10),
                 OutlinedButton(
