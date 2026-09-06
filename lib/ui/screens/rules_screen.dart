@@ -32,7 +32,8 @@ class RulesScreen extends ConsumerWidget {
             emoji: '🏦',
             title: 'Banks & ante',
             body:
-                'Four seats. Everyone starts with 100¢ (virtual chips). '
+                '2–8 seats (you plus bots and/or hotseat humans). '
+                'Everyone starts with 100¢ (virtual chips). '
                 'Each round, every seated player antes 10¢ into the pot.',
           ),
           _RuleCard(
@@ -69,8 +70,10 @@ class RulesScreen extends ConsumerWidget {
             emoji: '🤖',
             title: 'Bots',
             body:
-                'Spike (aggressive), Mira (cautious), and Zig (chaotic) fill empty seats. '
-                'Hotseat 2–4 humans and bots take the rest.',
+                'Choose 0–4 bots and 0–4 other local players before the match '
+                '(at least one opponent; max 8 seats including you). '
+                'Bots cycle Aggressive / Cautious / Chaotic. '
+                'On a hotseat human turn, pass the device.',
           ),
         ],
       ),

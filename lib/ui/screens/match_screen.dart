@@ -73,18 +73,7 @@ class MatchScreen extends ConsumerWidget {
                     ),
                   ],
                   const Spacer(),
-                  Text(
-                    view.busyBot
-                        ? '${snap.currentPlayer.profile.avatarEmoji} '
-                            '${snap.currentPlayer.profile.name} is rolling…'
-                        : '${snap.currentPlayer.profile.avatarEmoji} '
-                            '${snap.currentPlayer.profile.name}\'s turn'
-                            '${turn != null && turn.hasRolled ? ' · roll ${turn.rollNumber}/3' : ''}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 16,
-                    ),
-                  ),
+                  _TurnBanner(snapshot: snap, busyBot: view.busyBot),
                   const SizedBox(height: 16),
                   if (turn != null && turn.hasRolled)
                     Row(
@@ -212,6 +201,69 @@ class MatchScreen extends ConsumerWidget {
       case ScoreKind.none:
         return '';
     }
+  }
+}
+
+class _TurnBanner extends StatelessWidget {
+  const _TurnBanner({required this.snapshot, required this.busyBot});
+
+  final MatchSnapshot snapshot;
+  final bool busyBot;
+
+  @override
+  Widget build(BuildContext context) {
+    final player = snapshot.currentPlayer;
+    final turn = snapshot.turn;
+    final humans = snapshot.players.where((p) => p.profile.isHuman).length;
+    final isHotseatOther = player.profile.isHuman &&
+        humans > 1 &&
+        player.profile.id != 'human_0';
+
+    final String title;
+    if (busyBot) {
+      title =
+          '${player.profile.avatarEmoji} ${player.profile.name} is rolling…';
+    } else if (player.profile.isHuman) {
+      final rollBit = turn != null && turn.hasRolled
+          ? ' · roll ${turn.rollNumber}/3'
+          : '';
+      title =
+          '${player.profile.avatarEmoji} ${player.profile.name}\'s turn$rollBit';
+    } else {
+      title = '${player.profile.avatarEmoji} ${player.profile.name}\'s turn';
+    }
+
+    return Column(
+      children: [
+        Text(
+          title,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontWeight: FontWeight.w800,
+            fontSize: 16,
+          ),
+        ),
+        if (isHotseatOther && !busyBot) ...[
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: MargeColors.gold.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: MargeColors.gold.withValues(alpha: 0.5)),
+            ),
+            child: Text(
+              'Pass the device to ${player.profile.name}',
+              style: const TextStyle(
+                color: MargeColors.gold,
+                fontWeight: FontWeight.w800,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
   }
 }
 

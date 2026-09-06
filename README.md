@@ -1,6 +1,6 @@
 # Marge (Marge Dice Game)
 
-A colorful casual dice table game for Android (and web). Four seats, ante into a shared pot, Yahtzee-style keep-and-reroll, and a dramatic **triple ones on the first roll** pot sweep.
+A colorful casual dice table game for Android (and web). Configurable seats (bots + local hotseat), ante into a shared pot, Yahtzee-style keep-and-reroll, and a dramatic **triple ones on the first roll** pot sweep.
 
 **Package:** `com.jerilyn.marge`  
 **Repo:** https://github.com/jerilyn46/Marge
@@ -9,7 +9,7 @@ A colorful casual dice table game for Android (and web). Four seats, ante into a
 
 ## Rules
 
-- **4 seats.** Default: 1 human + 3 bots. Hotseat 2–4 humans; bots fill the rest.
+- **2–8 seats.** Lobby: choose **0–4 bots** and **0–4 other hotseat humans** (at least 1 opponent; you + up to 7 others). Default: **3 bots, 0 other humans**.
 - **Start bank:** 100¢ each.
 - **Round ante:** each seated player pays **10¢** into the pot.
 - **Turn:** 3 dice, up to **3 rolls**. Keep any subset between rolls. Bank early once you have a scoring hand.

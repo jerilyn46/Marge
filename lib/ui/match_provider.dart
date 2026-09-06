@@ -41,14 +41,32 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     return null;
   }
 
-  void start({required int humanCount, String? playerName}) {
+  void start({
+    int botCount = 3,
+    int otherHumanCount = 0,
+    String? playerName,
+  }) {
     _botTimer?.cancel();
+    final clamped = MatchConfig.clampLobby(botCount, otherHumanCount);
+    botCount = clamped.$1;
+    otherHumanCount = clamped.$2;
+    // Ensure at least one opponent (lobby UI should already enforce this).
+    if (botCount + otherHumanCount < 1) {
+      botCount = 1;
+    }
+
+    final localName = playerName ?? 'You';
     final names = <String>[
-      playerName ?? 'You',
-      for (var i = 1; i < humanCount; i++) 'Player ${i + 1}',
+      localName,
+      for (var i = 0; i < otherHumanCount; i++) 'Player ${i + 2}',
     ];
     _controller = MatchController(
-      config: MatchConfig(humanCount: humanCount, humanNames: names),
+      config: MatchConfig(
+        botCount: botCount,
+        otherHumanCount: otherHumanCount,
+        localPlayerName: localName,
+        humanNames: names,
+      ),
       rng: Random(),
     );
     _controller!.startMatch();
@@ -58,9 +76,13 @@ class MatchNotifier extends Notifier<MatchViewState?> {
   }
 
   void rematch() {
-    final humans = _controller?.config.humanCount ?? 1;
+    final cfg = _controller?.config;
     final name = ref.read(settingsProvider).playerName;
-    start(humanCount: humans, playerName: name);
+    start(
+      botCount: cfg?.botCount ?? 3,
+      otherHumanCount: cfg?.otherHumanCount ?? 0,
+      playerName: name,
+    );
   }
 
   void _syncSettings() {

@@ -15,22 +15,93 @@ enum MatchPhase {
   matchEnd,
 }
 
+/// Lobby choices for a match.
+///
+/// Always includes the local user as seat 0 ("You" / Player 1).
+/// [botCount] and [otherHumanCount] are independent choosers (0–4 each),
+/// with validation: at least one opponent total, and at most 7 opponents
+/// (8 seats including the local user).
 class MatchConfig {
   const MatchConfig({
-    this.humanCount = 1,
+    this.botCount = 3,
+    this.otherHumanCount = 0,
     this.startBankCents = 100,
     this.anteCents = 10,
     this.houseStakeCents = 50,
-    this.seatCount = 4,
-    this.humanNames = const ['You'],
-  });
+    this.localPlayerName = 'You',
+    this.humanNames,
+  })  : assert(botCount >= 0),
+        assert(otherHumanCount >= 0);
 
-  final int humanCount;
+  /// Number of bot seats (preferred range 0–4).
+  final int botCount;
+
+  /// Hotseat humans besides the local user (preferred range 0–4).
+  final int otherHumanCount;
+
   final int startBankCents;
   final int anteCents;
   final int houseStakeCents;
-  final int seatCount;
-  final List<String> humanNames;
+
+  /// Display name for the local user (Player 1).
+  final String localPlayerName;
+
+  /// Optional explicit human names. Index 0 = local user; remaining are
+  /// other hotseat players. If null/short, defaults are generated.
+  final List<String>? humanNames;
+
+  /// Total human seats including the local user.
+  int get humanCount => 1 + otherHumanCount;
+
+  /// Total seated players (local + others + bots).
+  int get seatCount => 1 + otherHumanCount + botCount;
+
+  /// Opponents excluding the local user.
+  int get opponentCount => otherHumanCount + botCount;
+
+  /// Max opponents allowed (local user + 7 others = 8 seats).
+  static const int maxOpponents = 7;
+
+  /// Preferred max on each lobby stepper.
+  static const int maxBotsSelectable = 4;
+  static const int maxOtherHumansSelectable = 4;
+
+  bool get isValid =>
+      opponentCount >= 1 &&
+      opponentCount <= maxOpponents &&
+      botCount >= 0 &&
+      otherHumanCount >= 0 &&
+      seatCount >= 2 &&
+      seatCount <= maxOpponents + 1;
+
+  /// Clamp bot count against a fixed other-human count (0–4, ≤7 opponents).
+  static int clampBots(int bots, int others) {
+    final o = others.clamp(0, maxOtherHumansSelectable);
+    final maxB = (maxOpponents - o).clamp(0, maxBotsSelectable);
+    return bots.clamp(0, maxB);
+  }
+
+  /// Clamp other-human count against a fixed bot count (0–4, ≤7 opponents).
+  static int clampOthers(int bots, int others) {
+    final b = bots.clamp(0, maxBotsSelectable);
+    final maxO = (maxOpponents - b).clamp(0, maxOtherHumansSelectable);
+    return others.clamp(0, maxO);
+  }
+
+  /// Clamp both into the valid lobby space (trims bots first if over cap).
+  static (int bots, int others) clampLobby(int bots, int others) {
+    final o = others.clamp(0, maxOtherHumansSelectable);
+    final b = clampBots(bots, o);
+    return (b, o);
+  }
+
+  /// Whether the +bot stepper should be enabled from [bots]/[others].
+  static bool canIncrementBots(int bots, int others) =>
+      bots < maxBotsSelectable && bots + others < maxOpponents;
+
+  /// Whether the +other-human stepper should be enabled.
+  static bool canIncrementOthers(int bots, int others) =>
+      others < maxOtherHumansSelectable && bots + others < maxOpponents;
 }
 
 class MatchSnapshot {
@@ -114,13 +185,28 @@ class MatchController {
     _beginRound();
   }
 
+  static const _personalities = <BotPersonality>[
+    BotPersonality.aggressive,
+    BotPersonality.cautious,
+    BotPersonality.chaotic,
+  ];
+
+  static const _botEmojis = <String>['🔥', '🧊', '⚡', '🌟', '🎯', '🃏', '🐉'];
+
   List<PlayerState> _buildSeats() {
     final seats = <PlayerState>[];
-    final humans = config.humanCount.clamp(1, config.seatCount);
-    for (var i = 0; i < humans; i++) {
-      final name = i < config.humanNames.length
-          ? config.humanNames[i]
-          : 'Player ${i + 1}';
+    final names = config.humanNames;
+    final humanTotal = config.humanCount;
+
+    for (var i = 0; i < humanTotal; i++) {
+      final String name;
+      if (names != null && i < names.length) {
+        name = names[i];
+      } else if (i == 0) {
+        name = config.localPlayerName;
+      } else {
+        name = 'Player ${i + 1}';
+      }
       seats.add(PlayerState(
         profile: PlayerProfile(
           id: 'human_$i',
@@ -132,32 +218,33 @@ class MatchController {
         bankCents: config.startBankCents,
       ));
     }
-    var botIdx = 0;
-    while (seats.length < config.seatCount) {
-      final bot = BotRoster.bots[botIdx % BotRoster.bots.length];
-      seats.add(PlayerState(
-        profile: bot.copyWith(
-          // Ensure unique ids when wrapping roster.
-          name: botIdx < BotRoster.bots.length
-              ? bot.name
-              : '${bot.name}$botIdx',
-        ),
-        bankCents: config.startBankCents,
-      ));
-      // Fix unique id
-      final last = seats.removeLast();
+
+    for (var botIdx = 0; botIdx < config.botCount; botIdx++) {
+      final personality = _personalities[botIdx % _personalities.length];
+      final String name;
+      final String emoji;
+      final int colorSeed;
+      if (botIdx < BotRoster.bots.length) {
+        final roster = BotRoster.bots[botIdx];
+        name = roster.name;
+        emoji = roster.avatarEmoji;
+        colorSeed = roster.colorSeed;
+      } else {
+        name = 'Bot ${botIdx + 1}';
+        emoji = _botEmojis[botIdx % _botEmojis.length];
+        colorSeed = 20 + botIdx;
+      }
       seats.add(PlayerState(
         profile: PlayerProfile(
-          id: '${bot.id}_$botIdx',
-          name: last.profile.name,
+          id: 'bot_$botIdx',
+          name: name,
           kind: SeatKind.bot,
-          personality: bot.personality,
-          avatarEmoji: bot.avatarEmoji,
-          colorSeed: bot.colorSeed,
+          personality: personality,
+          avatarEmoji: emoji,
+          colorSeed: colorSeed,
         ),
         bankCents: config.startBankCents,
       ));
-      botIdx++;
     }
     return seats;
   }

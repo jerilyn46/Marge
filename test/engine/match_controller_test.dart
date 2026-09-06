@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:marge/engine/dice.dart';
 import 'package:marge/engine/hand_evaluator.dart';
 import 'package:marge/engine/match_controller.dart';
+import 'package:marge/engine/player.dart';
 
 /// Deterministic RNG that yields a fixed sequence of nextInt results.
 class ScriptedRandom implements Random {
@@ -29,10 +30,38 @@ class ScriptedRandom implements Random {
 }
 
 void main() {
+  group('MatchConfig lobby helpers', () {
+    test('default is 3 bots + 0 other humans', () {
+      const c = MatchConfig();
+      expect(c.botCount, 3);
+      expect(c.otherHumanCount, 0);
+      expect(c.humanCount, 1);
+      expect(c.seatCount, 4);
+      expect(c.isValid, isTrue);
+    });
+
+    test('requires at least one opponent', () {
+      const c = MatchConfig(botCount: 0, otherHumanCount: 0);
+      expect(c.isValid, isFalse);
+      expect(c.opponentCount, 0);
+    });
+
+    test('clamp helpers cap at 7 opponents and 0–4 steppers', () {
+      expect(MatchConfig.clampLobby(4, 4), (3, 4)); // trims bots to keep others
+      expect(MatchConfig.clampBots(4, 4), 3);
+      expect(MatchConfig.clampOthers(4, 4), 3);
+      expect(MatchConfig.clampLobby(9, 0), (4, 0));
+      expect(MatchConfig.clampOthers(0, 9), 4);
+      expect(MatchConfig.canIncrementBots(4, 3), isFalse); // 7 already
+      expect(MatchConfig.canIncrementOthers(3, 4), isFalse);
+      expect(MatchConfig.canIncrementBots(2, 2), isTrue);
+    });
+  });
+
   group('MatchController', () {
     test('starts with 100¢ banks and collects ante into pot', () {
       final c = MatchController(
-        config: const MatchConfig(humanCount: 1),
+        config: const MatchConfig(botCount: 3, otherHumanCount: 0),
         rng: Random(1),
       );
       c.startMatch();
@@ -46,14 +75,82 @@ void main() {
       expect(s.players.where((p) => p.profile.isBot).length, 3);
     });
 
-    test('hotseat 2 humans fills with 2 bots', () {
+    test('hotseat 1 other human + 2 bots', () {
       final c = MatchController(
-        config: const MatchConfig(humanCount: 2, humanNames: ['A', 'B']),
+        config: const MatchConfig(
+          botCount: 2,
+          otherHumanCount: 1,
+          humanNames: ['A', 'B'],
+        ),
         rng: Random(1),
       );
       c.startMatch();
       expect(c.snapshot.players.where((p) => p.profile.isHuman).length, 2);
       expect(c.snapshot.players.where((p) => p.profile.isBot).length, 2);
+      expect(c.snapshot.players[0].profile.name, 'A');
+      expect(c.snapshot.players[1].profile.name, 'B');
+    });
+
+    test('bots-only opponents: 4 bots + 0 other humans', () {
+      final c = MatchController(
+        config: const MatchConfig(botCount: 4, otherHumanCount: 0),
+        rng: Random(1),
+      );
+      c.startMatch();
+      expect(c.snapshot.players.length, 5);
+      expect(c.snapshot.players.where((p) => p.profile.isHuman).length, 1);
+      expect(c.snapshot.players.where((p) => p.profile.isBot).length, 4);
+      expect(c.snapshot.potCents, 50); // 5 * 10
+    });
+
+    test('humans-only opponents: 0 bots + 3 other humans', () {
+      final c = MatchController(
+        config: const MatchConfig(botCount: 0, otherHumanCount: 3),
+        rng: Random(1),
+      );
+      c.startMatch();
+      expect(c.snapshot.players.length, 4);
+      expect(c.snapshot.players.every((p) => p.profile.isHuman), isTrue);
+      expect(c.snapshot.players[0].profile.name, 'You');
+      expect(c.snapshot.players[1].profile.name, 'Player 2');
+      expect(c.snapshot.players[2].profile.name, 'Player 3');
+      expect(c.snapshot.players[3].profile.name, 'Player 4');
+    });
+
+    test('max table: 3 bots + 4 other humans = 8 seats', () {
+      final c = MatchController(
+        config: const MatchConfig(botCount: 3, otherHumanCount: 4),
+        rng: Random(1),
+      );
+      c.startMatch();
+      expect(c.snapshot.players.length, 8);
+      expect(c.snapshot.players.where((p) => p.profile.isHuman).length, 5);
+      expect(c.snapshot.players.where((p) => p.profile.isBot).length, 3);
+      expect(c.snapshot.potCents, 80);
+    });
+
+    test('bot personalities cycle Aggressive/Cautious/Chaotic', () {
+      final c = MatchController(
+        config: const MatchConfig(botCount: 4, otherHumanCount: 0),
+        rng: Random(1),
+      );
+      c.startMatch();
+      final bots =
+          c.snapshot.players.where((p) => p.profile.isBot).toList();
+      expect(bots[0].profile.personality, BotPersonality.aggressive);
+      expect(bots[1].profile.personality, BotPersonality.cautious);
+      expect(bots[2].profile.personality, BotPersonality.chaotic);
+      expect(bots[3].profile.personality, BotPersonality.aggressive);
+    });
+
+    test('minimum 1 bot opponent', () {
+      final c = MatchController(
+        config: const MatchConfig(botCount: 1, otherHumanCount: 0),
+        rng: Random(1),
+      );
+      c.startMatch();
+      expect(c.snapshot.players.length, 2);
+      expect(c.snapshot.potCents, 20);
     });
 
     test('triple-1 first roll sweeps pot', () {
@@ -61,7 +158,7 @@ void main() {
       // We need 1,1,1 → nextInt returns 0,0,0.
       final rng = ScriptedRandom([0, 0, 0]);
       final c = MatchController(
-        config: const MatchConfig(humanCount: 1),
+        config: const MatchConfig(botCount: 3, otherHumanCount: 0),
         rng: rng,
       );
       c.startMatch();
@@ -89,7 +186,7 @@ void main() {
       // Roll three 4s on first roll: nextInt → 3,3,3
       final rng = ScriptedRandom([3, 3, 3]);
       final c = MatchController(
-        config: const MatchConfig(humanCount: 1),
+        config: const MatchConfig(botCount: 3, otherHumanCount: 0),
         rng: rng,
       );
       c.startMatch();
@@ -114,7 +211,7 @@ void main() {
       // 1,2,3 → nextInt 0,1,2
       final rng = ScriptedRandom([0, 1, 2]);
       final c = MatchController(
-        config: const MatchConfig(humanCount: 1),
+        config: const MatchConfig(botCount: 3, otherHumanCount: 0),
         rng: rng,
       );
       c.startMatch();
@@ -130,7 +227,7 @@ void main() {
       // 1,1,2 — not a winning hand
       final rng = ScriptedRandom([0, 0, 1]);
       final c = MatchController(
-        config: const MatchConfig(humanCount: 1),
+        config: const MatchConfig(botCount: 3, otherHumanCount: 0),
         rng: rng,
       );
       c.startMatch();
@@ -163,7 +260,7 @@ void main() {
       }
       final rng = ScriptedRandom(seq);
       final c = MatchController(
-        config: const MatchConfig(humanCount: 1),
+        config: const MatchConfig(botCount: 3, otherHumanCount: 0),
         rng: rng,
       );
       c.startMatch();
@@ -189,7 +286,7 @@ void main() {
       // Three 4s on first roll
       final rng = ScriptedRandom([3, 3, 3]);
       final c = MatchController(
-        config: const MatchConfig(humanCount: 1),
+        config: const MatchConfig(botCount: 3, otherHumanCount: 0),
         rng: rng,
       );
       c.startMatch();
@@ -207,7 +304,8 @@ void main() {
     test('house stake tops up once when soft-broke', () {
       final c = MatchController(
         config: const MatchConfig(
-          humanCount: 1,
+          botCount: 3,
+          otherHumanCount: 0,
           startBankCents: 5,
           anteCents: 10,
           houseStakeCents: 50,
@@ -235,6 +333,27 @@ void main() {
       final d = DiceSet.fromValues([5, 5, 5]);
       final r = HandEvaluator.evaluate(d, rollNumber: 2);
       expect(r.perOpponentCents, 5);
+    });
+
+    test('hotseat human turn advances to next human when no bots', () {
+      // Force non-scoring 3-roll bust so turn advances.
+      final seq = <int>[];
+      for (var r = 0; r < 3; r++) {
+        seq.addAll([0, 0, 1]);
+      }
+      final rng = ScriptedRandom(seq);
+      final c = MatchController(
+        config: const MatchConfig(botCount: 0, otherHumanCount: 1),
+        rng: rng,
+      );
+      c.startMatch();
+      expect(c.snapshot.currentPlayer.profile.id, 'human_0');
+      c.roll();
+      c.roll();
+      c.roll(); // bust → advance
+      expect(c.snapshot.currentPlayer.profile.id, 'human_1');
+      expect(c.snapshot.currentPlayer.profile.name, 'Player 2');
+      expect(c.snapshot.currentPlayer.profile.isHuman, isTrue);
     });
   });
 }
