@@ -14,12 +14,19 @@ class MatchViewState {
     this.showConfetti = false,
     this.busyBot = false,
     this.unlockBanner,
+    /// When true, pot-win celebration is playing; sticky strip waits.
+    this.holdHandoffStrip = false,
   });
 
   final MatchSnapshot snapshot;
   final bool showConfetti;
   final bool busyBot;
   final String? unlockBanner;
+  final bool holdHandoffStrip;
+
+  /// Sticky result strip is ready to show (gate active, celebration done).
+  bool get showHandoffStrip =>
+      snapshot.awaitingHandoff && !holdHandoffStrip && !showConfetti;
 
   MatchViewState copyWith({
     MatchSnapshot? snapshot,
@@ -27,6 +34,7 @@ class MatchViewState {
     bool? busyBot,
     String? unlockBanner,
     bool clearUnlockBanner = false,
+    bool? holdHandoffStrip,
   }) =>
       MatchViewState(
         snapshot: snapshot ?? this.snapshot,
@@ -34,6 +42,7 @@ class MatchViewState {
         busyBot: busyBot ?? this.busyBot,
         unlockBanner:
             clearUnlockBanner ? null : (unlockBanner ?? this.unlockBanner),
+        holdHandoffStrip: holdHandoffStrip ?? this.holdHandoffStrip,
       );
 }
 
@@ -101,7 +110,11 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     _sfx.hapticsEnabled = s.hapticsEnabled;
   }
 
-  void _publish({bool confetti = false, String? unlockBanner}) {
+  void _publish({
+    bool confetti = false,
+    String? unlockBanner,
+    bool? holdHandoffStrip,
+  }) {
     final c = _controller;
     if (c == null) return;
     state = MatchViewState(
@@ -109,6 +122,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       showConfetti: confetti,
       busyBot: state?.busyBot ?? false,
       unlockBanner: unlockBanner ?? state?.unlockBanner,
+      holdHandoffStrip: holdHandoffStrip ?? false,
     );
   }
 
@@ -144,28 +158,41 @@ class MatchNotifier extends Notifier<MatchViewState?> {
   Future<void> roll() async {
     final c = _controller;
     if (c == null) return;
+    if (c.snapshot.phase == MatchPhase.awaitingHandoff) return;
     if (c.snapshot.currentPlayer.profile.isBot) return;
     final seat = c.snapshot.currentSeatIndex;
     _syncSettings();
     await _sfx.roll();
     c.roll();
     final payout = c.snapshot.lastPayout;
-    if (payout?.celebratory == true) {
+    if (payout?.celebratory == true &&
+        c.snapshot.phase == MatchPhase.awaitingHandoff) {
       await _sfx.potWin();
-      _publish(confetti: true);
+      // Celebration first; sticky strip after confetti.
+      _publish(confetti: true, holdHandoffStrip: true);
       await _applyLocalCosmetics(seat, payout);
-      Future.delayed(const Duration(seconds: 2), () {
-        if (state != null) {
-          state = state!.copyWith(showConfetti: false);
-        }
-      });
-    } else {
-      _publish();
-      // Bust can auto-resolve on the 3rd roll.
-      if (payout != null && payout.kind == ScoreKind.none) {
-        await _sfx.bust();
-        await _applyLocalCosmetics(seat, payout);
+      await Future<void>.delayed(const Duration(seconds: 2));
+      if (state != null && _controller != null) {
+        state = state!.copyWith(
+          showConfetti: false,
+          holdHandoffStrip: false,
+          snapshot: _controller!.snapshot,
+        );
       }
+      // Do not schedule bots — wait for Next/Continue.
+      return;
+    }
+    _publish();
+    // Bust can auto-resolve on the 3rd roll.
+    if (payout != null &&
+        payout.kind == ScoreKind.none &&
+        c.snapshot.phase == MatchPhase.awaitingHandoff) {
+      await _sfx.bust();
+      await _applyLocalCosmetics(seat, payout);
+    }
+    if (c.snapshot.phase == MatchPhase.awaitingHandoff) {
+      // Gate: human must tap Continue / Next player.
+      return;
     }
     _scheduleBots();
   }
@@ -173,6 +200,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
   Future<void> bank() async {
     final c = _controller;
     if (c == null) return;
+    if (c.snapshot.phase == MatchPhase.awaitingHandoff) return;
     if (c.snapshot.currentPlayer.profile.isBot) return;
     final seat = c.snapshot.currentSeatIndex;
     final t = c.snapshot.turn;
@@ -187,19 +215,37 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     }
     c.bank();
     final payout = c.snapshot.lastPayout;
-    if (payout?.celebratory == true) {
+    if (payout?.celebratory == true &&
+        c.snapshot.phase == MatchPhase.awaitingHandoff) {
       await _sfx.potWin();
-      _publish(confetti: true);
+      _publish(confetti: true, holdHandoffStrip: true);
       await _applyLocalCosmetics(seat, payout);
-      Future.delayed(const Duration(seconds: 2), () {
-        if (state != null) {
-          state = state!.copyWith(showConfetti: false);
-        }
-      });
-    } else {
-      _publish();
-      await _applyLocalCosmetics(seat, payout);
+      await Future<void>.delayed(const Duration(seconds: 2));
+      if (state != null && _controller != null) {
+        state = state!.copyWith(
+          showConfetti: false,
+          holdHandoffStrip: false,
+          snapshot: _controller!.snapshot,
+        );
+      }
+      return;
     }
+    _publish();
+    await _applyLocalCosmetics(seat, payout);
+    if (c.snapshot.phase == MatchPhase.awaitingHandoff) {
+      return;
+    }
+    _scheduleBots();
+  }
+
+  /// Dismiss last-roll strip and hand off to the next seat.
+  void confirmHandoff() {
+    final c = _controller;
+    if (c == null) return;
+    if (c.snapshot.phase != MatchPhase.awaitingHandoff) return;
+    _botTimer?.cancel();
+    c.confirmHandoff();
+    _publish();
     _scheduleBots();
   }
 
@@ -214,6 +260,11 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     final c = _controller;
     if (c == null) return;
     if (c.snapshot.phase == MatchPhase.matchEnd) return;
+    // Bots must not act while the handoff strip is up.
+    if (c.snapshot.phase == MatchPhase.awaitingHandoff) {
+      if (state != null) state = state!.copyWith(busyBot: false);
+      return;
+    }
     if (!c.snapshot.currentPlayer.profile.isBot) {
       if (state != null) state = state!.copyWith(busyBot: false);
       return;
@@ -221,27 +272,43 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     if (state != null) state = state!.copyWith(busyBot: true);
     _botTimer = Timer(const Duration(milliseconds: 700), () async {
       if (_controller == null) return;
+      if (_controller!.snapshot.phase == MatchPhase.awaitingHandoff) {
+        if (state != null) state = state!.copyWith(busyBot: false);
+        return;
+      }
       _syncSettings();
       final before = _controller!.snapshot.lastPayout;
       _controller!.tickBot();
       final after = _controller!.snapshot.lastPayout;
-      if (after != null && after != before && after.celebratory) {
+      if (after != null &&
+          after != before &&
+          after.celebratory &&
+          _controller!.snapshot.phase == MatchPhase.awaitingHandoff) {
         await _sfx.potWin();
-        _publish(confetti: true);
-        Future.delayed(const Duration(seconds: 2), () {
-          if (state != null) {
-            state = state!.copyWith(showConfetti: false);
-          }
-        });
-      } else {
-        if (after != null &&
-            after != before &&
-            after.kind == ScoreKind.none) {
-          await _sfx.bust();
-        } else {
-          await _sfx.roll();
+        _publish(confetti: true, holdHandoffStrip: true);
+        await Future<void>.delayed(const Duration(seconds: 2));
+        if (state != null && _controller != null) {
+          state = state!.copyWith(
+            showConfetti: false,
+            holdHandoffStrip: false,
+            snapshot: _controller!.snapshot,
+          );
         }
-        _publish();
+        // Wait for human to tap Continue / Next player.
+        return;
+      }
+      if (after != null &&
+          after != before &&
+          after.kind == ScoreKind.none) {
+        await _sfx.bust();
+      } else if (_controller!.snapshot.phase != MatchPhase.awaitingHandoff ||
+          after == before) {
+        await _sfx.roll();
+      }
+      _publish();
+      if (_controller!.snapshot.phase == MatchPhase.awaitingHandoff) {
+        if (state != null) state = state!.copyWith(busyBot: false);
+        return;
       }
       _scheduleBots();
     });
