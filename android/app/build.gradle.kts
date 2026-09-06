@@ -27,6 +27,13 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // AdMob APPLICATION_ID — Google sample/test by default. Inject prod via
+        // -PADMOB_APP_ID=ca-app-pub-xxxx~yyyy (never commit real prod IDs).
+        val admobAppId = (project.findProperty("ADMOB_APP_ID") as String?)
+            ?.takeIf { it.isNotBlank() }
+            ?: "ca-app-pub-3940256099942544~3347511713"
+        manifestPlaceholders["admobAppId"] = admobAppId
     }
 
     buildTypes {

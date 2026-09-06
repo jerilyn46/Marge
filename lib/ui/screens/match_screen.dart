@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../ads/ads_service.dart';
 import '../../cosmetics/skins_service.dart';
 import '../../engine/engine.dart';
 import '../match_provider.dart';
@@ -359,12 +360,43 @@ class _TopBar extends ConsumerWidget {
   }
 }
 
-class _MatchEndView extends ConsumerWidget {
+class _MatchEndView extends ConsumerStatefulWidget {
   const _MatchEndView({required this.snapshot});
   final MatchSnapshot snapshot;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_MatchEndView> createState() => _MatchEndViewState();
+}
+
+class _MatchEndViewState extends ConsumerState<_MatchEndView> {
+  var _breakHandled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onNaturalBreak());
+  }
+
+  Future<void> _onNaturalBreak() async {
+    if (_breakHandled || !mounted) return;
+    _breakHandled = true;
+    final ads = ref.read(adsServiceProvider);
+    // Frequency-gated interstitial only at match end — never mid-roll.
+    ads.notifyMatchCompleted();
+    await ads.maybeShowInterstitialAtBreak();
+  }
+
+  Future<void> _leaveToLobby() async {
+    // Second chance if the end-screen attempt was gated / failed to load.
+    final ads = ref.read(adsServiceProvider);
+    await ads.maybeShowInterstitialAtBreak();
+    if (!mounted) return;
+    Navigator.of(context).popUntil((r) => r.isFirst);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final snapshot = widget.snapshot;
     final ranked = [...snapshot.players]
       ..sort((a, b) => b.bankCents.compareTo(a.bankCents));
     final winner = ranked.first;
@@ -423,9 +455,7 @@ class _MatchEndView extends ConsumerWidget {
                 ),
                 const SizedBox(height: 10),
                 TextButton(
-                  onPressed: () {
-                    Navigator.of(context).popUntil((r) => r.isFirst);
-                  },
+                  onPressed: _leaveToLobby,
                   child: const Text('Back to home'),
                 ),
               ],

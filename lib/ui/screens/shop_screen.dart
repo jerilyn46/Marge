@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../ads/ad_ids.dart';
+import '../../ads/ads_service.dart';
 import '../../cosmetics/dice_skin.dart';
 import '../../cosmetics/skins_service.dart';
 import '../theme/marge_theme.dart';
@@ -48,14 +50,16 @@ class ShopScreen extends ConsumerWidget {
             colors: [MargeColors.velvet, Color(0xFF2D1B69)],
           ),
         ),
-        child: ListView.separated(
+        child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-          itemCount: DiceSkinCatalog.all.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 12),
-          itemBuilder: (context, i) {
-            final def = DiceSkinCatalog.all[i];
-            return _SkinTile(def: def, cos: cos);
-          },
+          children: [
+            const _WatchAdForChipsCard(),
+            const SizedBox(height: 12),
+            for (var i = 0; i < DiceSkinCatalog.all.length; i++) ...[
+              if (i > 0) const SizedBox(height: 12),
+              _SkinTile(def: DiceSkinCatalog.all[i], cos: cos),
+            ],
+          ],
         ),
       ),
     );
@@ -210,6 +214,81 @@ class _SkinTile extends ConsumerWidget {
                     ],
                   ),
                 ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WatchAdForChipsCard extends ConsumerStatefulWidget {
+  const _WatchAdForChipsCard();
+
+  @override
+  ConsumerState<_WatchAdForChipsCard> createState() =>
+      _WatchAdForChipsCardState();
+}
+
+class _WatchAdForChipsCardState extends ConsumerState<_WatchAdForChipsCard> {
+  bool _busy = false;
+
+  Future<void> _watch() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    final ads = ref.read(adsServiceProvider);
+    final earned = await ads.showRewardedForVirtualChips(
+      onReward: (amount) async {
+        await ref.read(cosmeticsProvider.notifier).grantVirtualChips(
+              amount,
+              reason: '+$amount¢ virtual chips from ad!',
+            );
+      },
+    );
+    if (!mounted) return;
+    setState(() => _busy = false);
+    final msg = earned
+        ? 'Granted ${AdIds.rewardedChipGrant}¢ virtual chips!'
+        : 'Ad not available right now — try again later.';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Free virtual chips',
+              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Watch a short ad to earn ${AdIds.rewardedChipGrant}¢ virtual chips '
+              'for the dice shop. Not real money.',
+              style: TextStyle(
+                color: MargeColors.cream.withValues(alpha: 0.8),
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              onPressed: _busy ? null : _watch,
+              icon: _busy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.ondemand_video_rounded),
+              label: Text(
+                _busy
+                    ? 'Loading…'
+                    : 'Watch ad for +${AdIds.rewardedChipGrant}¢',
               ),
             ),
           ],

@@ -1,4 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="marge"
         android:name="${applicationName}"
@@ -30,6 +31,13 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- AdMob App ID: defaults to Google sample/test ID via Gradle placeholder.
+             Override without committing prod IDs:
+               flutter build apk -PADMOB_APP_ID=ca-app-pub-xxxx~yyyy
+             See docs/ads.md -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="${admobAppId}"/>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
