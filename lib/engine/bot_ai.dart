@@ -38,7 +38,7 @@ class BotAI {
     }
 
     if (turn.rollNumber >= 3) {
-      // Nothing to do — match controller will bust.
+      // 3rd roll with no score auto-busts in roll(); scoring hands bank here.
       return const BotBank();
     }
 

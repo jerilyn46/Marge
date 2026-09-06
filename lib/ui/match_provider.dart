@@ -112,6 +112,8 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     if (c.snapshot.currentPlayer.profile.isBot) return;
     final t = c.snapshot.turn;
     if (t == null || !t.hasRolled) return;
+    // Do not end the turn early without a winning hand while rolls remain.
+    if (!t.canBank && !t.mustFinish) return;
     _syncSettings();
     if (t.lastScore.isScoring) {
       await _sfx.bank();

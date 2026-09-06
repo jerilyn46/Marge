@@ -121,12 +121,15 @@ class MatchScreen extends ConsumerWidget {
                         ),
                       ),
                     ),
-                  if (turn != null && turn.hasRolled && turn.rollNumber < 3)
+                  if (turn != null && turn.hasRolled && turn.rollsLeft > 0)
                     Padding(
                       padding: const EdgeInsets.only(top: 10),
                       child: Text(
                         canInteract
-                            ? 'Tap dice to keep · then Roll or Bank'
+                            ? (turn.canBank
+                                ? 'Tap dice to keep · Roll again or Bank'
+                                : 'No score yet — tap dice to keep, then Roll again '
+                                    '(${turn.rollsLeft} left)')
                             : '',
                         style: TextStyle(
                           color: MargeColors.cream.withValues(alpha: 0.7),
@@ -154,13 +157,13 @@ class MatchScreen extends ConsumerWidget {
                           child: ElevatedButton(
                             onPressed: canInteract &&
                                     turn != null &&
-                                    turn.rollNumber < 3
+                                    turn.canRoll
                                 ? () => ref.read(matchProvider.notifier).roll()
                                 : null,
                             child: Text(
                               turn == null || !turn.hasRolled
                                   ? 'ROLL'
-                                  : 'ROLL AGAIN',
+                                  : 'ROLL AGAIN (${turn.rollsLeft} left)',
                             ),
                           ),
                         ),

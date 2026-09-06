@@ -251,13 +251,23 @@ class MatchController {
     // Auto-resolve pot win immediately — dramatic.
     if (score.kind == ScoreKind.tripleOnesPotWin) {
       _resolveBank();
+      return;
+    }
+
+    // Only after the 3rd roll with still no winning hand does bust apply.
+    // Earlier no-score rolls must leave the turn active so the player can
+    // keep / re-roll (up to 3 rolls total).
+    if (!score.isScoring && nextRoll >= 3) {
+      _resolveBank();
     }
   }
 
-  /// Bank current scoring hand (or finish after 3 rolls).
+  /// Bank current scoring hand (or finish after 3 rolls / bust).
+  /// Refuses to end the turn early on a non-scoring hand while rolls remain.
   void bank() {
     final t = _turn;
     if (t == null || !t.hasRolled) return;
+    if (!t.canBank && !t.mustFinish) return;
     _resolveBank();
   }
 
@@ -304,8 +314,11 @@ class MatchController {
       );
       _log.add(_lastPayout!.message);
     } else {
-      // Banking with no score before roll 3 shouldn't happen via UI.
-      _log.add('${player.profile.name} ends turn with no score.');
+      // Guard: never advance on a no-score hand while rolls remain.
+      _log.add(
+        '${player.profile.name} still has rolls left — keep rolling.',
+      );
+      return;
     }
 
     _advanceTurn();

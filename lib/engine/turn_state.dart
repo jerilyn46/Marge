@@ -21,12 +21,17 @@ class TurnState {
   final bool hasRolled;
   final ScoreResult lastScore;
 
-  bool get canRoll => rollNumber < 3 && hasRolled
-      ? !dice.allKept
-      : rollNumber < 3;
+  /// Rolls remaining in this turn (3 − rolls already taken).
+  int get rollsLeft => (3 - rollNumber).clamp(0, 3);
+
+  /// Another roll is allowed while rolls remain. Keeping all dice still
+  /// permits rolling (faces stay; the roll is consumed) so the player is
+  /// never soft-locked without a score.
+  bool get canRoll => rollNumber < 3;
 
   bool get canBank => hasRolled && lastScore.isScoring;
 
+  /// True after the 3rd roll — player must bank a score or take the bust.
   bool get mustFinish => rollNumber >= 3;
 
   bool get isFirstRollComplete => rollNumber == 1;

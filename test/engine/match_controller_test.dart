@@ -126,7 +126,35 @@ void main() {
       expect(human.bankCents, 105);
     });
 
-    test('bust after 3 rolls puts 2¢ in pot', () {
+    test('roll1 no score stays on turn with rollsLeft=2', () {
+      // 1,1,2 — not a winning hand
+      final rng = ScriptedRandom([0, 0, 1]);
+      final c = MatchController(
+        config: const MatchConfig(humanCount: 1),
+        rng: rng,
+      );
+      c.startMatch();
+      final humanId = c.snapshot.currentPlayer.profile.id;
+      c.roll();
+      final turn = c.snapshot.turn;
+      expect(turn, isNotNull);
+      expect(turn!.rollNumber, 1);
+      expect(turn.rollsLeft, 2);
+      expect(turn.lastScore.isScoring, isFalse);
+      expect(turn.canRoll, isTrue);
+      expect(turn.canBank, isFalse);
+      expect(turn.mustFinish, isFalse);
+      // Still the same player's turn — must not auto-end.
+      expect(c.snapshot.currentPlayer.profile.id, humanId);
+      expect(c.snapshot.phase, MatchPhase.playing);
+      // bank() must refuse to end early without a score.
+      c.bank();
+      expect(c.snapshot.turn, isNotNull);
+      expect(c.snapshot.currentPlayer.profile.id, humanId);
+      expect(c.snapshot.turn!.rollsLeft, 2);
+    });
+
+    test('bust after 3 no-score rolls puts 2¢ in pot', () {
       // Force non-scoring rolls. Keep re-rolling all.
       // Sequence of 9 faces all pairs-ish: 0,0,1, 0,0,1, 0,0,1 → 1,1,2
       final seq = <int>[];
@@ -140,18 +168,40 @@ void main() {
       );
       c.startMatch();
       final potBefore = c.snapshot.potCents;
-      c.roll(); // 1
+      final humanBefore = c.snapshot.currentPlayer.bankCents;
+      c.roll(); // 1 — no score, turn continues
+      expect(c.snapshot.turn!.rollsLeft, 2);
       expect(c.snapshot.turn!.lastScore.isScoring, isFalse);
-      c.roll(); // 2
-      c.roll(); // 3
-      expect(c.snapshot.turn!.rollNumber, 3);
-      expect(c.snapshot.turn!.lastScore.isScoring, isFalse);
-      final bankBefore = c.snapshot.currentPlayer.bankCents;
-      c.bank();
+      c.roll(); // 2 — still no score
+      expect(c.snapshot.turn!.rollsLeft, 1);
+      c.roll(); // 3 — auto-bust applies
       expect(c.snapshot.potCents, potBefore + 2);
-      // Human paid 2 then turn advanced — find human
+      // Turn advanced after bust — human paid 2¢
       final human = c.snapshot.players.firstWhere((p) => p.profile.isHuman);
-      expect(human.bankCents, bankBefore - 2);
+      expect(human.bankCents, humanBefore - 2);
+      expect(
+        c.snapshot.log.any((l) => l.contains('whiffs')),
+        isTrue,
+      );
+    });
+
+    test('scoring hand can bank early while rolls remain', () {
+      // Three 4s on first roll
+      final rng = ScriptedRandom([3, 3, 3]);
+      final c = MatchController(
+        config: const MatchConfig(humanCount: 1),
+        rng: rng,
+      );
+      c.startMatch();
+      c.roll();
+      expect(c.snapshot.turn!.lastScore.isScoring, isTrue);
+      expect(c.snapshot.turn!.rollsLeft, 2);
+      expect(c.snapshot.turn!.canBank, isTrue);
+      expect(c.snapshot.turn!.canRoll, isTrue);
+      final humanBefore = c.snapshot.currentPlayer.bankCents;
+      c.bank();
+      final human = c.snapshot.players.firstWhere((p) => p.profile.isHuman);
+      expect(human.bankCents, humanBefore + 12);
     });
 
     test('house stake tops up once when soft-broke', () {
