@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../ads/ads_service.dart';
 import '../../services/settings_service.dart';
 import '../theme/marge_theme.dart';
 
@@ -72,6 +73,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Rules tip will show next play')),
+                );
+              }
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.privacy_tip_outlined),
+            title: const Text('Privacy / ad consent'),
+            subtitle: const Text('UMP privacy options (EU/EEA/UK when required)'),
+            onTap: () async {
+              final ads = ref.read(adsServiceProvider);
+              final required = await ads.isPrivacyOptionsRequired();
+              if (!context.mounted) return;
+              if (required) {
+                await ads.showPrivacyOptions();
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Privacy options not required in this region '
+                      '(or ads unavailable on this platform).',
+                    ),
+                  ),
                 );
               }
             },

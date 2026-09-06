@@ -9,6 +9,7 @@ import 'match_screen.dart';
 import 'rules_screen.dart';
 import 'settings_screen.dart';
 import 'shop_screen.dart';
+import '../../ads/banner_ad_widget.dart';
 import '../../cosmetics/skins_service.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -279,7 +280,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   },
                   child: const Text('How to play'),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 12),
+                const Center(child: LobbyBannerAd()),
+                const SizedBox(height: 8),
               ],
             ),
           ),

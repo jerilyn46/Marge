@@ -313,6 +313,17 @@ class CosmeticsNotifier extends Notifier<CosmeticsState> {
     await _persist();
     return toasts;
   }
+
+  /// Grant virtual chips (¢) from a rewarded ad or test hook.
+  /// Virtual currency only — never real money.
+  Future<int> grantVirtualChips(int amount, {String? reason}) async {
+    if (amount <= 0) return state.walletCents;
+    final next = CosmeticsLogic.creditWallet(state, amount);
+    final toast = reason ?? '+$amount¢ virtual chips!';
+    state = next.copyWith(pendingToast: toast);
+    await _persist();
+    return state.walletCents;
+  }
 }
 
 final cosmeticsProvider =

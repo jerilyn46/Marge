@@ -61,6 +61,21 @@ flutter build appbundle --release
 
 See `docs/store/` for Play listing placeholders.
 
+## Ads (AdMob test scaffolding)
+
+See **[docs/ads.md](docs/ads.md)** for dart-define keys, Android App ID injection, UMP consent, and Tester how-to.
+
+Defaults use Google’s official **test** App ID and unit IDs. Do not commit production AdMob IDs.
+
+```bash
+# Ads test APK (Google test IDs by default)
+export PATH="/home/box/sdk/flutter/bin:$PATH"
+source /home/box/sdk/android-env.sh   # if present
+flutter build apk --debug
+# APK: build/app/outputs/flutter-apk/app-debug.apk
+```
+
+
 ## Architecture
 
 ```
@@ -73,6 +88,7 @@ lib/
     bot_ai.dart
     match_controller.dart
   services/        Settings + SFX/haptics stubs
+  ads/             AdMob test IDs, UMP consent, banner/interstitial/rewarded
   ui/
     theme/         Material 3 casual palette
     widgets/       Dice, pot heat meter, banners, confetti
