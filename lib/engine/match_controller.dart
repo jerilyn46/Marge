@@ -11,8 +11,46 @@ enum MatchPhase {
   ante,
   playing,
   betweenTurns,
+  /// Post–turn-end gate: last roll locked until Next/Continue.
+  awaitingHandoff,
   roundEnd,
   matchEnd,
+}
+
+/// Frozen last-roll result shown until the human taps Next/Continue.
+class HandoffState {
+  const HandoffState({
+    required this.diceValues,
+    required this.outcomeText,
+    required this.bankDeltaCents,
+    required this.fromSeatIndex,
+    required this.nextSeatIndex,
+    required this.restartsRound,
+    required this.kind,
+  });
+
+  /// Locked faces from the settled roll (length 3).
+  final List<int> diceValues;
+
+  /// Short outcome label for the sticky strip.
+  final String outcomeText;
+
+  /// Signed bank change for the acting seat (+gain / −bust penalty).
+  final int bankDeltaCents;
+
+  final int fromSeatIndex;
+
+  /// Seat that will become current after confirm (pre-computed; for pot-win
+  /// restart this is the first active seat after the new ante).
+  final int nextSeatIndex;
+
+  /// True when confirming should start a fresh ante round (pot sweep).
+  final bool restartsRound;
+
+  final ScoreKind kind;
+
+  /// Hotseat (other humans present) → "Next player"; else "Continue".
+  static bool isHotseatCta(MatchConfig config) => config.humanCount > 1;
 }
 
 /// Lobby choices for a match.
@@ -116,6 +154,7 @@ class MatchSnapshot {
     required this.lastPayout,
     required this.winnerId,
     required this.config,
+    this.handoff,
   });
 
   final MatchPhase phase;
@@ -128,11 +167,15 @@ class MatchSnapshot {
   final PayoutEvent? lastPayout;
   final String? winnerId;
   final MatchConfig config;
+  final HandoffState? handoff;
 
   PlayerState get currentPlayer => players[currentSeatIndex];
 
   List<PlayerState> get activePlayers =>
       players.where((p) => !p.eliminated).toList();
+
+  bool get awaitingHandoff =>
+      phase == MatchPhase.awaitingHandoff && handoff != null;
 }
 
 /// Orchestrates endless rounds of Marge.
@@ -156,6 +199,7 @@ class MatchController {
   final List<String> _log = [];
   PayoutEvent? _lastPayout;
   String? _winnerId;
+  HandoffState? _handoff;
 
   MatchSnapshot get snapshot => MatchSnapshot(
         phase: _phase,
@@ -168,6 +212,7 @@ class MatchController {
         lastPayout: _lastPayout,
         winnerId: _winnerId,
         config: config,
+        handoff: _handoff,
       );
 
   void startMatch() {
@@ -176,6 +221,7 @@ class MatchController {
     _round = 0;
     _seat = 0;
     _turn = null;
+    _handoff = null;
     _log.clear();
     _lastPayout = null;
     _winnerId = null;
@@ -292,6 +338,7 @@ class MatchController {
 
   /// Human / external: toggle keep on a die (only after first roll).
   void toggleKeep(int index) {
+    if (_phase == MatchPhase.awaitingHandoff) return;
     final t = _turn;
     if (t == null || !t.hasRolled || t.rollNumber >= 3) return;
     if (_players[_seat].profile.isBot) return;
@@ -299,6 +346,7 @@ class MatchController {
   }
 
   void setKeeps(List<bool> flags) {
+    if (_phase == MatchPhase.awaitingHandoff) return;
     final t = _turn;
     if (t == null || !t.hasRolled) return;
     var dice = t.dice;
@@ -310,6 +358,7 @@ class MatchController {
 
   /// Roll non-kept dice (or all on first roll).
   void roll() {
+    if (_phase == MatchPhase.awaitingHandoff) return;
     final t = _turn;
     if (t == null) return;
     if (t.rollNumber >= 3) return;
@@ -352,6 +401,7 @@ class MatchController {
   /// Bank current scoring hand (or finish after 3 rolls / bust).
   /// Refuses to end the turn early on a non-scoring hand while rolls remain.
   void bank() {
+    if (_phase == MatchPhase.awaitingHandoff) return;
     final t = _turn;
     if (t == null || !t.hasRolled) return;
     if (!t.canBank && !t.mustFinish) return;
@@ -375,7 +425,7 @@ class MatchController {
         celebratory: true,
       );
       _log.add(_lastPayout!.message);
-      _endRoundAfterPotWin();
+      _enterHandoff(restartsRound: true);
       return;
     }
 
@@ -408,7 +458,7 @@ class MatchController {
       return;
     }
 
-    _advanceTurn();
+    _enterHandoff(restartsRound: false);
   }
 
   String _describeScore(String name, ScoreResult score, int total) {
@@ -487,33 +537,75 @@ class MatchController {
     return paid;
   }
 
-  void _advanceTurn() {
-    _turn = null;
-    final active = _players.where((p) => !p.eliminated).length;
-    if (active <= 1) {
-      _endMatch();
-      return;
+  /// Short sticky-strip label for the settled outcome.
+  static String shortOutcome(PayoutEvent payout) {
+    switch (payout.kind) {
+      case ScoreKind.tripleOnesPotWin:
+        return 'Pot sweep!';
+      case ScoreKind.tripleOnesPay:
+        return 'Triple ones';
+      case ScoreKind.threeOfAKind:
+        return 'Three of a kind';
+      case ScoreKind.straight:
+        return 'Straight';
+      case ScoreKind.none:
+        return 'Bust';
     }
-
-    // Next active seat.
-    final next = _firstActiveSeat(from: _seat + 1);
-    // If we wrapped past the starting seat of the round without everyone
-    // acting — actually we just keep going endlessly; a "round" ends only
-    // on pot-win. Turns continue around the table forever.
-    _seat = next;
-    _startTurn();
   }
 
-  void _endRoundAfterPotWin() {
-    _turn = null;
+  static int signedBankDelta(PayoutEvent payout) {
+    if (payout.kind == ScoreKind.none) {
+      // Bust: acting seat lost chips to the pot.
+      return -payout.amountCents;
+    }
+    return payout.amountCents;
+  }
+
+  /// Lock last dice and wait for Next/Continue before advancing.
+  void _enterHandoff({required bool restartsRound}) {
+    final t = _turn!;
+    final payout = _lastPayout!;
     final active = _players.where((p) => !p.eliminated).length;
     if (active <= 1) {
+      _turn = null;
+      _handoff = null;
       _endMatch();
       return;
     }
-    _phase = MatchPhase.roundEnd;
-    // Immediately start next round with ante.
-    _beginRound();
+
+    final next = restartsRound
+        ? _firstActiveSeat(from: 0)
+        : _firstActiveSeat(from: _seat + 1);
+
+    _handoff = HandoffState(
+      diceValues: List<int>.unmodifiable(t.dice.values),
+      outcomeText: shortOutcome(payout),
+      bankDeltaCents: signedBankDelta(payout),
+      fromSeatIndex: _seat,
+      nextSeatIndex: next,
+      restartsRound: restartsRound,
+      kind: payout.kind,
+    );
+    // Keep turn dice visible/locked; UI disables interaction while gated.
+    _phase = MatchPhase.awaitingHandoff;
+  }
+
+  /// Dismiss the post-turn strip and start the next seat (or new round).
+  /// Bots must not act until this is called.
+  void confirmHandoff() {
+    if (_phase != MatchPhase.awaitingHandoff || _handoff == null) return;
+    final h = _handoff!;
+    _handoff = null;
+    _turn = null;
+
+    if (h.restartsRound) {
+      _phase = MatchPhase.roundEnd;
+      _beginRound();
+      return;
+    }
+
+    _seat = h.nextSeatIndex;
+    _startTurn();
   }
 
   void endMatch() {
@@ -523,6 +615,7 @@ class MatchController {
   void _endMatch() {
     _phase = MatchPhase.matchEnd;
     _turn = null;
+    _handoff = null;
     final sorted = [..._players]
       ..sort((a, b) => b.bankCents.compareTo(a.bankCents));
     _winnerId = sorted.first.profile.id;
@@ -534,6 +627,7 @@ class MatchController {
 
   /// Drive one bot action if current seat is a bot. Returns true if acted.
   bool tickBot() {
+    if (_phase == MatchPhase.awaitingHandoff) return false;
     if (_phase != MatchPhase.playing) return false;
     final p = _players[_seat];
     if (!p.profile.isBot || p.eliminated) return false;
@@ -571,6 +665,7 @@ class MatchController {
     var steps = 0;
     while (steps < maxSteps &&
         _phase == MatchPhase.playing &&
+        _handoff == null &&
         _players[_seat].profile.isBot) {
       tickBot();
       steps++;

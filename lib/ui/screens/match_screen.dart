@@ -8,6 +8,7 @@ import '../match_provider.dart';
 import '../theme/marge_theme.dart';
 import '../widgets/confetti_overlay.dart';
 import '../widgets/die_widget.dart';
+import '../widgets/handoff_strip.dart';
 import '../widgets/payout_banner.dart';
 import '../widgets/player_chip.dart';
 import '../widgets/pot_meter.dart';
@@ -29,8 +30,16 @@ class MatchScreen extends ConsumerWidget {
     }
 
     final turn = snap.turn;
+    final handoff = snap.handoff;
+    final gated = snap.awaitingHandoff;
+    final showStrip = view.showHandoffStrip;
     final isHumanTurn = snap.currentPlayer.profile.isHuman;
-    final canInteract = isHumanTurn && !view.busyBot;
+    final canInteract = isHumanTurn && !view.busyBot && !gated;
+    final hotseat = HandoffState.isHotseatCta(snap.config);
+
+    // Locked faces during handoff (prefer frozen handoff values).
+    final List<int>? lockedFaces = handoff?.diceValues ??
+        (turn != null && turn.hasRolled ? turn.dice.values : null);
 
     return Scaffold(
       body: Stack(
@@ -68,7 +77,7 @@ class MatchScreen extends ConsumerWidget {
                       },
                     ),
                   ),
-                  if (snap.lastPayout != null) ...[
+                  if (snap.lastPayout != null && !showStrip) ...[
                     const SizedBox(height: 10),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -76,18 +85,26 @@ class MatchScreen extends ConsumerWidget {
                     ),
                   ],
                   const Spacer(),
-                  _TurnBanner(snapshot: snap, busyBot: view.busyBot),
+                  _TurnBanner(
+                    snapshot: snap,
+                    busyBot: view.busyBot,
+                    gated: gated,
+                  ),
                   const SizedBox(height: 16),
-                  if (turn != null && turn.hasRolled)
+                  if (lockedFaces != null)
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         for (var i = 0; i < 3; i++) ...[
                           if (i > 0) const SizedBox(width: 12),
                           DieWidget(
-                            value: turn.dice.dice[i].value,
-                            kept: turn.dice.dice[i].kept,
-                            enabled: canInteract && turn.rollNumber < 3,
+                            value: lockedFaces[i],
+                            kept: gated
+                                ? true
+                                : (turn?.dice.dice[i].kept ?? false),
+                            enabled: canInteract &&
+                                turn != null &&
+                                turn.rollNumber < 3,
                             theme: skinTheme,
                             onTap: () =>
                                 ref.read(matchProvider.notifier).toggleKeep(i),
@@ -115,7 +132,10 @@ class MatchScreen extends ConsumerWidget {
                         ),
                       ),
                     ),
-                  if (turn != null && turn.hasRolled && turn.rollsLeft > 0)
+                  if (!gated &&
+                      turn != null &&
+                      turn.hasRolled &&
+                      turn.rollsLeft > 0)
                     Padding(
                       padding: const EdgeInsets.only(top: 10),
                       child: Text(
@@ -131,7 +151,7 @@ class MatchScreen extends ConsumerWidget {
                         ),
                       ),
                     ),
-                  if (turn != null && turn.lastScore.isScoring)
+                  if (!gated && turn != null && turn.lastScore.isScoring)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: Text(
@@ -143,46 +163,57 @@ class MatchScreen extends ConsumerWidget {
                       ),
                     ),
                   const Spacer(),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: canInteract &&
-                                    turn != null &&
-                                    turn.canRoll
-                                ? () => ref.read(matchProvider.notifier).roll()
-                                : null,
-                            child: Text(
-                              turn == null || !turn.hasRolled
-                                  ? 'ROLL'
-                                  : 'ROLL AGAIN (${turn.rollsLeft} left)',
+                  if (showStrip && handoff != null)
+                    HandoffStrip(
+                      handoff: handoff,
+                      hotseat: hotseat,
+                      skinTheme: skinTheme,
+                      onConfirm: () =>
+                          ref.read(matchProvider.notifier).confirmHandoff(),
+                    )
+                  else
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: canInteract &&
+                                      turn != null &&
+                                      turn.canRoll
+                                  ? () =>
+                                      ref.read(matchProvider.notifier).roll()
+                                  : null,
+                              child: Text(
+                                turn == null || !turn.hasRolled
+                                    ? 'ROLL'
+                                    : 'ROLL AGAIN (${turn.rollsLeft} left)',
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: FilledButton(
-                            onPressed: canInteract &&
-                                    turn != null &&
-                                    turn.hasRolled &&
-                                    (turn.canBank || turn.mustFinish)
-                                ? () => ref.read(matchProvider.notifier).bank()
-                                : null,
-                            child: Text(
-                              turn != null &&
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: canInteract &&
+                                      turn != null &&
                                       turn.hasRolled &&
-                                      !turn.lastScore.isScoring &&
-                                      turn.mustFinish
-                                  ? 'BUST (2¢)'
-                                  : 'BANK',
+                                      (turn.canBank || turn.mustFinish)
+                                  ? () =>
+                                      ref.read(matchProvider.notifier).bank()
+                                  : null,
+                              child: Text(
+                                turn != null &&
+                                        turn.hasRolled &&
+                                        !turn.lastScore.isScoring &&
+                                        turn.mustFinish
+                                    ? 'BUST (2¢)'
+                                    : 'BANK',
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
@@ -245,10 +276,15 @@ class MatchScreen extends ConsumerWidget {
 }
 
 class _TurnBanner extends StatelessWidget {
-  const _TurnBanner({required this.snapshot, required this.busyBot});
+  const _TurnBanner({
+    required this.snapshot,
+    required this.busyBot,
+    this.gated = false,
+  });
 
   final MatchSnapshot snapshot;
   final bool busyBot;
+  final bool gated;
 
   @override
   Widget build(BuildContext context) {
@@ -260,7 +296,10 @@ class _TurnBanner extends StatelessWidget {
         player.profile.id != 'human_0';
 
     final String title;
-    if (busyBot) {
+    if (gated) {
+      title =
+          '${player.profile.avatarEmoji} ${player.profile.name} — result';
+    } else if (busyBot) {
       title =
           '${player.profile.avatarEmoji} ${player.profile.name} is rolling…';
     } else if (player.profile.isHuman) {
@@ -283,7 +322,7 @@ class _TurnBanner extends StatelessWidget {
             fontSize: 16,
           ),
         ),
-        if (isHotseatOther && !busyBot) ...[
+        if (isHotseatOther && !busyBot && !gated) ...[
           const SizedBox(height: 6),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),

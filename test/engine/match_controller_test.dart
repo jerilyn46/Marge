@@ -166,16 +166,33 @@ void main() {
       expect(c.snapshot.currentPlayer.profile.isHuman, isTrue);
       final before = c.snapshot.currentPlayer.bankCents;
       c.roll();
-      final s = c.snapshot;
+      var s = c.snapshot;
       expect(s.lastPayout?.kind, ScoreKind.tripleOnesPotWin);
       expect(s.lastPayout?.celebratory, isTrue);
       expect(s.lastPayout?.amountCents, 40);
-      // After pot win, round restarts with ante.
+      expect(s.phase, MatchPhase.awaitingHandoff);
+      expect(s.handoff, isNotNull);
+      expect(s.handoff!.outcomeText, 'Pot sweep!');
+      expect(s.handoff!.bankDeltaCents, 40);
+      expect(s.handoff!.diceValues, [1, 1, 1]);
+      expect(s.handoff!.restartsRound, isTrue);
+      // Banks updated, but ante / next round wait for confirm.
+      final winnerMid =
+          s.players.firstWhere((p) => p.profile.isHuman);
+      expect(winnerMid.bankCents, before + 40);
+      expect(s.potCents, 0);
+      expect(s.roundNumber, 1);
+
+      c.confirmHandoff();
+      s = c.snapshot;
+      // After pot win + confirm, round restarts with ante.
       // Winner: before+40, then ante -10 → before+30
       final winner = s.players.firstWhere((p) => p.profile.isHuman);
       expect(winner.bankCents, before + 40 - 10);
       expect(s.potCents, 40); // new ante
       expect(s.roundNumber, 2);
+      expect(s.phase, MatchPhase.playing);
+      expect(s.handoff, isNull);
       expect(
         s.log.any((l) => l.contains('sweeps the pot')),
         isTrue,
@@ -350,10 +367,82 @@ void main() {
       expect(c.snapshot.currentPlayer.profile.id, 'human_0');
       c.roll();
       c.roll();
-      c.roll(); // bust → advance
+      c.roll(); // bust → handoff gate
+      expect(c.snapshot.phase, MatchPhase.awaitingHandoff);
+      expect(c.snapshot.currentPlayer.profile.id, 'human_0');
+      expect(HandoffState.isHotseatCta(c.config), isTrue);
+      c.confirmHandoff();
       expect(c.snapshot.currentPlayer.profile.id, 'human_1');
       expect(c.snapshot.currentPlayer.profile.name, 'Player 2');
       expect(c.snapshot.currentPlayer.profile.isHuman, isTrue);
+      expect(c.snapshot.phase, MatchPhase.playing);
+    });
+
+    test('handoff gate: bank holds next seat until confirm', () {
+      final rng = ScriptedRandom([3, 3, 3]); // trips on 4
+      final c = MatchController(
+        config: const MatchConfig(botCount: 3, otherHumanCount: 0),
+        rng: rng,
+      );
+      c.startMatch();
+      c.roll();
+      c.bank();
+      expect(c.snapshot.phase, MatchPhase.awaitingHandoff);
+      expect(c.snapshot.handoff, isNotNull);
+      expect(c.snapshot.handoff!.outcomeText, 'Three of a kind');
+      expect(c.snapshot.handoff!.bankDeltaCents, 12);
+      expect(c.snapshot.handoff!.diceValues, [4, 4, 4]);
+      expect(c.snapshot.handoff!.restartsRound, isFalse);
+      expect(c.snapshot.currentSeatIndex, 0);
+      // Solo vs bots → Continue CTA (not Next player).
+      expect(HandoffState.isHotseatCta(c.config), isFalse);
+      // Bots must not act while gated.
+      expect(c.tickBot(), isFalse);
+      c.confirmHandoff();
+      expect(c.snapshot.phase, MatchPhase.playing);
+      expect(c.snapshot.handoff, isNull);
+      expect(c.snapshot.currentSeatIndex, 1);
+      expect(c.snapshot.currentPlayer.profile.isBot, isTrue);
+    });
+
+    test('handoff gate: bust signed delta is negative', () {
+      final seq = <int>[];
+      for (var r = 0; r < 3; r++) {
+        seq.addAll([0, 0, 1]);
+      }
+      final c = MatchController(
+        config: const MatchConfig(botCount: 1, otherHumanCount: 0),
+        rng: ScriptedRandom(seq),
+      );
+      c.startMatch();
+      c.roll();
+      c.roll();
+      c.roll();
+      expect(c.snapshot.phase, MatchPhase.awaitingHandoff);
+      expect(c.snapshot.handoff!.outcomeText, 'Bust');
+      expect(c.snapshot.handoff!.bankDeltaCents, -2);
+      expect(c.snapshot.turn, isNotNull); // dice still locked on turn
+      c.confirmHandoff();
+      expect(c.snapshot.handoff, isNull);
+      expect(c.snapshot.turn!.hasRolled, isFalse);
+      expect(c.snapshot.currentPlayer.profile.isBot, isTrue);
+    });
+
+    test('mid-turn no-score does not enter handoff (keep rolling)', () {
+      final rng = ScriptedRandom([0, 0, 1]);
+      final c = MatchController(
+        config: const MatchConfig(botCount: 1, otherHumanCount: 0),
+        rng: rng,
+      );
+      c.startMatch();
+      c.roll();
+      expect(c.snapshot.phase, MatchPhase.playing);
+      expect(c.snapshot.handoff, isNull);
+      expect(c.snapshot.turn!.rollsLeft, 2);
+      expect(c.snapshot.turn!.canBank, isFalse);
+      c.bank(); // refused
+      expect(c.snapshot.phase, MatchPhase.playing);
+      expect(c.snapshot.handoff, isNull);
     });
   });
 }
