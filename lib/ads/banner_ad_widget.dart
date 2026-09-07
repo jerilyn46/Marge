@@ -22,55 +22,62 @@ class _LobbyBannerAdState extends ConsumerState<LobbyBannerAd> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _loadIfNeeded();
+    // Wait for lobby layout so MediaQuery / adaptive AdSize are valid.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadIfNeeded();
+    });
   }
 
   Future<void> _loadIfNeeded() async {
     if (_banner != null || !adsPlatformSupported) return;
-    final ads = ref.read(adsServiceProvider);
-    // Wait briefly for consent + SDK init started in main().
-    for (var i = 0; i < 30 && !ads.isReady; i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-      if (!mounted) return;
-      if (!adsPlatformSupported) return;
-      // canRequestAds may still unlock later
-      if (ads.canRequestAdsFlag && !ads.isReady) {
-        await ads.refreshConsentAndAds();
+    try {
+      final ads = ref.read(adsServiceProvider);
+      // Wait briefly for deferred consent + SDK init from main().
+      for (var i = 0; i < 30 && !ads.isReady; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        if (!mounted) return;
+        if (!adsPlatformSupported) return;
+        // canRequestAds may still unlock later
+        if (ads.canRequestAdsFlag && !ads.isReady) {
+          await ads.refreshConsentAndAds();
+        }
+        if (ads.isReady) break;
       }
-      if (ads.isReady) break;
-    }
-    if (!mounted || !ads.isReady) return;
+      if (!mounted || !ads.isReady) return;
 
-    final width = MediaQuery.sizeOf(context).width.truncate();
-    final size = await AdSize.getLargeAnchoredAdaptiveBannerAdSize(width);
-    if (size == null || !mounted) return;
+      final width = MediaQuery.sizeOf(context).width.truncate();
+      final size = await AdSize.getLargeAnchoredAdaptiveBannerAdSize(width);
+      if (size == null || !mounted) return;
 
-    final banner = BannerAd(
-      adUnitId: AdIds.banner,
-      size: size,
-      request: const AdRequest(),
-      listener: BannerAdListener(
-        onAdLoaded: (ad) {
-          if (!mounted) {
+      final banner = BannerAd(
+        adUnitId: AdIds.banner,
+        size: size,
+        request: const AdRequest(),
+        listener: BannerAdListener(
+          onAdLoaded: (ad) {
+            if (!mounted) {
+              ad.dispose();
+              return;
+            }
+            setState(() => _loaded = true);
+          },
+          onAdFailedToLoad: (ad, error) {
+            debugPrint('LobbyBannerAd: failed to load: $error');
             ad.dispose();
-            return;
-          }
-          setState(() => _loaded = true);
-        },
-        onAdFailedToLoad: (ad, error) {
-          debugPrint('LobbyBannerAd: failed to load: $error');
-          ad.dispose();
-          if (mounted) {
-            setState(() {
-              _banner = null;
-              _loaded = false;
-            });
-          }
-        },
-      ),
-    );
-    setState(() => _banner = banner);
-    await banner.load();
+            if (mounted) {
+              setState(() {
+                _banner = null;
+                _loaded = false;
+              });
+            }
+          },
+        ),
+      );
+      setState(() => _banner = banner);
+      await banner.load();
+    } catch (e, st) {
+      debugPrint('LobbyBannerAd: load aborted: $e\n$st');
+    }
   }
 
   @override

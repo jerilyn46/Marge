@@ -20,6 +20,8 @@ Plugin: `google_mobile_ads` (see `pubspec.yaml`)
 
 On supported mobile platforms, `AdsService.bootstrap()` runs **User Messaging Platform** (`ConsentInformation` / `ConsentForm`) before initializing `MobileAds` and loading ads. Personalized ad requests are gated with `canRequestAds()`.
 
+**Startup:** `main()` calls `runApp` first, then schedules `bootstrap()` after the first frame (try/catch). Never await MobileAds/UMP before the lobby — cold-start on Android (e.g. Flip 7) crashed when consent ran with no ready Activity.
+
 Settings → **Privacy / ad consent** opens the UMP privacy options form when required (EU/EEA/UK message types).
 
 ## Dart-define keys (ad unit IDs)
