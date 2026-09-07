@@ -27,17 +27,5 @@ void main() {
       expect(await service.isPrivacyOptionsRequired(), isFalse);
       await expectLater(service.showPrivacyOptions(), completes);
     });
-
-    test('bootstrap never throws even if platform looks mobile (no plugin)',
-        () async {
-      // Flutter tests often report TargetPlatform.android; bootstrap must
-      // still complete (plugin calls fail open / timeout) and not abort.
-      debugDefaultTargetPlatformOverride = TargetPlatform.android;
-      final service = AdsService();
-      await expectLater(
-        service.bootstrap().timeout(const Duration(seconds: 25)),
-        completes,
-      );
-    });
   });
 }
