@@ -35,8 +35,9 @@ class AdsService {
 
   bool get canRequestAdsFlag => _consentReady;
 
-  /// Run once at app start (before first ad request). Safe on unsupported
-  /// platforms (no-op).
+  /// Run once after first frame (never await before [runApp]). Safe on
+  /// unsupported platforms (no-op). Never throws — ads failures must not
+  /// abort cold start.
   Future<void> bootstrap() async {
     if (_initialized) return;
     _initialized = true;
@@ -44,36 +45,59 @@ class AdsService {
       debugPrint('AdsService: platform unsupported — ads disabled');
       return;
     }
-    await _gatherConsentThenInit();
+    try {
+      await _gatherConsentThenInit();
+    } catch (e, st) {
+      debugPrint('AdsService: bootstrap failed: $e\n$st');
+      // Fail open so test IDs can still load outside consent-required regions.
+      try {
+        _consentReady = true;
+        await _ensureMobileAdsInitialized();
+      } catch (e2, st2) {
+        debugPrint('AdsService: fail-open MobileAds init failed: $e2\n$st2');
+      }
+    }
   }
 
   Future<void> _gatherConsentThenInit() async {
     final completer = Completer<void>();
     final params = ConsentRequestParameters();
 
-    ConsentInformation.instance.requestConsentInfoUpdate(
-      params,
-      () async {
-        ConsentForm.loadAndShowConsentFormIfRequired((FormError? error) async {
-          if (error != null) {
-            debugPrint(
-              'AdsService: consent form error ${error.errorCode}: ${error.message}',
-            );
+    try {
+      ConsentInformation.instance.requestConsentInfoUpdate(
+        params,
+        () async {
+          try {
+            ConsentForm.loadAndShowConsentFormIfRequired((FormError? error) async {
+              if (error != null) {
+                debugPrint(
+                  'AdsService: consent form error ${error.errorCode}: ${error.message}',
+                );
+              }
+              await _finishConsentAndMaybeInitAds();
+              if (!completer.isCompleted) completer.complete();
+            });
+          } catch (e, st) {
+            debugPrint('AdsService: loadAndShowConsentForm failed: $e\n$st');
+            await _finishConsentAndMaybeInitAds();
+            if (!completer.isCompleted) completer.complete();
           }
+        },
+        (FormError error) async {
+          debugPrint(
+            'AdsService: consent info error ${error.errorCode}: ${error.message}',
+          );
           await _finishConsentAndMaybeInitAds();
           if (!completer.isCompleted) completer.complete();
-        });
-      },
-      (FormError error) async {
-        debugPrint(
-          'AdsService: consent info error ${error.errorCode}: ${error.message}',
-        );
-        await _finishConsentAndMaybeInitAds();
-        if (!completer.isCompleted) completer.complete();
-      },
-    );
+        },
+      );
+    } catch (e, st) {
+      debugPrint('AdsService: requestConsentInfoUpdate failed: $e\n$st');
+      await _finishConsentAndMaybeInitAds();
+      if (!completer.isCompleted) completer.complete();
+    }
 
-    // Don't block app launch forever if UMP hangs.
+    // Don't hang forever if UMP never callbacks (post-runApp, so UI already up).
     await completer.future.timeout(
       const Duration(seconds: 20),
       onTimeout: () async {
@@ -140,15 +164,25 @@ class AdsService {
   Future<void> showPrivacyOptions() async {
     if (!adsPlatformSupported) return;
     final completer = Completer<void>();
-    ConsentForm.showPrivacyOptionsForm((FormError? error) {
-      if (error != null) {
-        debugPrint(
-          'AdsService: privacy options ${error.errorCode}: ${error.message}',
-        );
-      }
+    try {
+      ConsentForm.showPrivacyOptionsForm((FormError? error) {
+        if (error != null) {
+          debugPrint(
+            'AdsService: privacy options ${error.errorCode}: ${error.message}',
+          );
+        }
+        if (!completer.isCompleted) completer.complete();
+      });
+    } catch (e, st) {
+      debugPrint('AdsService: showPrivacyOptions failed: $e\n$st');
       if (!completer.isCompleted) completer.complete();
-    });
-    await completer.future;
+    }
+    await completer.future.timeout(
+      const Duration(seconds: 30),
+      onTimeout: () {
+        debugPrint('AdsService: privacy options timed out');
+      },
+    );
     await refreshConsentAndAds();
   }
 
@@ -311,7 +345,7 @@ class AdsService {
   }
 }
 
-/// Process-wide ads service (initialized in [main] before [runApp]).
+/// Process-wide ads service (bootstrapped from [main] after first frame).
 final adsServiceProvider = Provider<AdsService>((ref) {
   final service = AdsService();
   ref.onDispose(service.dispose);
