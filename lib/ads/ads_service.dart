@@ -45,18 +45,29 @@ class AdsService {
       debugPrint('AdsService: platform unsupported — ads disabled');
       return;
     }
-    try {
-      await _gatherConsentThenInit();
-    } catch (e, st) {
-      debugPrint('AdsService: bootstrap failed: $e\n$st');
-      // Fail open so test IDs can still load outside consent-required regions.
+    // Platform channel errors from UMP/GMA can surface as uncaught async
+    // zone errors (not only as thrown Futures). Contain them so ads never
+    // abort the app isolate after lobby is up.
+    final done = Completer<void>();
+    runZonedGuarded(() async {
       try {
-        _consentReady = true;
-        await _ensureMobileAdsInitialized();
-      } catch (e2, st2) {
-        debugPrint('AdsService: fail-open MobileAds init failed: $e2\n$st2');
+        await _gatherConsentThenInit();
+      } catch (e, st) {
+        debugPrint('AdsService: bootstrap failed: $e\n$st');
+        try {
+          _consentReady = true;
+          await _ensureMobileAdsInitialized();
+        } catch (e2, st2) {
+          debugPrint('AdsService: fail-open MobileAds init failed: $e2\n$st2');
+        }
+      } finally {
+        if (!done.isCompleted) done.complete();
       }
-    }
+    }, (e, st) {
+      debugPrint('AdsService: uncaught ads zone error: $e\n$st');
+      if (!done.isCompleted) done.complete();
+    });
+    await done.future;
   }
 
   Future<void> _gatherConsentThenInit() async {
@@ -129,7 +140,8 @@ class AdsService {
     if (_mobileAdsInitialized || _startingAds) return;
     _startingAds = true;
     try {
-      await MobileAds.instance.initialize();
+      final ads = MobileAds.instance;
+      await ads.initialize();
       _mobileAdsInitialized = true;
       debugPrint(
         'AdsService: MobileAds ready '
