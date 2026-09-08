@@ -61,14 +61,29 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     return null;
   }
 
-  void start({int botCount = 3, int otherHumanCount = 0, String? playerName}) {
+  void start({
+    int botCount = 3,
+    int otherHumanCount = 0,
+    int onlinePlayerCount = 0,
+    String? playerName,
+  }) {
     _botTimer?.cancel();
-    final clamped = MatchConfig.clampLobby(botCount, otherHumanCount);
-    botCount = clamped.$1;
-    otherHumanCount = clamped.$2;
-    // Ensure at least one opponent (lobby UI should already enforce this).
+    final plan = MatchConfig.clampLobbyCounts(
+      botCount,
+      otherHumanCount,
+      onlinePlayerCount,
+    );
+    botCount = plan.bots;
+    otherHumanCount = plan.others;
+    onlinePlayerCount = plan.online;
+    // Waiting chairs are not opponents. Do not invent a bot to fill them.
+    // Only the old bots/humans-only path gets a lone-bot fallback.
     if (botCount + otherHumanCount < 1) {
-      botCount = 1;
+      if (onlinePlayerCount == 0) {
+        botCount = 1;
+      } else {
+        return;
+      }
     }
 
     final localName = playerName ?? 'You';
@@ -80,6 +95,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       config: MatchConfig(
         botCount: botCount,
         otherHumanCount: otherHumanCount,
+        onlinePlayerCount: onlinePlayerCount,
         localPlayerName: localName,
         humanNames: names,
       ),
@@ -98,6 +114,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     start(
       botCount: cfg?.botCount ?? 3,
       otherHumanCount: cfg?.otherHumanCount ?? 0,
+      onlinePlayerCount: cfg?.onlinePlayerCount ?? 0,
       playerName: name,
     );
   }

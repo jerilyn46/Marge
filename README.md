@@ -9,9 +9,9 @@ A colorful casual dice table game for Android (and web). Configurable seats (bot
 
 ## Rules
 
-- **2–8 seats.** Lobby: choose **0–4 bots** and **0–4 other hotseat humans** (at least 1 opponent; you + up to 7 others). Default: **3 bots, 0 other humans**.
+- **2–8 seats.** Lobby: **you**, then **0–4 other hotseat humans**, then **0–4 online seats**, then **0–4 bots** filling leftover seats only (at least 1 playable opponent). Default: **3 bots, 0 other humans, 0 online**. There is no live matchmaking; chosen online seats stay **Waiting for player** and are never converted into bots.
 - **Start bank:** 100¢ each.
-- **Round ante:** each seated player pays **10¢** into the pot.
+- **Round ante:** each playing seat pays **10¢** into the pot. Waiting online chairs do not ante.
 - **Turn:** 3 dice, up to **3 rolls**. Keep any subset between rolls. Bank early once you have a scoring hand.
 - **Scoring priority**
   1. Three 1s on the **first** roll of the turn → win the **entire pot**; new round with ante.

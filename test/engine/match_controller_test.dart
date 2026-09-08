@@ -49,12 +49,29 @@ void main() {
     test('clamp helpers cap at 7 opponents and 0–4 steppers', () {
       expect(MatchConfig.clampLobby(4, 4), (3, 4)); // trims bots to keep others
       expect(MatchConfig.clampBots(4, 4), 3);
-      expect(MatchConfig.clampOthers(4, 4), 3);
+      // Local humans are seated first, so bots do not reduce the human count.
+      expect(MatchConfig.clampOthers(4, 4), 4);
       expect(MatchConfig.clampLobby(9, 0), (4, 0));
       expect(MatchConfig.clampOthers(0, 9), 4);
       expect(MatchConfig.canIncrementBots(4, 3), isFalse); // 7 already
       expect(MatchConfig.canIncrementOthers(3, 4), isFalse);
       expect(MatchConfig.canIncrementBots(2, 2), isTrue);
+    });
+
+    test('online seats are reserved before bots fill leftovers', () {
+      final plan = MatchConfig.clampLobbyCounts(4, 1, 4);
+      // 1 hotseat + 4 online = 5 reserved; 2 seats left for bots (max 4).
+      expect(plan.others, 1);
+      expect(plan.online, 4);
+      expect(plan.bots, 2);
+      expect(MatchConfig.canIncrementBots(2, 1, 4), isFalse);
+      expect(MatchConfig.canIncrementOnline(2, 1, 4), isFalse);
+      expect(MatchConfig.canIncrementOthers(2, 1, 4), isTrue);
+      // Raising humans trims online, then bots — never the other way around.
+      final humansFirst = MatchConfig.clampLobbyCounts(4, 4, 4);
+      expect(humansFirst.others, 4);
+      expect(humansFirst.online, 3);
+      expect(humansFirst.bots, 0);
     });
   });
 
@@ -73,6 +90,95 @@ void main() {
       }
       expect(s.players.where((p) => p.profile.isHuman).length, 1);
       expect(s.players.where((p) => p.profile.isBot).length, 3);
+    });
+
+    test('humans then waiting online then leftover bots', () {
+      final c = MatchController(
+        config: const MatchConfig(
+          botCount: 2,
+          otherHumanCount: 1,
+          onlinePlayerCount: 2,
+          humanNames: ['A', 'B'],
+        ),
+        rng: Random(1),
+      );
+      c.startMatch();
+      final players = c.snapshot.players;
+      expect(players.map((p) => p.profile.kind).toList(), [
+        SeatKind.human,
+        SeatKind.human,
+        SeatKind.waiting,
+        SeatKind.waiting,
+        SeatKind.bot,
+        SeatKind.bot,
+      ]);
+      expect(players[0].profile.name, 'A');
+      expect(players[1].profile.name, 'B');
+      expect(players[2].profile.name, WaitingSeat.name);
+      expect(players[3].profile.name, WaitingSeat.name);
+      expect(players[2].profile.id, 'online_0');
+      expect(players[3].profile.isWaiting, isTrue);
+      expect(players[2].profile.isBot, isFalse);
+      expect(players[4].profile.name, 'Spike');
+      expect(players[5].profile.name, 'Mira');
+      // Waiting chairs do not ante or invent a person.
+      expect(c.snapshot.potCents, 40); // you + human + 2 bots
+      expect(players[2].bankCents, 0);
+      expect(players.where((p) => p.profile.isBot).length, 2);
+      expect(c.config.onlineSeatsAreWaiting, isTrue);
+      expect(c.snapshot.log.first, contains('waiting for online players'));
+    });
+
+    test('waiting seats do not pay on a scored hand and are skipped', () {
+      final rng = ScriptedRandom([3, 3, 3]); // three 4s
+      final c = MatchController(
+        config: const MatchConfig(
+          botCount: 1,
+          otherHumanCount: 0,
+          onlinePlayerCount: 2,
+        ),
+        rng: rng,
+      );
+      c.startMatch();
+      expect(c.snapshot.players[1].profile.name, WaitingSeat.name);
+      expect(c.snapshot.players[2].profile.name, WaitingSeat.name);
+      expect(c.snapshot.players[3].profile.isBot, isTrue);
+      expect(c.snapshot.potCents, 20); // you + bot only
+      final botBefore = c.snapshot.players[3].bankCents;
+      c.roll();
+      c.bank();
+      // Face 4 from the one playable opponent, not the waiting chairs.
+      final human = c.snapshot.players.firstWhere((p) => p.profile.isHuman);
+      expect(human.bankCents, 90 + 4);
+      expect(c.snapshot.players[1].bankCents, 0);
+      expect(c.snapshot.players[2].bankCents, 0);
+      expect(c.snapshot.players[3].bankCents, botBefore - 4);
+      expect(c.snapshot.currentPlayer.profile.isHuman, isTrue);
+    });
+
+    test('turn skips waiting chairs and lands on the next bot', () {
+      final seq = <int>[];
+      for (var r = 0; r < 3; r++) {
+        seq.addAll([0, 0, 1]);
+      }
+      final c = MatchController(
+        config: const MatchConfig(
+          botCount: 1,
+          otherHumanCount: 0,
+          onlinePlayerCount: 2,
+        ),
+        rng: ScriptedRandom(seq),
+      );
+      c.startMatch();
+      c.roll();
+      c.roll();
+      c.roll();
+      expect(c.snapshot.phase, MatchPhase.awaitingHandoff);
+      expect(c.snapshot.handoff!.nextSeatIndex, 3);
+      c.confirmHandoff();
+      expect(c.snapshot.currentPlayer.profile.isBot, isTrue);
+      expect(c.snapshot.currentPlayer.profile.name, 'Spike');
+      expect(c.snapshot.players.any((p) => p.profile.isWaiting), isTrue);
     });
 
     test('hotseat 1 other human + 2 bots', () {
