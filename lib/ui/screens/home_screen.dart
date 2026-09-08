@@ -23,9 +23,10 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  /// Default: 3 bots, 0 other humans (classic solo feel).
+  /// Default: 3 bots, 0 other humans, 0 online (classic solo feel).
   int _bots = 3;
   int _otherHumans = 0;
+  int _online = 0;
 
   @override
   void initState() {
@@ -33,17 +34,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     unawaited(StartupLog.mark('lobby-widget'));
   }
 
-  int get _opponents => _bots + _otherHumans;
-  int get _totalSeats => 1 + _opponents;
+  /// Playable opponents only. Waiting online chairs do not count.
+  int get _playableOpponents => _bots + _otherHumans;
+  int get _totalSeats => 1 + _otherHumans + _online + _bots;
   bool get _canStart =>
-      _opponents >= 1 && _opponents <= MatchConfig.maxOpponents;
+      _playableOpponents >= 1 &&
+      _playableOpponents <= MatchConfig.maxOpponents &&
+      _totalSeats <= MatchConfig.maxOpponents + 1;
+
+  void _applyPlan(int bots, int others, int online) {
+    final plan = MatchConfig.clampLobbyCounts(bots, others, online);
+    _bots = plan.bots;
+    _otherHumans = plan.others;
+    _online = plan.online;
+  }
 
   void _setBots(int value) {
-    setState(() => _bots = MatchConfig.clampBots(value, _otherHumans));
+    setState(() => _applyPlan(value, _otherHumans, _online));
   }
 
   void _setOthers(int value) {
-    setState(() => _otherHumans = MatchConfig.clampOthers(_bots, value));
+    setState(() => _applyPlan(_bots, value, _online));
+  }
+
+  void _setOnline(int value) {
+    setState(() => _applyPlan(_bots, _otherHumans, value));
+  }
+
+  String get _seatSummary {
+    final parts = <String>['You'];
+    if (_otherHumans > 0) {
+      parts.add('$_otherHumans human${_otherHumans == 1 ? '' : 's'}');
+    }
+    if (_online > 0) {
+      parts.add('$_online online (waiting)');
+    }
+    if (_bots > 0) {
+      parts.add('$_bots bot${_bots == 1 ? '' : 's'}');
+    }
+    return parts.join(' + ');
   }
 
   @override
@@ -61,7 +90,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ),
         child: SafeArea(
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -101,7 +130,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ),
                   ],
                 ),
-                const Spacer(flex: 2),
+                const SizedBox(height: 12),
                 Text(
                   '🎲 MARGE',
                   textAlign: TextAlign.center,
@@ -128,7 +157,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     color: MargeColors.cream.withValues(alpha: 0.8),
                   ),
                 ),
-                const Spacer(flex: 2),
+                const SizedBox(height: 12),
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
@@ -150,21 +179,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         ),
                         const SizedBox(height: 16),
                         _CountStepper(
-                          label: 'Bots',
-                          subtitle: 'Auto-play opponents',
-                          value: _bots,
-                          onDecrement: _bots > 0
-                              ? () => _setBots(_bots - 1)
-                              : null,
-                          onIncrement:
-                              MatchConfig.canIncrementBots(_bots, _otherHumans)
-                              ? () => _setBots(_bots + 1)
-                              : null,
-                        ),
-                        const SizedBox(height: 12),
-                        _CountStepper(
                           label: 'Other players',
-                          subtitle: 'Local hotseat humans',
+                          subtitle: 'Local hotseat humans · seated first',
                           value: _otherHumans,
                           onDecrement: _otherHumans > 0
                               ? () => _setOthers(_otherHumans - 1)
@@ -173,8 +189,44 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               MatchConfig.canIncrementOthers(
                                 _bots,
                                 _otherHumans,
+                                _online,
                               )
                               ? () => _setOthers(_otherHumans + 1)
+                              : null,
+                        ),
+                        const SizedBox(height: 12),
+                        _CountStepper(
+                          label: 'Online players',
+                          subtitle:
+                              'Reserved before bots · waiting if no one joins',
+                          value: _online,
+                          onDecrement: _online > 0
+                              ? () => _setOnline(_online - 1)
+                              : null,
+                          onIncrement:
+                              MatchConfig.canIncrementOnline(
+                                _bots,
+                                _otherHumans,
+                                _online,
+                              )
+                              ? () => _setOnline(_online + 1)
+                              : null,
+                        ),
+                        const SizedBox(height: 12),
+                        _CountStepper(
+                          label: 'Bots',
+                          subtitle: 'Fill leftover seats only',
+                          value: _bots,
+                          onDecrement: _bots > 0
+                              ? () => _setBots(_bots - 1)
+                              : null,
+                          onIncrement:
+                              MatchConfig.canIncrementBots(
+                                _bots,
+                                _otherHumans,
+                                _online,
+                              )
+                              ? () => _setBots(_bots + 1)
                               : null,
                         ),
                         const SizedBox(height: 16),
@@ -200,9 +252,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                'You'
-                                '${_otherHumans > 0 ? ' + $_otherHumans human${_otherHumans == 1 ? '' : 's'}' : ''}'
-                                '${_bots > 0 ? ' + $_bots bot${_bots == 1 ? '' : 's'}' : ''}',
+                                _seatSummary,
                                 style: TextStyle(
                                   color: MargeColors.cream.withValues(
                                     alpha: 0.8,
@@ -210,11 +260,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   fontSize: 13,
                                 ),
                               ),
+                              if (_online > 0) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  'No live match yet. Those seats show as '
+                                  '"Waiting for player" and are not filled by bots.',
+                                  style: TextStyle(
+                                    color: MargeColors.gold.withValues(
+                                      alpha: 0.9,
+                                    ),
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
                               if (!_canStart) ...[
                                 const SizedBox(height: 6),
-                                const Text(
-                                  'Add at least 1 bot or other player.',
-                                  style: TextStyle(
+                                Text(
+                                  _online > 0
+                                      ? 'Online seats are waiting. Add a bot or local player to play until someone joins.'
+                                      : 'Add at least 1 bot or other player.',
+                                  style: const TextStyle(
                                     color: MargeColors.coral,
                                     fontWeight: FontWeight.w700,
                                     fontSize: 13,
@@ -237,6 +303,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               .start(
                                 botCount: _bots,
                                 otherHumanCount: _otherHumans,
+                                onlinePlayerCount: _online,
                                 playerName: settings.playerName,
                               );
                           Navigator.of(context).push(
