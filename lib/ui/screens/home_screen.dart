@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../engine/engine.dart';
+import '../../services/coin_ledger.dart';
+import '../../services/friends_service.dart';
 import '../../services/settings_service.dart';
 import '../match_provider.dart';
 import '../theme/marge_theme.dart';
@@ -27,6 +29,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _bots = 3;
   int _otherHumans = 0;
   int _online = 0;
+  final _friendName = TextEditingController();
+  String? _friendError;
+
+  @override
+  void dispose() {
+    _friendName.dispose();
+    super.dispose();
+  }
+
+  int _seatedFriends(FriendsState friends) => friends.seatedNames.length;
 
   @override
   void initState() {
@@ -36,35 +48,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   /// Playable opponents only. Waiting online chairs do not count.
   int get _playableOpponents => _bots + _otherHumans;
-  int get _totalSeats => 1 + _otherHumans + _online + _bots;
-  bool get _canStart =>
+  int _totalSeats(int friends) => 1 + _otherHumans + friends + _online + _bots;
+  bool _canStart(int friends) =>
       _playableOpponents >= 1 &&
       _playableOpponents <= MatchConfig.maxOpponents &&
-      _totalSeats <= MatchConfig.maxOpponents + 1;
+      _totalSeats(friends) <= MatchConfig.maxOpponents + 1;
 
-  void _applyPlan(int bots, int others, int online) {
-    final plan = MatchConfig.clampLobbyCounts(bots, others, online);
+  void _applyPlan(int bots, int others, int online, int friends) {
+    final plan = MatchConfig.clampLobbyCounts(bots, others, online, friends);
     _bots = plan.bots;
     _otherHumans = plan.others;
     _online = plan.online;
   }
 
   void _setBots(int value) {
-    setState(() => _applyPlan(value, _otherHumans, _online));
+    final friends = _seatedFriends(ref.read(friendsProvider));
+    setState(() => _applyPlan(value, _otherHumans, _online, friends));
   }
 
   void _setOthers(int value) {
-    setState(() => _applyPlan(_bots, value, _online));
+    final friends = _seatedFriends(ref.read(friendsProvider));
+    setState(() => _applyPlan(_bots, value, _online, friends));
   }
 
   void _setOnline(int value) {
-    setState(() => _applyPlan(_bots, _otherHumans, value));
+    final friends = _seatedFriends(ref.read(friendsProvider));
+    setState(() => _applyPlan(_bots, _otherHumans, value, friends));
   }
 
   String get _seatSummary {
     final parts = <String>['You'];
     if (_otherHumans > 0) {
       parts.add('$_otherHumans human${_otherHumans == 1 ? '' : 's'}');
+    }
+    final seatedFriends = _seatedFriends(ref.read(friendsProvider));
+    if (seatedFriends > 0) {
+      parts.add('$seatedFriends friend${seatedFriends == 1 ? '' : 's'}');
     }
     if (_online > 0) {
       parts.add('$_online online (waiting)');
@@ -79,6 +98,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
     final wallet = ref.watch(cosmeticsProvider).walletCents;
+    final friends = ref.watch(friendsProvider);
+    final ledger = ref.watch(coinLedgerProvider);
+    final seated = friends.seatedNames;
+    final friendCount = seated.length;
+    final canStart = _canStart(friendCount);
+    final seats = PlayerCoinLedger.lobbySeats(
+      localName: settings.playerName,
+      otherHumans: _otherHumans,
+      online: _online,
+      bots: _bots,
+      friendNames: seated,
+      ledger: ledger,
+    );
 
     return Scaffold(
       body: Container(
@@ -190,6 +222,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 _bots,
                                 _otherHumans,
                                 _online,
+                                friendCount,
                               )
                               ? () => _setOthers(_otherHumans + 1)
                               : null,
@@ -208,6 +241,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 _bots,
                                 _otherHumans,
                                 _online,
+                                friendCount,
                               )
                               ? () => _setOnline(_online + 1)
                               : null,
@@ -225,6 +259,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 _bots,
                                 _otherHumans,
                                 _online,
+                                friendCount,
                               )
                               ? () => _setBots(_bots + 1)
                               : null,
@@ -244,7 +279,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Seats: $_totalSeats / 8',
+                                'Seats: ${_totalSeats(friendCount)} / 8',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w800,
                                   fontSize: 15,
@@ -274,11 +309,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   ),
                                 ),
                               ],
-                              if (!_canStart) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                'Coins',
+                                style: TextStyle(
+                                  color: MargeColors.gold.withValues(alpha: 0.9),
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              for (final seat in seats)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 2),
+                                  child: Text(
+                                    seat.waiting && seat.coins == null
+                                        ? '${seat.emoji}  ${seat.name}  —'
+                                        : '${seat.emoji}  ${seat.name}  ${seat.coins}¢',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              if (!canStart) ...[
                                 const SizedBox(height: 6),
                                 Text(
-                                  _online > 0
-                                      ? 'Online seats are waiting. Add a bot or local player to play until someone joins.'
+                                  _online > 0 || friendCount > 0
+                                      ? 'Waiting seats do not play. Add a bot or local player to start.'
                                       : 'Add at least 1 bot or other player.',
                                   style: const TextStyle(
                                     color: MargeColors.coral,
@@ -295,8 +353,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                _FriendsCard(
+                  controller: _friendName,
+                  error: _friendError,
+                  friends: friends,
+                  ledger: ledger,
+                  onAdd: () async {
+                    final err = await ref
+                        .read(friendsProvider.notifier)
+                        .add(_friendName.text);
+                    if (!mounted) return;
+                    setState(() => _friendError = err);
+                    if (err == null) _friendName.clear();
+                    final count = ref.read(friendsProvider).seatedNames.length;
+                    setState(
+                      () => _applyPlan(_bots, _otherHumans, _online, count),
+                    );
+                  },
+                  onRemove: (name) async {
+                    await ref.read(friendsProvider.notifier).remove(name);
+                    if (!mounted) return;
+                    final count = ref.read(friendsProvider).seatedNames.length;
+                    setState(
+                      () => _applyPlan(_bots, _otherHumans, _online, count),
+                    );
+                  },
+                  onToggle: (name, seated) async {
+                    await ref
+                        .read(friendsProvider.notifier)
+                        .setSeated(name, seated);
+                    if (!mounted) return;
+                    final count = ref.read(friendsProvider).seatedNames.length;
+                    setState(
+                      () => _applyPlan(_bots, _otherHumans, _online, count),
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
                 ElevatedButton(
-                  onPressed: _canStart
+                  onPressed: canStart
                       ? () {
                           ref
                               .read(matchProvider.notifier)
@@ -304,6 +399,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 botCount: _bots,
                                 otherHumanCount: _otherHumans,
                                 onlinePlayerCount: _online,
+                                friendNames: seated,
                                 playerName: settings.playerName,
                               );
                           Navigator.of(context).push(
@@ -434,6 +530,120 @@ class _CountStepper extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _FriendsCard extends StatelessWidget {
+  const _FriendsCard({
+    required this.controller,
+    required this.error,
+    required this.friends,
+    required this.ledger,
+    required this.onAdd,
+    required this.onRemove,
+    required this.onToggle,
+  });
+
+  final TextEditingController controller;
+  final String? error;
+  final FriendsState friends;
+  final PlayerCoinLedger ledger;
+  final VoidCallback onAdd;
+  final void Function(String name) onRemove;
+  final void Function(String name, bool seated) onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Friends',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'People you know. They sit before bots as named waiting chairs — no live connection.',
+              style: TextStyle(
+                color: MargeColors.cream.withValues(alpha: 0.75),
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: controller,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(
+                      hintText: 'Add a friend by name',
+                      isDense: true,
+                    ),
+                    onSubmitted: (_) => onAdd(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: onAdd,
+                  child: const Text('Add'),
+                ),
+              ],
+            ),
+            if (error != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                error!,
+                style: const TextStyle(
+                  color: MargeColors.coral,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+            if (friends.friends.isEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                'No friends yet.',
+                style: TextStyle(
+                  color: MargeColors.cream.withValues(alpha: 0.7),
+                  fontSize: 13,
+                ),
+              ),
+            ],
+            for (final friend in friends.friends)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Checkbox(
+                  value: friend.seated,
+                  onChanged: (v) => onToggle(friend.name, v ?? false),
+                ),
+                title: Text(
+                  friend.name,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                subtitle: Text(
+                  '${ledger.openingCents(friend.name, bot: false, fallback: PlayerCoinLedger.startingCents)}¢',
+                  style: const TextStyle(
+                    color: MargeColors.gold,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                trailing: IconButton(
+                  tooltip: 'Remove ${friend.name}',
+                  onPressed: () => onRemove(friend.name),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

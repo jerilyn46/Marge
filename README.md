@@ -10,7 +10,7 @@ A colorful casual dice table game for Android (and web). Configurable seats (bot
 ## Rules
 
 - **2–8 seats.** Lobby: **you**, then **0–4 other hotseat humans**, then **0–4 online seats**, then **0–4 bots** filling leftover seats only (at least 1 playable opponent). Default: **3 bots, 0 other humans, 0 online**. There is no live matchmaking; chosen online seats stay **Waiting for player** and are never converted into bots.
-- **Start bank:** 100¢ each.
+- **Start bank:** each identity keeps its saved coins (100¢ if new). Humans and friends persist forever. Bots reset to 100¢ every Monday 00:00 America/Denver.
 - **Round ante:** each playing seat pays **10¢** into the pot. Waiting online chairs do not ante.
 - **Turn:** 3 dice, up to **3 rolls**. Keep any subset between rolls. Bank early once you have a scoring hand.
 - **Scoring priority**
@@ -87,7 +87,7 @@ lib/
     player.dart
     bot_ai.dart
     match_controller.dart
-  services/        Settings + SFX/haptics stubs
+  services/        Settings, coin ledger, friends, local turn notices
   ads/             AdMob test IDs, UMP consent, banner/interstitial/rewarded
   ui/
     theme/         Material 3 casual palette

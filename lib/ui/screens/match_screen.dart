@@ -66,6 +66,30 @@ class MatchScreen extends ConsumerWidget {
                     child: PotMeter(potCents: snap.potCents),
                   ),
                   const SizedBox(height: 12),
+                  if (view.turnNotice != null) ...[
+                    const SizedBox(height: 8),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Material(
+                        color: MargeColors.gold.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          child: Text(
+                            view.turnNotice!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: MargeColors.gold,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                   SizedBox(
                     height: 72,
                     child: ListView.separated(

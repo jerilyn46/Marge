@@ -110,4 +110,17 @@ class BotRoster {
       colorSeed: 4,
     ),
   ];
+
+  static const extraEmojis = <String>['🎯', '🃏', '🐉'];
+
+  /// Display name for bot index 0..n. Matches the table roster.
+  static String nameAt(int botIdx) {
+    if (botIdx < bots.length) return bots[botIdx].name;
+    return 'Bot ${botIdx + 1}';
+  }
+
+  static String emojiAt(int botIdx) {
+    if (botIdx < bots.length) return bots[botIdx].avatarEmoji;
+    return extraEmojis[botIdx % extraEmojis.length];
+  }
 }

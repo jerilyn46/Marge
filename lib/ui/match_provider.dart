@@ -5,8 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../cosmetics/skins_service.dart';
 import '../engine/engine.dart';
+import '../services/coin_ledger.dart';
+import '../services/friends_service.dart';
+import '../services/local_turn_alerts.dart';
 import '../services/settings_service.dart';
 import '../services/sfx_service.dart';
+import '../services/turn_notice.dart';
 
 class MatchViewState {
   const MatchViewState({
@@ -17,6 +21,9 @@ class MatchViewState {
 
     /// When true, pot-win celebration is playing; sticky strip waits.
     this.holdHandoffStrip = false,
+
+    /// In-app "{name}'s turn" banner. Local notification is separate.
+    this.turnNotice,
   });
 
   final MatchSnapshot snapshot;
@@ -24,6 +31,7 @@ class MatchViewState {
   final bool busyBot;
   final String? unlockBanner;
   final bool holdHandoffStrip;
+  final String? turnNotice;
 
   /// Sticky result strip is ready to show (gate active, celebration done).
   bool get showHandoffStrip =>
@@ -36,6 +44,8 @@ class MatchViewState {
     String? unlockBanner,
     bool clearUnlockBanner = false,
     bool? holdHandoffStrip,
+    String? turnNotice,
+    bool clearTurnNotice = false,
   }) => MatchViewState(
     snapshot: snapshot ?? this.snapshot,
     showConfetti: showConfetti ?? this.showConfetti,
@@ -44,13 +54,16 @@ class MatchViewState {
         ? null
         : (unlockBanner ?? this.unlockBanner),
     holdHandoffStrip: holdHandoffStrip ?? this.holdHandoffStrip,
+    turnNotice: clearTurnNotice ? null : (turnNotice ?? this.turnNotice),
   );
 }
 
 class MatchNotifier extends Notifier<MatchViewState?> {
   MatchController? _controller;
   final SfxService _sfx = SfxService();
+  final LocalTurnAlerts _alerts = LocalTurnAlerts();
   Timer? _botTimer;
+  String? _lastNoticeSeatId;
 
   /// Seat index of the local (device) player — always 0.
   static const int localSeat = 0;
@@ -65,21 +78,29 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     int botCount = 3,
     int otherHumanCount = 0,
     int onlinePlayerCount = 0,
+    List<String> friendNames = const [],
     String? playerName,
   }) {
     _botTimer?.cancel();
+    _lastNoticeSeatId = null;
+    final chosen = [
+      for (final name in friendNames)
+        if (name.trim().isNotEmpty) name.trim(),
+    ];
     final plan = MatchConfig.clampLobbyCounts(
       botCount,
       otherHumanCount,
       onlinePlayerCount,
+      chosen.length,
     );
     botCount = plan.bots;
     otherHumanCount = plan.others;
     onlinePlayerCount = plan.online;
+    final seatedFriends = chosen.take(plan.friends).toList();
     // Waiting chairs are not opponents. Do not invent a bot to fill them.
     // Only the old bots/humans-only path gets a lone-bot fallback.
     if (botCount + otherHumanCount < 1) {
-      if (onlinePlayerCount == 0) {
+      if (onlinePlayerCount == 0 && seatedFriends.isEmpty) {
         botCount = 1;
       } else {
         return;
@@ -91,20 +112,24 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       localName,
       for (var i = 0; i < otherHumanCount; i++) 'Player ${i + 2}',
     ];
+    final coins = ref.read(coinLedgerProvider.notifier).prepare();
     _controller = MatchController(
       config: MatchConfig(
         botCount: botCount,
         otherHumanCount: otherHumanCount,
         onlinePlayerCount: onlinePlayerCount,
+        friendNames: seatedFriends,
         localPlayerName: localName,
         humanNames: names,
       ),
       rng: Random(),
+      coins: coins,
     );
     _controller!.startMatch();
     ref.read(cosmeticsProvider.notifier).beginMatch();
     _syncSettings();
     state = MatchViewState(snapshot: _controller!.snapshot);
+    _announceTurn();
     _scheduleBots();
   }
 
@@ -115,6 +140,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       botCount: cfg?.botCount ?? 3,
       otherHumanCount: cfg?.otherHumanCount ?? 0,
       onlinePlayerCount: cfg?.onlinePlayerCount ?? 0,
+      friendNames: cfg?.friendNames ?? const [],
       playerName: name,
     );
   }
@@ -138,7 +164,37 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       busyBot: state?.busyBot ?? false,
       unlockBanner: unlockBanner ?? state?.unlockBanner,
       holdHandoffStrip: holdHandoffStrip ?? false,
+      turnNotice: state?.turnNotice,
     );
+    _announceTurn();
+  }
+
+  /// Local "{name}'s turn" for You or a friend in the group. Bots never notify.
+  void _announceTurn() {
+    final c = _controller;
+    final current = state;
+    if (c == null || current == null) return;
+    if (c.snapshot.phase != MatchPhase.playing) return;
+    final seat = c.snapshot.currentPlayer;
+    if (!seat.profile.isHuman) {
+      if (current.turnNotice != null) {
+        state = current.copyWith(clearTurnNotice: true);
+      }
+      return;
+    }
+    if (seat.profile.id == _lastNoticeSeatId) return;
+    final friends = ref.read(friendsProvider).names;
+    final localName = ref.read(settingsProvider).playerName;
+    final msg = TurnNotice.forSeat(
+      seatName: seat.profile.name,
+      kind: seat.profile.kind,
+      localName: localName,
+      friendNames: friends,
+    );
+    if (msg == null) return;
+    _lastNoticeSeatId = seat.profile.id;
+    state = current.copyWith(turnNotice: msg);
+    unawaited(_alerts.show(msg));
   }
 
   void clearUnlockBanner() {

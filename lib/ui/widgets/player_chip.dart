@@ -77,12 +77,16 @@ class PlayerChip extends StatelessWidget {
                 ),
                 Text(
                   waiting
-                      ? 'Waiting'
+                      ? (player.profile.name == WaitingSeat.name
+                            ? 'Waiting'
+                            : '${player.bankCents}¢ · waiting')
                       : (player.eliminated ? 'OUT' : '${player.bankCents}¢'),
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: compact ? 11 : 13,
-                    color: waiting ? MargeColors.cream : MargeColors.gold,
+                    color: waiting && player.profile.name == WaitingSeat.name
+                        ? MargeColors.cream
+                        : MargeColors.gold,
                   ),
                 ),
               ],

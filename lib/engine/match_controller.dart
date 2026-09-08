@@ -4,6 +4,7 @@ import 'bot_ai.dart';
 import 'dice.dart';
 import 'hand_evaluator.dart';
 import 'player.dart';
+import 'seat_coin_book.dart';
 import 'turn_state.dart';
 
 enum MatchPhase {
@@ -55,14 +56,15 @@ class HandoffState {
 }
 
 /// Resolved lobby counts after seating priority is applied.
-typedef LobbySeatPlan = ({int bots, int others, int online});
+typedef LobbySeatPlan = ({int bots, int others, int online, int friends});
 
 /// Lobby choices for a match.
 ///
 /// Always includes the local user as seat 0 ("You" / Player 1).
-/// Seating order is fixed: local user, other hotseat humans, reserved
-/// online slots, then bots filling leftover seats. Bots never displace a
-/// human or online chair.
+/// Seating order is fixed: local user, other hotseat humans, chosen
+/// friends (named waiting chairs — no live session), reserved online
+/// slots, then bots filling leftover seats. Bots never displace a human,
+/// friend, or online chair.
 ///
 /// There is no live matchmaking session in this app. [onlinePlayerCount]
 /// reserves chairs labeled [WaitingSeat.name]; it does not invent players
@@ -72,6 +74,7 @@ class MatchConfig {
     this.botCount = 3,
     this.otherHumanCount = 0,
     this.onlinePlayerCount = 0,
+    this.friendNames = const [],
     this.startBankCents = 100,
     this.anteCents = 10,
     this.houseStakeCents = 50,
@@ -88,9 +91,13 @@ class MatchConfig {
   /// Hotseat humans besides the local user (preferred range 0–4).
   final int otherHumanCount;
 
-  /// Reserved online chairs (0–4). Seated after local humans, before bots.
+  /// Reserved online chairs (0–4). Seated after friends, before bots.
   /// With no live session these stay waiting and do not play.
   final int onlinePlayerCount;
+
+  /// Friends the local player chose to sit. They are not on this device,
+  /// so they are named waiting chairs — not bots and not invented players.
+  final List<String> friendNames;
 
   final int startBankCents;
   final int anteCents;
@@ -107,8 +114,11 @@ class MatchConfig {
   /// Total human seats including the local user.
   int get humanCount => 1 + otherHumanCount;
 
-  /// Total chairs at the table (local + hotseat + online + bots).
-  int get seatCount => 1 + otherHumanCount + onlinePlayerCount + botCount;
+  int get friendCount => friendNames.length;
+
+  /// Total chairs at the table (local + hotseat + friends + online + bots).
+  int get seatCount =>
+      1 + otherHumanCount + friendCount + onlinePlayerCount + botCount;
 
   /// Seats that roll, ante, and pay (waiting chairs excluded).
   int get playableSeatCount => 1 + otherHumanCount + botCount;
@@ -143,15 +153,24 @@ class MatchConfig {
     int bots,
     int others, [
     int online = 0,
+    int friends = 0,
   ]) {
     final seatedOthers = others.clamp(0, maxOtherHumansSelectable);
-    final afterHumans = (maxOpponents - seatedOthers).clamp(0, maxOpponents);
+    var remaining = (maxOpponents - seatedOthers).clamp(0, maxOpponents);
+    // Friends sit before unnamed online chairs and before bots.
+    final seatedFriends = friends.clamp(0, remaining);
+    remaining -= seatedFriends;
     final seatedOnline = online
         .clamp(0, maxOnlineSelectable)
-        .clamp(0, afterHumans);
-    final afterOnline = afterHumans - seatedOnline;
-    final seatedBots = bots.clamp(0, maxBotsSelectable).clamp(0, afterOnline);
-    return (bots: seatedBots, others: seatedOthers, online: seatedOnline);
+        .clamp(0, remaining);
+    remaining -= seatedOnline;
+    final seatedBots = bots.clamp(0, maxBotsSelectable).clamp(0, remaining);
+    return (
+      bots: seatedBots,
+      others: seatedOthers,
+      online: seatedOnline,
+      friends: seatedFriends,
+    );
   }
 
   /// Clamp bot count to leftover seats after humans and online (0–4).
@@ -174,17 +193,33 @@ class MatchConfig {
   }
 
   /// Whether the +bot stepper should be enabled. Bots only fill leftover seats.
-  static bool canIncrementBots(int bots, int others, [int online = 0]) =>
-      bots < maxBotsSelectable && bots + others + online < maxOpponents;
+  static bool canIncrementBots(
+    int bots,
+    int others, [
+    int online = 0,
+    int friends = 0,
+  ]) =>
+      bots < maxBotsSelectable &&
+      bots + others + online + friends < maxOpponents;
 
   /// Whether the +other-human stepper should be enabled.
   /// Local humans bump bots (and online, if needed) rather than being blocked.
-  static bool canIncrementOthers(int bots, int others, [int online = 0]) =>
+  static bool canIncrementOthers(
+    int bots,
+    int others, [
+    int online = 0,
+    int friends = 0,
+  ]) =>
       others < maxOtherHumansSelectable && others < maxOpponents;
 
   /// Whether the +online stepper should be enabled. Online is seated before bots.
-  static bool canIncrementOnline(int bots, int others, int online) =>
-      online < maxOnlineSelectable && others + online < maxOpponents;
+  static bool canIncrementOnline(
+    int bots,
+    int others,
+    int online, [
+    int friends = 0,
+  ]) =>
+      online < maxOnlineSelectable && others + friends + online < maxOpponents;
 }
 
 class MatchSnapshot {
@@ -225,12 +260,15 @@ class MatchSnapshot {
 
 /// Orchestrates endless rounds of Marge.
 class MatchController {
-  MatchController({MatchConfig? config, Random? rng})
+  MatchController({MatchConfig? config, Random? rng, this.coins})
     : config = config ?? const MatchConfig(),
       rng = rng ?? Random();
 
   final MatchConfig config;
   final Random rng;
+
+  /// Saved per-player banks. Null keeps the old per-match start bank.
+  final SeatCoinBook? coins;
   late final BotAI _botAI = BotAI(rng);
 
   late List<PlayerState> _players;
@@ -286,10 +324,22 @@ class MatchController {
     BotPersonality.chaotic,
   ];
 
-  static const _botEmojis = <String>['🔥', '🧊', '⚡', '🌟', '🎯', '🃏', '🐉'];
-
   bool _plays(PlayerState player) =>
       player.profile.participates && !player.eliminated;
+
+  int _openingBank(String name, {required bool bot}) {
+    final book = coins;
+    if (book == null) return config.startBankCents;
+    return book.openingCents(name, bot: bot, fallback: config.startBankCents);
+  }
+
+  void _remember(int index) {
+    final book = coins;
+    if (book == null) return;
+    final p = _players[index];
+    if (!p.profile.participates) return;
+    book.write(p.profile.name, bot: p.profile.isBot, cents: p.bankCents);
+  }
 
   List<PlayerState> _buildSeats() {
     // Priority: local user, other hotseat humans, online reservations, bots.
@@ -316,7 +366,25 @@ class MatchController {
             avatarEmoji: i == 0 ? '😎' : '🎲',
             colorSeed: 10 + i,
           ),
-          bankCents: config.startBankCents,
+          bankCents: _openingBank(name, bot: false),
+        ),
+      );
+    }
+
+    for (var i = 0; i < config.friendNames.length; i++) {
+      final name = config.friendNames[i].trim();
+      if (name.isEmpty) continue;
+      seats.add(
+        PlayerState(
+          profile: PlayerProfile(
+            id: 'friend_$i',
+            name: name,
+            kind: SeatKind.waiting,
+            avatarEmoji: '👋',
+            colorSeed: 30 + i,
+          ),
+          // Saved coins stay visible; waiting friends do not ante or roll.
+          bankCents: _openingBank(name, bot: false),
         ),
       );
     }
@@ -338,19 +406,11 @@ class MatchController {
 
     for (var botIdx = 0; botIdx < config.botCount; botIdx++) {
       final personality = _personalities[botIdx % _personalities.length];
-      final String name;
-      final String emoji;
-      final int colorSeed;
-      if (botIdx < BotRoster.bots.length) {
-        final roster = BotRoster.bots[botIdx];
-        name = roster.name;
-        emoji = roster.avatarEmoji;
-        colorSeed = roster.colorSeed;
-      } else {
-        name = 'Bot ${botIdx + 1}';
-        emoji = _botEmojis[botIdx % _botEmojis.length];
-        colorSeed = 20 + botIdx;
-      }
+      final name = BotRoster.nameAt(botIdx);
+      final emoji = BotRoster.emojiAt(botIdx);
+      final colorSeed = botIdx < BotRoster.bots.length
+          ? BotRoster.bots[botIdx].colorSeed
+          : 20 + botIdx;
       seats.add(
         PlayerState(
           profile: PlayerProfile(
@@ -361,7 +421,7 @@ class MatchController {
             avatarEmoji: emoji,
             colorSeed: colorSeed,
           ),
-          bankCents: config.startBankCents,
+          bankCents: _openingBank(name, bot: true),
         ),
       );
     }
@@ -618,6 +678,7 @@ class MatchController {
     if (cents <= 0) return;
     final p = _players[index];
     _players[index] = p.copyWith(bankCents: p.bankCents + cents);
+    _remember(index);
   }
 
   /// Soft take: apply house stake once if needed; never go negative.
@@ -628,6 +689,7 @@ class MatchController {
 
     if (p.bankCents >= amount) {
       _players[index] = p.copyWith(bankCents: p.bankCents - amount);
+      _remember(index);
       return amount;
     }
 
@@ -642,6 +704,7 @@ class MatchController {
       _players[index] = p;
       if (p.bankCents >= amount) {
         _players[index] = p.copyWith(bankCents: p.bankCents - amount);
+        _remember(index);
         return amount;
       }
     }
@@ -659,6 +722,7 @@ class MatchController {
       }
     }
     _players[index] = p;
+    _remember(index);
     return paid;
   }
 
