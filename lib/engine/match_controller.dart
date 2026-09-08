@@ -4,6 +4,7 @@ import 'bot_ai.dart';
 import 'dice.dart';
 import 'hand_evaluator.dart';
 import 'player.dart';
+import 'seat_coin_book.dart';
 import 'turn_state.dart';
 
 enum MatchPhase {
@@ -11,6 +12,7 @@ enum MatchPhase {
   ante,
   playing,
   betweenTurns,
+
   /// Post–turn-end gate: last roll locked until Next/Continue.
   awaitingHandoff,
   roundEnd,
@@ -53,29 +55,49 @@ class HandoffState {
   static bool isHotseatCta(MatchConfig config) => config.humanCount > 1;
 }
 
+/// Resolved lobby counts after seating priority is applied.
+typedef LobbySeatPlan = ({int bots, int others, int online, int friends});
+
 /// Lobby choices for a match.
 ///
 /// Always includes the local user as seat 0 ("You" / Player 1).
-/// [botCount] and [otherHumanCount] are independent choosers (0–4 each),
-/// with validation: at least one opponent total, and at most 7 opponents
-/// (8 seats including the local user).
+/// Seating order is fixed: local user, other hotseat humans, chosen
+/// friends (named waiting chairs — no live session), reserved online
+/// slots, then bots filling leftover seats. Bots never displace a human,
+/// friend, or online chair.
+///
+/// There is no live matchmaking session in this app. [onlinePlayerCount]
+/// reserves chairs labeled [WaitingSeat.name]; it does not invent players
+/// or convert those chairs into bots.
 class MatchConfig {
   const MatchConfig({
     this.botCount = 3,
     this.otherHumanCount = 0,
+    this.onlinePlayerCount = 0,
+    this.friendNames = const [],
     this.startBankCents = 100,
     this.anteCents = 10,
     this.houseStakeCents = 50,
     this.localPlayerName = 'You',
     this.humanNames,
-  })  : assert(botCount >= 0),
-        assert(otherHumanCount >= 0);
+  }) : assert(botCount >= 0),
+       assert(otherHumanCount >= 0),
+       assert(onlinePlayerCount >= 0);
 
-  /// Number of bot seats (preferred range 0–4).
+  /// Number of bot seats that actually sit (preferred range 0–4).
+  /// Leftover after humans and online reservations — never more.
   final int botCount;
 
   /// Hotseat humans besides the local user (preferred range 0–4).
   final int otherHumanCount;
+
+  /// Reserved online chairs (0–4). Seated after friends, before bots.
+  /// With no live session these stay waiting and do not play.
+  final int onlinePlayerCount;
+
+  /// Friends the local player chose to sit. They are not on this device,
+  /// so they are named waiting chairs — not bots and not invented players.
+  final List<String> friendNames;
 
   final int startBankCents;
   final int anteCents;
@@ -86,16 +108,26 @@ class MatchConfig {
 
   /// Optional explicit human names. Index 0 = local user; remaining are
   /// other hotseat players. If null/short, defaults are generated.
+  /// Never used for online waiting chairs.
   final List<String>? humanNames;
 
   /// Total human seats including the local user.
   int get humanCount => 1 + otherHumanCount;
 
-  /// Total seated players (local + others + bots).
-  int get seatCount => 1 + otherHumanCount + botCount;
+  int get friendCount => friendNames.length;
 
-  /// Opponents excluding the local user.
+  /// Total chairs at the table (local + hotseat + friends + online + bots).
+  int get seatCount =>
+      1 + otherHumanCount + friendCount + onlinePlayerCount + botCount;
+
+  /// Seats that roll, ante, and pay (waiting chairs excluded).
+  int get playableSeatCount => 1 + otherHumanCount + botCount;
+
+  /// Playable opponents excluding the local user. Waiting chairs do not count.
   int get opponentCount => otherHumanCount + botCount;
+
+  /// True when reserved online chairs exist and no live session can fill them.
+  bool get onlineSeatsAreWaiting => onlinePlayerCount > 0;
 
   /// Max opponents allowed (local user + 7 others = 8 seats).
   static const int maxOpponents = 7;
@@ -103,43 +135,91 @@ class MatchConfig {
   /// Preferred max on each lobby stepper.
   static const int maxBotsSelectable = 4;
   static const int maxOtherHumansSelectable = 4;
+  static const int maxOnlineSelectable = 4;
 
   bool get isValid =>
       opponentCount >= 1 &&
       opponentCount <= maxOpponents &&
       botCount >= 0 &&
       otherHumanCount >= 0 &&
+      onlinePlayerCount >= 0 &&
+      onlinePlayerCount <= maxOnlineSelectable &&
       seatCount >= 2 &&
       seatCount <= maxOpponents + 1;
 
-  /// Clamp bot count against a fixed other-human count (0–4, ≤7 opponents).
-  static int clampBots(int bots, int others) {
-    final o = others.clamp(0, maxOtherHumansSelectable);
-    final maxB = (maxOpponents - o).clamp(0, maxBotsSelectable);
-    return bots.clamp(0, maxB);
+  /// Humans, then online, then bots. Bots are trimmed first so they never
+  /// displace a local human or a reserved online chair.
+  static LobbySeatPlan clampLobbyCounts(
+    int bots,
+    int others, [
+    int online = 0,
+    int friends = 0,
+  ]) {
+    final seatedOthers = others.clamp(0, maxOtherHumansSelectable);
+    var remaining = (maxOpponents - seatedOthers).clamp(0, maxOpponents);
+    // Friends sit before unnamed online chairs and before bots.
+    final seatedFriends = friends.clamp(0, remaining);
+    remaining -= seatedFriends;
+    final seatedOnline = online
+        .clamp(0, maxOnlineSelectable)
+        .clamp(0, remaining);
+    remaining -= seatedOnline;
+    final seatedBots = bots.clamp(0, maxBotsSelectable).clamp(0, remaining);
+    return (
+      bots: seatedBots,
+      others: seatedOthers,
+      online: seatedOnline,
+      friends: seatedFriends,
+    );
   }
 
-  /// Clamp other-human count against a fixed bot count (0–4, ≤7 opponents).
-  static int clampOthers(int bots, int others) {
-    final b = bots.clamp(0, maxBotsSelectable);
-    final maxO = (maxOpponents - b).clamp(0, maxOtherHumansSelectable);
-    return others.clamp(0, maxO);
-  }
+  /// Clamp bot count to leftover seats after humans and online (0–4).
+  static int clampBots(int bots, int others, [int online = 0]) =>
+      clampLobbyCounts(bots, others, online).bots;
 
-  /// Clamp both into the valid lobby space (trims bots first if over cap).
+  /// Local humans are seated first. Bots and online do not reduce this cap
+  /// (they are trimmed when the full plan is applied).
+  static int clampOthers(int bots, int others, [int online = 0]) =>
+      clampLobbyCounts(bots, others, online).others;
+
+  /// Clamp online reservations to seats left after local humans (0–4).
+  static int clampOnline(int bots, int others, int online) =>
+      clampLobbyCounts(bots, others, online).online;
+
+  /// Clamp into the valid lobby space (trims bots, then online, to keep humans).
   static (int bots, int others) clampLobby(int bots, int others) {
-    final o = others.clamp(0, maxOtherHumansSelectable);
-    final b = clampBots(bots, o);
-    return (b, o);
+    final plan = clampLobbyCounts(bots, others, 0);
+    return (plan.bots, plan.others);
   }
 
-  /// Whether the +bot stepper should be enabled from [bots]/[others].
-  static bool canIncrementBots(int bots, int others) =>
-      bots < maxBotsSelectable && bots + others < maxOpponents;
+  /// Whether the +bot stepper should be enabled. Bots only fill leftover seats.
+  static bool canIncrementBots(
+    int bots,
+    int others, [
+    int online = 0,
+    int friends = 0,
+  ]) =>
+      bots < maxBotsSelectable &&
+      bots + others + online + friends < maxOpponents;
 
   /// Whether the +other-human stepper should be enabled.
-  static bool canIncrementOthers(int bots, int others) =>
-      others < maxOtherHumansSelectable && bots + others < maxOpponents;
+  /// Local humans bump bots (and online, if needed) rather than being blocked.
+  static bool canIncrementOthers(
+    int bots,
+    int others, [
+    int online = 0,
+    int friends = 0,
+  ]) =>
+      others < maxOtherHumansSelectable && others < maxOpponents;
+
+  /// Whether the +online stepper should be enabled. Online is seated before bots.
+  static bool canIncrementOnline(
+    int bots,
+    int others,
+    int online, [
+    int friends = 0,
+  ]) =>
+      online < maxOnlineSelectable && others + friends + online < maxOpponents;
 }
 
 class MatchSnapshot {
@@ -172,7 +252,7 @@ class MatchSnapshot {
   PlayerState get currentPlayer => players[currentSeatIndex];
 
   List<PlayerState> get activePlayers =>
-      players.where((p) => !p.eliminated).toList();
+      players.where((p) => p.profile.participates && !p.eliminated).toList();
 
   bool get awaitingHandoff =>
       phase == MatchPhase.awaitingHandoff && handoff != null;
@@ -180,14 +260,15 @@ class MatchSnapshot {
 
 /// Orchestrates endless rounds of Marge.
 class MatchController {
-  MatchController({
-    MatchConfig? config,
-    Random? rng,
-  })  : config = config ?? const MatchConfig(),
-        rng = rng ?? Random();
+  MatchController({MatchConfig? config, Random? rng, this.coins})
+    : config = config ?? const MatchConfig(),
+      rng = rng ?? Random();
 
   final MatchConfig config;
   final Random rng;
+
+  /// Saved per-player banks. Null keeps the old per-match start bank.
+  final SeatCoinBook? coins;
   late final BotAI _botAI = BotAI(rng);
 
   late List<PlayerState> _players;
@@ -202,18 +283,18 @@ class MatchController {
   HandoffState? _handoff;
 
   MatchSnapshot get snapshot => MatchSnapshot(
-        phase: _phase,
-        players: List.unmodifiable(_players),
-        potCents: _pot,
-        roundNumber: _round,
-        currentSeatIndex: _seat,
-        turn: _turn,
-        log: List.unmodifiable(_log),
-        lastPayout: _lastPayout,
-        winnerId: _winnerId,
-        config: config,
-        handoff: _handoff,
-      );
+    phase: _phase,
+    players: List.unmodifiable(_players),
+    potCents: _pot,
+    roundNumber: _round,
+    currentSeatIndex: _seat,
+    turn: _turn,
+    log: List.unmodifiable(_log),
+    lastPayout: _lastPayout,
+    winnerId: _winnerId,
+    config: config,
+    handoff: _handoff,
+  );
 
   void startMatch() {
     _players = _buildSeats();
@@ -226,8 +307,14 @@ class MatchController {
     _lastPayout = null;
     _winnerId = null;
     _phase = MatchPhase.ante;
-    _log.add('Match started — ${_players.length} seats, '
-        '${config.startBankCents}¢ banks.');
+    final waiting = _players.where((p) => p.profile.isWaiting).length;
+    final waitingBit = waiting > 0
+        ? ', $waiting waiting for online players'
+        : '';
+    _log.add(
+      'Match started — ${_players.length} seats$waitingBit, '
+      '${config.startBankCents}¢ banks.',
+    );
     _beginRound();
   }
 
@@ -237,9 +324,26 @@ class MatchController {
     BotPersonality.chaotic,
   ];
 
-  static const _botEmojis = <String>['🔥', '🧊', '⚡', '🌟', '🎯', '🃏', '🐉'];
+  bool _plays(PlayerState player) =>
+      player.profile.participates && !player.eliminated;
+
+  int _openingBank(String name, {required bool bot}) {
+    final book = coins;
+    if (book == null) return config.startBankCents;
+    return book.openingCents(name, bot: bot, fallback: config.startBankCents);
+  }
+
+  void _remember(int index) {
+    final book = coins;
+    if (book == null) return;
+    final p = _players[index];
+    if (!p.profile.participates) return;
+    book.write(p.profile.name, bot: p.profile.isBot, cents: p.bankCents);
+  }
 
   List<PlayerState> _buildSeats() {
+    // Priority: local user, other hotseat humans, online reservations, bots.
+    // There is no live session, so online chairs stay "Waiting for player".
     final seats = <PlayerState>[];
     final names = config.humanNames;
     final humanTotal = config.humanCount;
@@ -253,44 +357,73 @@ class MatchController {
       } else {
         name = 'Player ${i + 1}';
       }
-      seats.add(PlayerState(
-        profile: PlayerProfile(
-          id: 'human_$i',
-          name: name,
-          kind: SeatKind.human,
-          avatarEmoji: i == 0 ? '😎' : '🎲',
-          colorSeed: 10 + i,
+      seats.add(
+        PlayerState(
+          profile: PlayerProfile(
+            id: 'human_$i',
+            name: name,
+            kind: SeatKind.human,
+            avatarEmoji: i == 0 ? '😎' : '🎲',
+            colorSeed: 10 + i,
+          ),
+          bankCents: _openingBank(name, bot: false),
         ),
-        bankCents: config.startBankCents,
-      ));
+      );
+    }
+
+    for (var i = 0; i < config.friendNames.length; i++) {
+      final name = config.friendNames[i].trim();
+      if (name.isEmpty) continue;
+      seats.add(
+        PlayerState(
+          profile: PlayerProfile(
+            id: 'friend_$i',
+            name: name,
+            kind: SeatKind.waiting,
+            avatarEmoji: '👋',
+            colorSeed: 30 + i,
+          ),
+          // Absent until they sit. No saved balance and no 100¢. Do not ante or roll.
+          bankCents: 0,
+        ),
+      );
+    }
+
+    for (var i = 0; i < config.onlinePlayerCount; i++) {
+      seats.add(
+        PlayerState(
+          profile: PlayerProfile(
+            id: 'online_$i',
+            name: WaitingSeat.name,
+            kind: SeatKind.waiting,
+            avatarEmoji: WaitingSeat.emoji,
+            colorSeed: 40 + i,
+          ),
+          bankCents: 0,
+        ),
+      );
     }
 
     for (var botIdx = 0; botIdx < config.botCount; botIdx++) {
       final personality = _personalities[botIdx % _personalities.length];
-      final String name;
-      final String emoji;
-      final int colorSeed;
-      if (botIdx < BotRoster.bots.length) {
-        final roster = BotRoster.bots[botIdx];
-        name = roster.name;
-        emoji = roster.avatarEmoji;
-        colorSeed = roster.colorSeed;
-      } else {
-        name = 'Bot ${botIdx + 1}';
-        emoji = _botEmojis[botIdx % _botEmojis.length];
-        colorSeed = 20 + botIdx;
-      }
-      seats.add(PlayerState(
-        profile: PlayerProfile(
-          id: 'bot_$botIdx',
-          name: name,
-          kind: SeatKind.bot,
-          personality: personality,
-          avatarEmoji: emoji,
-          colorSeed: colorSeed,
+      final name = BotRoster.nameAt(botIdx);
+      final emoji = BotRoster.emojiAt(botIdx);
+      final colorSeed = botIdx < BotRoster.bots.length
+          ? BotRoster.bots[botIdx].colorSeed
+          : 20 + botIdx;
+      seats.add(
+        PlayerState(
+          profile: PlayerProfile(
+            id: 'bot_$botIdx',
+            name: name,
+            kind: SeatKind.bot,
+            personality: personality,
+            avatarEmoji: emoji,
+            colorSeed: colorSeed,
+          ),
+          bankCents: _openingBank(name, bot: true),
         ),
-        bankCents: config.startBankCents,
-      ));
+      );
     }
     return seats;
   }
@@ -302,10 +435,10 @@ class MatchController {
     }
     _log.add('— Round $_round — ante ${config.anteCents}¢ —');
 
-    // Collect ante from each non-eliminated player.
+    // Collect ante from each seated player. Waiting chairs do not ante.
     for (var i = 0; i < _players.length; i++) {
       final p = _players[i];
-      if (p.eliminated) continue;
+      if (!_plays(p)) continue;
       final paid = _takeFromBank(i, config.anteCents, soft: true);
       _pot += paid;
       if (paid < config.anteCents) {
@@ -321,10 +454,12 @@ class MatchController {
   int _firstActiveSeat({required int from}) {
     for (var step = 0; step < _players.length; step++) {
       final i = (from + step) % _players.length;
-      if (!_players[i].eliminated) return i;
+      if (_plays(_players[i])) return i;
     }
     return from;
   }
+
+  int get _playableCount => _players.where(_plays).length;
 
   void _startTurn() {
     final p = _players[_seat];
@@ -358,6 +493,7 @@ class MatchController {
 
   /// Roll non-kept dice (or all on first roll).
   void roll() {
+    if (!_plays(_players[_seat])) return;
     if (_phase == MatchPhase.awaitingHandoff) return;
     final t = _turn;
     if (t == null) return;
@@ -434,7 +570,8 @@ class MatchController {
       _credit(_seat, won);
       _pot = 0;
       _lastPayout = PayoutEvent(
-        message: '${player.profile.name} hit TRIPLE ONES on first roll '
+        message:
+            '${player.profile.name} hit TRIPLE ONES on first roll '
             'and sweeps the pot (+$won¢)!',
         kind: ScoreKind.tripleOnesPotWin,
         amountCents: won,
@@ -473,9 +610,7 @@ class MatchController {
       _log.add(_lastPayout!.message);
     } else {
       // Guard: never advance on a no-score hand while rolls remain.
-      _log.add(
-        '${player.profile.name} still has rolls left — keep rolling.',
-      );
+      _log.add('${player.profile.name} still has rolls left — keep rolling.');
       return;
     }
 
@@ -485,8 +620,7 @@ class MatchController {
   /// After a scoring bank: keep this seat and start a fresh 3-roll set.
   /// Does not apply to first-roll triple ones (that ends the round).
   void _continueSameSeatAfterWin({required bool restartRound}) {
-    final active = _players.where((p) => !p.eliminated).length;
-    if (active <= 1) {
+    if (_playableCount <= 1) {
       _turn = null;
       _handoff = null;
       _endMatch();
@@ -500,7 +634,7 @@ class MatchController {
       _log.add('— Round $_round — ante ${config.anteCents}¢ —');
       for (var i = 0; i < _players.length; i++) {
         final p = _players[i];
-        if (p.eliminated) continue;
+        if (!_plays(p)) continue;
         final paid = _takeFromBank(i, config.anteCents, soft: true);
         _pot += paid;
       }
@@ -510,9 +644,7 @@ class MatchController {
     }
     _startTurn();
     _lastPayout = payout;
-    _log.add(
-      '${_players[_seat].profile.name} keeps the seat — fresh 3 rolls.',
-    );
+    _log.add('${_players[_seat].profile.name} keeps the seat — fresh 3 rolls.');
   }
 
   String _describeScore(String name, ScoreResult score, int total) {
@@ -536,7 +668,7 @@ class MatchController {
     if (eachCents <= 0) return 0;
     var total = 0;
     for (var i = 0; i < _players.length; i++) {
-      if (i == _seat || _players[i].eliminated) continue;
+      if (i == _seat || !_plays(_players[i])) continue;
       final paid = _takeFromBank(i, eachCents, soft: true);
       total += paid;
     }
@@ -545,8 +677,10 @@ class MatchController {
 
   void _credit(int index, int cents) {
     if (cents <= 0) return;
+    if (!_players[index].profile.participates) return;
     final p = _players[index];
     _players[index] = p.copyWith(bankCents: p.bankCents + cents);
+    _remember(index);
   }
 
   /// Soft take: apply house stake once if needed; never go negative.
@@ -554,9 +688,11 @@ class MatchController {
     if (amount <= 0) return 0;
     var p = _players[index];
     if (p.eliminated) return 0;
+    if (!p.profile.participates) return 0;
 
     if (p.bankCents >= amount) {
       _players[index] = p.copyWith(bankCents: p.bankCents - amount);
+      _remember(index);
       return amount;
     }
 
@@ -571,6 +707,7 @@ class MatchController {
       _players[index] = p;
       if (p.bankCents >= amount) {
         _players[index] = p.copyWith(bankCents: p.bankCents - amount);
+        _remember(index);
         return amount;
       }
     }
@@ -588,6 +725,7 @@ class MatchController {
       }
     }
     _players[index] = p;
+    _remember(index);
     return paid;
   }
 
@@ -626,8 +764,7 @@ class MatchController {
       return;
     }
     final payout = _lastPayout!;
-    final active = _players.where((p) => !p.eliminated).length;
-    if (active <= 1) {
+    if (_playableCount <= 1) {
       _turn = null;
       _handoff = null;
       _endMatch();
@@ -677,8 +814,13 @@ class MatchController {
     _phase = MatchPhase.matchEnd;
     _turn = null;
     _handoff = null;
-    final sorted = [..._players]
+    final sorted = _players.where(_plays).toList()
       ..sort((a, b) => b.bankCents.compareTo(a.bankCents));
+    if (sorted.isEmpty) {
+      _winnerId = null;
+      _log.add('Match over. No seated players.');
+      return;
+    }
     _winnerId = sorted.first.profile.id;
     _log.add(
       'Match over. Winner: ${sorted.first.profile.name} '
@@ -691,12 +833,11 @@ class MatchController {
     if (_phase == MatchPhase.awaitingHandoff) return false;
     if (_phase != MatchPhase.playing) return false;
     final p = _players[_seat];
-    if (!p.profile.isBot || p.eliminated) return false;
+    if (!p.profile.isBot || !_plays(p)) return false;
     final t = _turn;
     if (t == null) return false;
 
-    final personality =
-        p.profile.personality ?? BotPersonality.cautious;
+    final personality = p.profile.personality ?? BotPersonality.cautious;
     final decision = _botAI.decide(t, personality);
 
     // Bank only a scoring hand, or a finished 3rd-roll miss.
@@ -727,7 +868,8 @@ class MatchController {
     while (steps < maxSteps &&
         _phase == MatchPhase.playing &&
         _handoff == null &&
-        _players[_seat].profile.isBot) {
+        _players[_seat].profile.isBot &&
+        _plays(_players[_seat])) {
       tickBot();
       steps++;
     }

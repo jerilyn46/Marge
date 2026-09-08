@@ -66,6 +66,30 @@ class MatchScreen extends ConsumerWidget {
                     child: PotMeter(potCents: snap.potCents),
                   ),
                   const SizedBox(height: 12),
+                  if (view.turnNotice != null) ...[
+                    const SizedBox(height: 8),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Material(
+                        color: MargeColors.gold.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          child: Text(
+                            view.turnNotice!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: MargeColors.gold,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                   SizedBox(
                     height: 72,
                     child: ListView.separated(
@@ -497,9 +521,11 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
   @override
   Widget build(BuildContext context) {
     final snapshot = widget.snapshot;
-    final ranked = [...snapshot.players]
-      ..sort((a, b) => b.bankCents.compareTo(a.bankCents));
-    final winner = ranked.first;
+    final ranked =
+        snapshot.players.where((p) => p.profile.participates).toList()
+          ..sort((a, b) => b.bankCents.compareTo(a.bankCents));
+    final waiting = snapshot.players.where((p) => p.profile.isWaiting).toList();
+    final winner = ranked.isEmpty ? snapshot.players.first : ranked.first;
 
     return Scaffold(
       body: Container(
@@ -536,11 +562,13 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
                 const SizedBox(height: 24),
                 Expanded(
                   child: ListView.separated(
-                    itemCount: ranked.length,
+                    itemCount: ranked.length + waiting.length,
                     separatorBuilder: (_, _) => const SizedBox(height: 8),
                     itemBuilder: (context, i) {
-                      final p = ranked[i];
-                      return PlayerChip(player: p, isActive: i == 0);
+                      if (i < ranked.length) {
+                        return PlayerChip(player: ranked[i], isActive: i == 0);
+                      }
+                      return PlayerChip(player: waiting[i - ranked.length]);
                     },
                   ),
                 ),

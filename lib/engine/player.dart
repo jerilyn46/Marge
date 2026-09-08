@@ -1,4 +1,10 @@
-enum SeatKind { human, bot }
+enum SeatKind { human, bot, waiting }
+
+/// Reserved online chair with nobody joined. Not a bot and not a person.
+class WaitingSeat {
+  static const name = 'Waiting for player';
+  static const emoji = '⏳';
+}
 
 enum BotPersonality { aggressive, cautious, chaotic }
 
@@ -21,6 +27,10 @@ class PlayerProfile {
 
   bool get isHuman => kind == SeatKind.human;
   bool get isBot => kind == SeatKind.bot;
+  bool get isWaiting => kind == SeatKind.waiting;
+
+  /// Humans and bots play. Waiting chairs do not roll, ante, or pay.
+  bool get participates => isHuman || isBot;
 
   PlayerProfile copyWith({
     String? name,
@@ -28,15 +38,14 @@ class PlayerProfile {
     BotPersonality? personality,
     String? avatarEmoji,
     int? colorSeed,
-  }) =>
-      PlayerProfile(
-        id: id,
-        name: name ?? this.name,
-        kind: kind ?? this.kind,
-        personality: personality ?? this.personality,
-        avatarEmoji: avatarEmoji ?? this.avatarEmoji,
-        colorSeed: colorSeed ?? this.colorSeed,
-      );
+  }) => PlayerProfile(
+    id: id,
+    name: name ?? this.name,
+    kind: kind ?? this.kind,
+    personality: personality ?? this.personality,
+    avatarEmoji: avatarEmoji ?? this.avatarEmoji,
+    colorSeed: colorSeed ?? this.colorSeed,
+  );
 }
 
 class PlayerState {
@@ -57,13 +66,22 @@ class PlayerState {
     int? bankCents,
     bool? usedHouseStake,
     bool? eliminated,
-  }) =>
-      PlayerState(
-        profile: profile ?? this.profile,
-        bankCents: bankCents ?? this.bankCents,
-        usedHouseStake: usedHouseStake ?? this.usedHouseStake,
-        eliminated: eliminated ?? this.eliminated,
-      );
+  }) => PlayerState(
+    profile: profile ?? this.profile,
+    bankCents: bankCents ?? this.bankCents,
+    usedHouseStake: usedHouseStake ?? this.usedHouseStake,
+    eliminated: eliminated ?? this.eliminated,
+  );
+
+  /// Chair label. Waiting friends and online chairs show no coin total
+  /// until they sit as an active player — not a saved bank, not 100¢.
+  String get coinTotalLabel {
+    if (profile.isWaiting) return 'Waiting';
+    if (eliminated) return 'OUT';
+    return '$bankCents¢';
+  }
+
+  bool get showsCoinTotal => !profile.isWaiting && !eliminated;
 }
 
 /// Default bot roster with distinct names / avatars.
@@ -102,4 +120,17 @@ class BotRoster {
       colorSeed: 4,
     ),
   ];
+
+  static const extraEmojis = <String>['🎯', '🃏', '🐉'];
+
+  /// Display name for bot index 0..n. Matches the table roster.
+  static String nameAt(int botIdx) {
+    if (botIdx < bots.length) return bots[botIdx].name;
+    return 'Bot ${botIdx + 1}';
+  }
+
+  static String emojiAt(int botIdx) {
+    if (botIdx < bots.length) return bots[botIdx].avatarEmoji;
+    return extraEmojis[botIdx % extraEmojis.length];
+  }
 }

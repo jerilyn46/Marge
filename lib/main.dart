@@ -6,6 +6,8 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'ads/ad_ids.dart';
 import 'ads/ads_service.dart';
+import 'services/coin_ledger.dart';
+import 'services/friends_service.dart';
 import 'startup_log.dart';
 import 'ui/screens/home_screen.dart';
 import 'ui/theme/marge_theme.dart';
@@ -17,6 +19,19 @@ Future<void> main() async {
   // Never hit the network for fonts before (or instead of) the first frame.
   // Nunito is not bundled; runtime fetch can throw on some devices.
   GoogleFonts.config.allowRuntimeFetching = false;
+
+  // Coin banks must be on disk before the lobby paints, so a saved
+  // balance is never shown as a fresh 100¢.
+  try {
+    PlayerCoinLedger.bootstrap = await PlayerCoinLedger.load();
+  } catch (e, st) {
+    debugPrint('main: coin ledger load failed (using defaults): $e\n$st');
+  }
+  try {
+    FriendsNotifier.bootstrap = await FriendsNotifier.load();
+  } catch (e, st) {
+    debugPrint('main: friends load failed (empty list): $e\n$st');
+  }
 
   final container = ProviderContainer();
 

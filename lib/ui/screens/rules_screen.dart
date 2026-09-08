@@ -32,9 +32,10 @@ class RulesScreen extends ConsumerWidget {
             emoji: '🏦',
             title: 'Banks & ante',
             body:
-                '2–8 seats (you plus bots and/or hotseat humans). '
-                'Everyone starts with 100¢ (virtual chips). '
-                'Each round, every seated player antes 10¢ into the pot.',
+                '2–8 seats. You and local hotseat humans sit first, then named friends (waiting if they are not here), then reserved online chairs, then bots in leftover seats. '
+                'Playing seats keep their saved coins (100¢ if that name is new). '
+                'Bots reset to 100¢ each Monday at midnight America/Denver. '
+                'Each round, every playing seat antes 10¢ into the pot.',
           ),
           _RuleCard(
             emoji: '🎲',
@@ -71,8 +72,9 @@ class RulesScreen extends ConsumerWidget {
             emoji: '🤖',
             title: 'Bots',
             body:
-                'Choose 0–4 bots and 0–4 other local players before the match '
-                '(at least one opponent; max 8 seats including you). '
+                'Choose 0–4 other local players, 0–4 online seats, and 0–4 bots '
+                '(at least one bot or local player; max 8 seats including you). '
+                'Online seats are reserved before bots. There is no live match yet, so they show as Waiting for player and are not filled by bots. '
                 'Bots cycle Aggressive / Cautious / Chaotic. '
                 'On a hotseat human turn, pass the device.',
           ),
