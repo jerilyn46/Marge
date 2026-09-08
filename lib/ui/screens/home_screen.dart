@@ -12,6 +12,7 @@ import '../theme/marge_theme.dart';
 import 'match_screen.dart';
 import 'rules_screen.dart';
 import 'settings_screen.dart';
+import '../widgets/play_coin_pack_button.dart';
 import 'shop_screen.dart';
 import '../../ads/banner_ad_widget.dart';
 import '../../cosmetics/skins_service.dart';
@@ -74,6 +75,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _setOnline(int value) {
     final friends = _seatedFriends(ref.read(friendsProvider));
     setState(() => _applyPlan(_bots, _otherHumans, value, friends));
+  }
+
+  void _buyPlayCoins(BuildContext context, WidgetRef ref) {
+    final name = PlayerCoinLedger.localIdentity(
+      ref.read(settingsProvider).playerName,
+    );
+    final next = ref
+        .read(coinLedgerProvider.notifier)
+        .grantHumanPlayCoins(name);
+    if (!context.mounted || next == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Added 100¢ play coins. $name has $next¢.')),
+    );
   }
 
   String get _seatSummary {
@@ -313,7 +327,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               Text(
                                 'Coins',
                                 style: TextStyle(
-                                  color: MargeColors.gold.withValues(alpha: 0.9),
+                                  color: MargeColors.gold.withValues(
+                                    alpha: 0.9,
+                                  ),
                                   fontWeight: FontWeight.w800,
                                   fontSize: 12,
                                 ),
@@ -330,6 +346,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     ),
                                   ),
                                 ),
+                              const SizedBox(height: 10),
+                              PlayCoinPackButton(
+                                onPressed: () => _buyPlayCoins(context, ref),
+                              ),
                               if (!canStart) ...[
                                 const SizedBox(height: 6),
                                 Text(
@@ -558,9 +578,8 @@ class _FriendsCard extends StatelessWidget {
           children: [
             Text(
               'Friends',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w900,
-              ),
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 4),
             Text(
@@ -585,10 +604,7 @@ class _FriendsCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: onAdd,
-                  child: const Text('Add'),
-                ),
+                FilledButton(onPressed: onAdd, child: const Text('Add')),
               ],
             ),
             if (error != null) ...[

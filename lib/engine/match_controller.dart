@@ -209,8 +209,7 @@ class MatchConfig {
     int others, [
     int online = 0,
     int friends = 0,
-  ]) =>
-      others < maxOtherHumansSelectable && others < maxOpponents;
+  ]) => others < maxOtherHumansSelectable && others < maxOpponents;
 
   /// Whether the +online stepper should be enabled. Online is seated before bots.
   static bool canIncrementOnline(
@@ -339,6 +338,39 @@ class MatchController {
     final p = _players[index];
     if (!p.profile.participates) return;
     book.write(p.profile.name, bot: p.profile.isBot, cents: p.bankCents);
+  }
+
+  /// Add free play-money coins to the local human only.
+  ///
+  /// Bots and waiting chairs are never credited. If the local player was
+  /// sitting out at zero, they come back so the next ante can include them.
+  /// House stake is left as-is. Turn, seat, and ante rules are not changed.
+  /// Returns the new bank, or null if there is no local human.
+  int? grantLocalPlayCoins(int cents) {
+    if (cents <= 0 || _players.isEmpty) return null;
+    var index = -1;
+    for (var i = 0; i < _players.length; i++) {
+      if (_players[i].profile.id == 'human_0') {
+        index = i;
+        break;
+      }
+    }
+    if (index < 0) return null;
+    final p = _players[index];
+    if (!p.profile.isHuman || p.profile.isBot || p.profile.isWaiting) {
+      return null;
+    }
+    final next = p.bankCents + cents;
+    var updated = p.copyWith(bankCents: next);
+    if (updated.eliminated && next > 0) {
+      updated = updated.copyWith(eliminated: false);
+    }
+    _players[index] = updated;
+    _remember(index);
+    _log.add(
+      '${p.profile.name} adds $cents¢ play coins (play money, not a cash purchase).',
+    );
+    return next;
   }
 
   List<PlayerState> _buildSeats() {

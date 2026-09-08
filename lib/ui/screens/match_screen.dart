@@ -10,8 +10,17 @@ import '../widgets/confetti_overlay.dart';
 import '../widgets/die_widget.dart';
 import '../widgets/handoff_strip.dart';
 import '../widgets/payout_banner.dart';
+import '../widgets/play_coin_pack_button.dart';
 import '../widgets/player_chip.dart';
 import '../widgets/pot_meter.dart';
+
+void _buyLocalPlayCoins(BuildContext context, WidgetRef ref) {
+  final next = ref.read(matchProvider.notifier).buyLocalPlayCoins();
+  if (!context.mounted || next == null) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text('Added 100¢ play coins. You have $next¢.')),
+  );
+}
 
 class MatchScreen extends ConsumerWidget {
   const MatchScreen({super.key});
@@ -104,6 +113,13 @@ class MatchScreen extends ConsumerWidget {
                           compact: true,
                         );
                       },
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: PlayCoinPackButton(
+                      compact: true,
+                      onPressed: () => _buyLocalPlayCoins(context, ref),
                     ),
                   ),
                   if (snap.lastPayout != null && !showStrip) ...[
@@ -572,6 +588,10 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
                     },
                   ),
                 ),
+                PlayCoinPackButton(
+                  onPressed: () => _buyLocalPlayCoins(context, ref),
+                ),
+                const SizedBox(height: 10),
                 ElevatedButton(
                   onPressed: () {
                     ref.read(matchProvider.notifier).rematch();

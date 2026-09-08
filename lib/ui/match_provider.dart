@@ -145,6 +145,17 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     );
   }
 
+  /// Add a free 100¢ play-money pack to the local human at this table.
+  /// Bots do not buy. House stake is unchanged.
+  int? buyLocalPlayCoins() {
+    final c = _controller;
+    if (c == null) return null;
+    final next = c.grantLocalPlayCoins(PlayerCoinLedger.playCoinPackCents);
+    if (next == null) return null;
+    _publish();
+    return next;
+  }
+
   void _syncSettings() {
     final s = ref.read(settingsProvider);
     _sfx.sfxEnabled = s.sfxEnabled;
