@@ -76,9 +76,7 @@ class PlayerChip extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  waiting
-                      ? 'Waiting'
-                      : (player.eliminated ? 'OUT' : '${player.bankCents}¢'),
+                  player.coinTotalLabel,
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: compact ? 11 : 13,

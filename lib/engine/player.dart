@@ -72,6 +72,16 @@ class PlayerState {
     usedHouseStake: usedHouseStake ?? this.usedHouseStake,
     eliminated: eliminated ?? this.eliminated,
   );
+
+  /// Chair label. Waiting friends and online chairs show no coin total
+  /// until they sit as an active player — not a saved bank, not 100¢.
+  String get coinTotalLabel {
+    if (profile.isWaiting) return 'Waiting';
+    if (eliminated) return 'OUT';
+    return '$bankCents¢';
+  }
+
+  bool get showsCoinTotal => !profile.isWaiting && !eliminated;
 }
 
 /// Default bot roster with distinct names / avatars.

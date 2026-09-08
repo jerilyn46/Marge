@@ -493,6 +493,7 @@ class MatchController {
 
   /// Roll non-kept dice (or all on first roll).
   void roll() {
+    if (!_plays(_players[_seat])) return;
     if (_phase == MatchPhase.awaitingHandoff) return;
     final t = _turn;
     if (t == null) return;
@@ -676,6 +677,7 @@ class MatchController {
 
   void _credit(int index, int cents) {
     if (cents <= 0) return;
+    if (!_players[index].profile.participates) return;
     final p = _players[index];
     _players[index] = p.copyWith(bankCents: p.bankCents + cents);
     _remember(index);
@@ -686,6 +688,7 @@ class MatchController {
     if (amount <= 0) return 0;
     var p = _players[index];
     if (p.eliminated) return 0;
+    if (!p.profile.participates) return 0;
 
     if (p.bankCents >= amount) {
       _players[index] = p.copyWith(bankCents: p.bankCents - amount);

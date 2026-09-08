@@ -95,6 +95,14 @@ class FriendsLogic {
 
   static List<FriendEntry> remove(List<FriendEntry> friends, String name) =>
       friends.where((f) => !sameName(f.name, name)).toList();
+
+  /// Friends-list status. Never a coin total — they have not sat yet.
+  static String statusLabel(FriendEntry friend) =>
+      friend.seated ? 'Waiting to sit' : 'Not sitting';
+
+  /// Friends-list row. Does not show saved cents or a 100¢ placeholder.
+  static String rowLabel(FriendEntry friend) =>
+      '${friend.name}  ${statusLabel(friend)}';
 }
 
 class FriendsNotifier extends Notifier<FriendsState> {

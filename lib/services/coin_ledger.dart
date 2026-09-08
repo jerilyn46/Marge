@@ -24,6 +24,14 @@ class LobbyCoinSeat {
   final bool waiting;
   final bool bot;
   final int? coins;
+
+  /// Lobby row. Waiting chairs never include a coin amount.
+  String get line {
+    if (waiting || coins == null) {
+      return '$emoji  $name  —';
+    }
+    return '$emoji  $name  $coins¢';
+  }
 }
 
 /// Persistent per-player coin banks.

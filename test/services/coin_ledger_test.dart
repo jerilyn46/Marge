@@ -261,6 +261,86 @@ void main() {
       expect(cramped.friends, 7);
       expect(cramped.bots, 0);
     });
+    test('waiting friend row and seat do not show a coin amount', () {
+      final ledger = PlayerCoinLedger();
+      ledger.write('Sam', bot: false, cents: 250);
+      ledger.write('You', bot: false, cents: 140);
+      expect(ledger.savedCents('Sam', bot: false), 250);
+
+      final seats = PlayerCoinLedger.lobbySeats(
+        localName: 'You',
+        otherHumans: 0,
+        online: 1,
+        bots: 1,
+        friendNames: const ['Sam'],
+        ledger: ledger,
+      );
+      final samLobby = seats.firstWhere((s) => s.name == 'Sam');
+      final online = seats.firstWhere((s) => s.name == WaitingSeat.name);
+      expect(samLobby.waiting, isTrue);
+      expect(samLobby.coins, isNull);
+      expect(samLobby.line, isNot(contains('¢')));
+      expect(samLobby.line, isNot(contains('250')));
+      expect(samLobby.line, isNot(contains('100')));
+      expect(online.waiting, isTrue);
+      expect(online.coins, isNull);
+      expect(online.line, isNot(contains('¢')));
+      expect(online.line, isNot(contains('100')));
+      // You still shows the saved bank. Waiting chairs do not.
+      expect(seats.first.line, contains('140¢'));
+
+      const seated = FriendEntry(name: 'Sam');
+      const aside = FriendEntry(name: 'Sam', seated: false);
+      expect(FriendsLogic.statusLabel(seated), 'Waiting to sit');
+      expect(FriendsLogic.rowLabel(seated), isNot(contains('¢')));
+      expect(FriendsLogic.rowLabel(seated), isNot(contains('250')));
+      expect(FriendsLogic.rowLabel(seated), isNot(contains('100')));
+      expect(FriendsLogic.rowLabel(aside), isNot(contains('¢')));
+
+      // A waiting chair must not display coins even if a bank was stuffed in.
+      const stuffed = PlayerState(
+        profile: PlayerProfile(
+          id: 'friend_0',
+          name: 'Sam',
+          kind: SeatKind.waiting,
+          avatarEmoji: '👋',
+        ),
+        bankCents: 100,
+      );
+      expect(stuffed.showsCoinTotal, isFalse);
+      expect(stuffed.coinTotalLabel, 'Waiting');
+      expect(stuffed.coinTotalLabel, isNot(contains('¢')));
+      expect(stuffed.coinTotalLabel, isNot(contains('100')));
+
+      final c = MatchController(
+        config: const MatchConfig(
+          botCount: 1,
+          friendNames: ['Sam'],
+        ),
+        rng: Random(1),
+        coins: ledger,
+      );
+      c.startMatch();
+      final sam = c.snapshot.players.firstWhere((p) => p.profile.name == 'Sam');
+      expect(sam.profile.isWaiting, isTrue);
+      expect(sam.profile.isBot, isFalse);
+      expect(sam.profile.participates, isFalse);
+      expect(sam.coinTotalLabel, 'Waiting');
+      expect(sam.coinTotalLabel, isNot(contains('¢')));
+      expect(c.snapshot.currentPlayer.profile.name, isNot('Sam'));
+      expect(c.snapshot.currentPlayer.profile.isBot, isFalse);
+      // You + bot ante only. Sam does not ante, roll, or get written as 0/100.
+      expect(c.snapshot.potCents, 20);
+      expect(ledger.savedCents('Sam', bot: false), 250);
+      expect(ledger.savedCents('You', bot: false), 130);
+
+      c.roll();
+      final after = c.snapshot.players.firstWhere((p) => p.profile.name == 'Sam');
+      expect(after.profile.isWaiting, isTrue);
+      expect(after.coinTotalLabel, isNot(contains('¢')));
+      expect(ledger.savedCents('Sam', bot: false), 250);
+      expect(c.snapshot.players.any((p) => p.profile.isBot && p.profile.name == 'Sam'), isFalse);
+    });
   });
 
   group('Turn notices', () {

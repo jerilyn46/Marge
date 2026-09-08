@@ -323,9 +323,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 Padding(
                                   padding: const EdgeInsets.only(bottom: 2),
                                   child: Text(
-                                    seat.waiting && seat.coins == null
-                                        ? '${seat.emoji}  ${seat.name}  —'
-                                        : '${seat.emoji}  ${seat.name}  ${seat.coins}¢',
+                                    seat.line,
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w700,
                                       fontSize: 13,
@@ -626,7 +624,7 @@ class _FriendsCard extends StatelessWidget {
                   style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
                 subtitle: Text(
-                  friend.seated ? 'Waiting to sit' : 'Not sitting',
+                  FriendsLogic.statusLabel(friend),
                   style: TextStyle(
                     color: MargeColors.cream.withValues(alpha: 0.7),
                     fontWeight: FontWeight.w700,
