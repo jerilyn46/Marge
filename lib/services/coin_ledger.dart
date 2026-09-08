@@ -54,6 +54,11 @@ class PlayerCoinLedger implements SeatCoinBook {
        _prefs = prefs;
 
   static const startingCents = 100;
+
+  /// Free play-money pack. Same size as a starting stake so they can ante 10¢.
+  /// Not a cash price — there is no real-money charge.
+  static const playCoinPackCents = startingCents;
+
   static const prefsKey = 'player_coin_ledger_v1';
   static const _kBalances = 'balances';
   static const _kLastBotResetAt = 'lastBotResetAt';
@@ -101,6 +106,29 @@ class PlayerCoinLedger implements SeatCoinBook {
     balances[storageKey(name, bot: bot)] = cents;
     _persistNow();
     onChanged?.call();
+  }
+
+  /// Display name used for the local player bank (`human:You` by default).
+  static String localIdentity(String name) {
+    final trimmed = name.trim();
+    return trimmed.isEmpty ? 'You' : trimmed;
+  }
+
+  /// Add a free play-money pack to a human bank and persist it.
+  ///
+  /// Waiting names are ignored. This never writes a `bot:` key — bots do not
+  /// buy coins. A missing human balance is the same [startingCents] the lobby
+  /// already shows, so the pack is added on top of that.
+  ///
+  /// Returns the new balance, or null if the grant was refused.
+  int? grantHumanPlayCoins(String name, {int cents = playCoinPackCents}) {
+    if (cents <= 0) return null;
+    final identity = localIdentity(name);
+    if (_isWaitingName(identity)) return null;
+    final current = savedCents(identity, bot: false) ?? startingCents;
+    final next = current + cents;
+    write(identity, bot: false, cents: next);
+    return next;
   }
 
   /// Drop every bot bank back to 100¢ if this Denver week has not been reset.
@@ -207,7 +235,11 @@ class PlayerCoinLedger implements SeatCoinBook {
     DateTime? utcNow,
   }) async {
     final store = prefs ?? await SharedPreferences.getInstance();
-    final ledger = decode(store.getString(prefsKey), prefs: store, loaded: true);
+    final ledger = decode(
+      store.getString(prefsKey),
+      prefs: store,
+      loaded: true,
+    );
     ledger.applyWeeklyBotReset(utcNow ?? DateTime.now().toUtc());
     if (ledger.lastBotResetAt != null) {
       await ledger.flush();
@@ -337,6 +369,16 @@ class CoinLedgerNotifier extends Notifier<PlayerCoinLedger> {
 
   void publish() => _onLiveChanged();
 
+  /// Credit the local human saved play coins. Bots are never credited.
+  int? grantHumanPlayCoins(
+    String name, {
+    int cents = PlayerCoinLedger.playCoinPackCents,
+  }) {
+    final live = book;
+    live.onChanged = _onLiveChanged;
+    return live.grantHumanPlayCoins(name, cents: cents);
+  }
+
   Future<void> reload({DateTime? utcNow}) async {
     final loaded = await PlayerCoinLedger.load(utcNow: utcNow);
     loaded.onChanged = _onLiveChanged;
@@ -345,6 +387,7 @@ class CoinLedgerNotifier extends Notifier<PlayerCoinLedger> {
   }
 }
 
-final coinLedgerProvider = NotifierProvider<CoinLedgerNotifier, PlayerCoinLedger>(
-  CoinLedgerNotifier.new,
-);
+final coinLedgerProvider =
+    NotifierProvider<CoinLedgerNotifier, PlayerCoinLedger>(
+      CoinLedgerNotifier.new,
+    );
