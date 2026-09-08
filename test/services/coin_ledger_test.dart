@@ -238,6 +238,8 @@ void main() {
       expect(c.snapshot.players[1].profile.name, 'Sam');
       expect(c.snapshot.players[1].profile.isWaiting, isTrue);
       expect(c.snapshot.players[1].profile.isBot, isFalse);
+      expect(c.snapshot.players[1].bankCents, 0);
+      expect(c.snapshot.players[2].bankCents, 0);
       expect(c.snapshot.players[2].profile.name, 'Riley');
       expect(c.snapshot.players[2].profile.isWaiting, isTrue);
       expect(

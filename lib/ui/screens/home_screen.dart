@@ -357,7 +357,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   controller: _friendName,
                   error: _friendError,
                   friends: friends,
-                  ledger: ledger,
                   onAdd: () async {
                     final err = await ref
                         .read(friendsProvider.notifier)
@@ -539,7 +538,6 @@ class _FriendsCard extends StatelessWidget {
     required this.controller,
     required this.error,
     required this.friends,
-    required this.ledger,
     required this.onAdd,
     required this.onRemove,
     required this.onToggle,
@@ -548,7 +546,6 @@ class _FriendsCard extends StatelessWidget {
   final TextEditingController controller;
   final String? error;
   final FriendsState friends;
-  final PlayerCoinLedger ledger;
   final VoidCallback onAdd;
   final void Function(String name) onRemove;
   final void Function(String name, bool seated) onToggle;
@@ -629,9 +626,9 @@ class _FriendsCard extends StatelessWidget {
                   style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
                 subtitle: Text(
-                  '${ledger.openingCents(friend.name, bot: false, fallback: PlayerCoinLedger.startingCents)}¢',
-                  style: const TextStyle(
-                    color: MargeColors.gold,
+                  friend.seated ? 'Waiting to sit' : 'Not sitting',
+                  style: TextStyle(
+                    color: MargeColors.cream.withValues(alpha: 0.7),
                     fontWeight: FontWeight.w700,
                   ),
                 ),

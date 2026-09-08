@@ -249,7 +249,8 @@ class PlayerCoinLedger implements SeatCoinBook {
           emoji: '👋',
           waiting: true,
           bot: false,
-          coins: ledger.openingCents(name, bot: false, fallback: fallback),
+          // Absent until they sit. No saved balance, no 100¢ placeholder.
+          coins: null,
         ),
       );
     }

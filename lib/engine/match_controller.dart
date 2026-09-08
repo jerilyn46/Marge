@@ -383,8 +383,8 @@ class MatchController {
             avatarEmoji: '👋',
             colorSeed: 30 + i,
           ),
-          // Saved coins stay visible; waiting friends do not ante or roll.
-          bankCents: _openingBank(name, bot: false),
+          // Absent until they sit. No saved balance and no 100¢. Do not ante or roll.
+          bankCents: 0,
         ),
       );
     }

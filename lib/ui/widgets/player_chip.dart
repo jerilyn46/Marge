@@ -77,9 +77,7 @@ class PlayerChip extends StatelessWidget {
                 ),
                 Text(
                   waiting
-                      ? (player.profile.name == WaitingSeat.name
-                            ? 'Waiting'
-                            : '${player.bankCents}¢ · waiting')
+                      ? 'Waiting'
                       : (player.eliminated ? 'OUT' : '${player.bankCents}¢'),
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
