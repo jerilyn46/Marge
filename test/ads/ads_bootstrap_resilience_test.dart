@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:marge/ads/ad_ids.dart';
 import 'package:marge/ads/ads_service.dart';
 
 void main() {
@@ -9,6 +10,23 @@ void main() {
     tearDown(() {
       debugDefaultTargetPlatformOverride = null;
     });
+
+    test(
+      'ads stay off on Android unless ADMOB_ENABLED dart-define is true',
+      () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        expect(kAdmobEnabled, isFalse);
+        expect(adsPlatformSupported, isFalse);
+        final service = AdsService();
+        await expectLater(service.bootstrap(), completes);
+        expect(service.isReady, isFalse);
+        expect(await service.maybeShowInterstitialAtBreak(), isFalse);
+        expect(
+          await service.showRewardedForVirtualChips(onReward: (_) {}),
+          isFalse,
+        );
+      },
+    );
 
     test('bootstrap completes without throwing when ads unsupported', () async {
       debugDefaultTargetPlatformOverride = TargetPlatform.linux;

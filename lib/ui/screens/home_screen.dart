@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -11,6 +13,7 @@ import 'settings_screen.dart';
 import 'shop_screen.dart';
 import '../../ads/banner_ad_widget.dart';
 import '../../cosmetics/skins_service.dart';
+import '../../startup_log.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -24,9 +27,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _bots = 3;
   int _otherHumans = 0;
 
+  @override
+  void initState() {
+    super.initState();
+    unawaited(StartupLog.mark('lobby-widget'));
+  }
+
   int get _opponents => _bots + _otherHumans;
   int get _totalSeats => 1 + _opponents;
-  bool get _canStart => _opponents >= 1 && _opponents <= MatchConfig.maxOpponents;
+  bool get _canStart =>
+      _opponents >= 1 && _opponents <= MatchConfig.maxOpponents;
 
   void _setBots(int value) {
     setState(() => _bots = MatchConfig.clampBots(value, _otherHumans));
@@ -47,11 +57,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              MargeColors.velvet,
-              Color(0xFF2D1B69),
-              MargeColors.felt,
-            ],
+            colors: [MargeColors.velvet, Color(0xFF2D1B69), MargeColors.felt],
           ),
         ),
         child: SafeArea(
@@ -65,13 +71,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     TextButton.icon(
                       onPressed: () {
                         Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const ShopScreen(),
-                          ),
+                          MaterialPageRoute(builder: (_) => const ShopScreen()),
                         );
                       },
-                      icon: const Icon(Icons.casino_rounded,
-                          color: MargeColors.gold),
+                      icon: const Icon(
+                        Icons.casino_rounded,
+                        color: MargeColors.gold,
+                      ),
                       label: Text(
                         'Dice · $wallet¢',
                         style: const TextStyle(
@@ -100,27 +106,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   '🎲 MARGE',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: MargeColors.gold,
-                        letterSpacing: 4,
-                      ),
+                    fontWeight: FontWeight.w900,
+                    color: MargeColors.gold,
+                    letterSpacing: 4,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'Dice Game',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: MargeColors.cream,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    color: MargeColors.cream,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Text(
                   'Chase the pot. Bank the trips.\nHit triple ones on the first roll.',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: MargeColors.cream.withValues(alpha: 0.8),
-                      ),
+                    color: MargeColors.cream.withValues(alpha: 0.8),
+                  ),
                 ),
                 const Spacer(flex: 2),
                 Card(
@@ -131,9 +137,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       children: [
                         Text(
                           'Match setup',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleMedium
+                          style: Theme.of(context).textTheme.titleMedium
                               ?.copyWith(fontWeight: FontWeight.w900),
                         ),
                         const SizedBox(height: 4),
@@ -154,8 +158,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               : null,
                           onIncrement:
                               MatchConfig.canIncrementBots(_bots, _otherHumans)
-                                  ? () => _setBots(_bots + 1)
-                                  : null,
+                              ? () => _setBots(_bots + 1)
+                              : null,
                         ),
                         const SizedBox(height: 12),
                         _CountStepper(
@@ -165,8 +169,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           onDecrement: _otherHumans > 0
                               ? () => _setOthers(_otherHumans - 1)
                               : null,
-                          onIncrement: MatchConfig.canIncrementOthers(
-                                  _bots, _otherHumans)
+                          onIncrement:
+                              MatchConfig.canIncrementOthers(
+                                _bots,
+                                _otherHumans,
+                              )
                               ? () => _setOthers(_otherHumans + 1)
                               : null,
                         ),
@@ -197,8 +204,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 '${_otherHumans > 0 ? ' + $_otherHumans human${_otherHumans == 1 ? '' : 's'}' : ''}'
                                 '${_bots > 0 ? ' + $_bots bot${_bots == 1 ? '' : 's'}' : ''}',
                                 style: TextStyle(
-                                  color:
-                                      MargeColors.cream.withValues(alpha: 0.8),
+                                  color: MargeColors.cream.withValues(
+                                    alpha: 0.8,
+                                  ),
                                   fontSize: 13,
                                 ),
                               ),
@@ -224,7 +232,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ElevatedButton(
                   onPressed: _canStart
                       ? () {
-                          ref.read(matchProvider.notifier).start(
+                          ref
+                              .read(matchProvider.notifier)
+                              .start(
                                 botCount: _bots,
                                 otherHumanCount: _otherHumans,
                                 playerName: settings.playerName,
@@ -315,10 +325,7 @@ class _CountStepper extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                label,
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
+              Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
               Text(
                 subtitle,
                 style: TextStyle(
@@ -335,8 +342,7 @@ class _CountStepper extends StatelessWidget {
           style: IconButton.styleFrom(
             backgroundColor: MargeColors.velvet.withValues(alpha: 0.55),
             foregroundColor: MargeColors.cream,
-            disabledBackgroundColor:
-                MargeColors.velvet.withValues(alpha: 0.25),
+            disabledBackgroundColor: MargeColors.velvet.withValues(alpha: 0.25),
           ),
         ),
         SizedBox(
@@ -357,8 +363,7 @@ class _CountStepper extends StatelessWidget {
           style: IconButton.styleFrom(
             backgroundColor: MargeColors.velvet.withValues(alpha: 0.55),
             foregroundColor: MargeColors.cream,
-            disabledBackgroundColor:
-                MargeColors.velvet.withValues(alpha: 0.25),
+            disabledBackgroundColor: MargeColors.velvet.withValues(alpha: 0.25),
           ),
         ),
       ],

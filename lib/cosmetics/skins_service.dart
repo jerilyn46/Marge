@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -41,8 +42,7 @@ class CosmeticsState {
   final String? pendingToast;
   final bool loaded;
 
-  DiceSkinTheme get equippedTheme =>
-      DiceSkinCatalog.byId(equipped).theme;
+  DiceSkinTheme get equippedTheme => DiceSkinCatalog.byId(equipped).theme;
 
   bool isOwned(DiceSkinId id) => owned.contains(id);
 
@@ -55,16 +55,15 @@ class CosmeticsState {
     String? pendingToast,
     bool clearToast = false,
     bool? loaded,
-  }) =>
-      CosmeticsState(
-        walletCents: walletCents ?? this.walletCents,
-        owned: owned ?? this.owned,
-        equipped: equipped ?? this.equipped,
-        matchHandWins: matchHandWins ?? this.matchHandWins,
-        matchBusts: matchBusts ?? this.matchBusts,
-        pendingToast: clearToast ? null : (pendingToast ?? this.pendingToast),
-        loaded: loaded ?? this.loaded,
-      );
+  }) => CosmeticsState(
+    walletCents: walletCents ?? this.walletCents,
+    owned: owned ?? this.owned,
+    equipped: equipped ?? this.equipped,
+    matchHandWins: matchHandWins ?? this.matchHandWins,
+    matchBusts: matchBusts ?? this.matchBusts,
+    pendingToast: clearToast ? null : (pendingToast ?? this.pendingToast),
+    loaded: loaded ?? this.loaded,
+  );
 }
 
 /// Pure inventory helpers (unit-testable without prefs).
@@ -86,7 +85,11 @@ class CosmeticsLogic {
       );
       return (
         next,
-        CosmeticsActionResult(ok: true, message: next.pendingToast, unlockedSkin: id),
+        CosmeticsActionResult(
+          ok: true,
+          message: next.pendingToast,
+          unlockedSkin: id,
+        ),
       );
     }
     if (state.walletCents < def.priceCents) {
@@ -105,7 +108,11 @@ class CosmeticsLogic {
     );
     return (
       next,
-      CosmeticsActionResult(ok: true, message: next.pendingToast, unlockedSkin: id),
+      CosmeticsActionResult(
+        ok: true,
+        message: next.pendingToast,
+        unlockedSkin: id,
+      ),
     );
   }
 
@@ -230,20 +237,31 @@ class CosmeticsNotifier extends Notifier<CosmeticsState> {
 
   @override
   CosmeticsState build() {
-    Future.microtask(_load);
+    // Defaults first — prefs must not throw before the lobby frame.
+    Future.microtask(() async {
+      try {
+        await _load();
+      } catch (e, st) {
+        debugPrint(
+          'CosmeticsNotifier: prefs load failed (using defaults): $e\n$st',
+        );
+      }
+    });
     return const CosmeticsState();
   }
 
   Future<void> _load() async {
-    _prefs = await SharedPreferences.getInstance();
-    final wallet = _prefs!.getInt(_kWallet) ?? DiceSkinCatalog.startingWalletCents;
-    final ownedRaw = _prefs!.getStringList(_kOwned) ?? const ['classic'];
+    final prefs = await SharedPreferences.getInstance();
+    _prefs = prefs;
+    final wallet =
+        prefs.getInt(_kWallet) ?? DiceSkinCatalog.startingWalletCents;
+    final ownedRaw = prefs.getStringList(_kOwned) ?? const ['classic'];
     final owned = <DiceSkinId>{DiceSkinId.classic};
     for (final raw in ownedRaw) {
       final def = DiceSkinCatalog.tryParse(raw);
       if (def != null) owned.add(def.id);
     }
-    final eqRaw = _prefs!.getString(_kEquipped) ?? DiceSkinId.classic.name;
+    final eqRaw = prefs.getString(_kEquipped) ?? DiceSkinId.classic.name;
     final eq = DiceSkinCatalog.tryParse(eqRaw)?.id ?? DiceSkinId.classic;
     final equipped = owned.contains(eq) ? eq : DiceSkinId.classic;
     state = CosmeticsState(
@@ -326,5 +344,6 @@ class CosmeticsNotifier extends Notifier<CosmeticsState> {
   }
 }
 
-final cosmeticsProvider =
-    NotifierProvider<CosmeticsNotifier, CosmeticsState>(CosmeticsNotifier.new);
+final cosmeticsProvider = NotifierProvider<CosmeticsNotifier, CosmeticsState>(
+  CosmeticsNotifier.new,
+);

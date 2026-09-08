@@ -1,6 +1,8 @@
 # AdMob test scaffolding
 
-Marge ships with **Google official test / sample AdMob IDs** by default. Production App ID and unit IDs must be injected at build time — never committed.
+**v0.1.4 ads-off hotfix:** AdMob is **disabled by default**. Dart `ADMOB_ENABLED` defaults to false (no `MobileAds.initialize`, UMP, banner, interstitial, or rewarded). Android manifest removes `com.google.android.gms.ads.APPLICATION_ID` and `MobileAdsInitProvider` so play-services-ads cannot auto-init before Flutter. Re-enable only with both `--dart-define=ADMOB_ENABLED=true` and `-PADMOB_ENABLED=true`.
+
+Marge ships with **Google official test / sample AdMob IDs** when ads are turned back on. Production App ID and unit IDs must be injected at build time — never committed.
 
 Package: `com.jerilyn.marge`  
 Plugin: `google_mobile_ads` (see `pubspec.yaml`)
@@ -37,12 +39,13 @@ Resolved in Dart by `lib/ads/ad_ids.dart`. Empty defines fall back to the test I
 
 ## Android App ID (manifest)
 
-`AndroidManifest.xml` uses placeholder `${admobAppId}`.
+`AndroidManifest.xml` uses placeholder `${admobAppId}` with `tools:node="${admobAppIdNode}"`.
 
 `android/app/build.gradle.kts` sets:
 
-- **Default:** Google sample App ID `ca-app-pub-3940256099942544~3347511713`
-- **Override:** Gradle property `ADMOB_APP_ID` (do not commit real values)
+- **Default (`ADMOB_ENABLED` unset/false):** `tools:node=remove` — APPLICATION_ID is absent. `MobileAdsInitProvider` is always `tools:node=remove`.
+- **`-PADMOB_ENABLED=true`:** merge Google sample App ID (or `-PADMOB_APP_ID=`)
+- **Override IDs:** Gradle property `ADMOB_APP_ID` (do not commit real values)
 
 ```bash
 # Test APK (defaults — recommended for Tester)

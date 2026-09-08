@@ -28,12 +28,17 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        // AdMob APPLICATION_ID — Google sample/test by default. Inject prod via
-        // -PADMOB_APP_ID=ca-app-pub-xxxx~yyyy (never commit real prod IDs).
+        // AdMob is OFF for the Flip 7 hotfix unless -PADMOB_ENABLED=true.
+        // tools:node=remove drops APPLICATION_ID so MobileAdsInitProvider
+        // (also stripped) cannot start GMA before Flutter. Pair with
+        // --dart-define=ADMOB_ENABLED=true when turning ads back on.
+        val admobEnabled = (project.findProperty("ADMOB_ENABLED") as String?)
+            ?.equals("true", ignoreCase = true) == true
         val admobAppId = (project.findProperty("ADMOB_APP_ID") as String?)
             ?.takeIf { it.isNotBlank() }
             ?: "ca-app-pub-3940256099942544~3347511713"
-        manifestPlaceholders["admobAppId"] = admobAppId
+        manifestPlaceholders["admobAppId"] = if (admobEnabled) admobAppId else "unused"
+        manifestPlaceholders["admobAppIdNode"] = if (admobEnabled) "merge" else "remove"
     }
 
     buildTypes {
@@ -41,6 +46,8 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }

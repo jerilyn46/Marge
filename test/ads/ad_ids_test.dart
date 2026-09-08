@@ -3,6 +3,7 @@ import 'package:marge/ads/ad_ids.dart';
 
 void main() {
   test('defaults to Google official Android test IDs', () {
+    expect(kAdmobEnabled, isFalse);
     expect(AdIds.appId, AdIds.testAppId);
     expect(AdIds.banner, AdIds.testBanner);
     expect(AdIds.interstitial, AdIds.testInterstitial);

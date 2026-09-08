@@ -23,8 +23,10 @@ class ShopScreen extends ConsumerWidget {
             padding: const EdgeInsets.only(right: 16),
             child: Center(
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: MargeColors.gold.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(20),
@@ -143,8 +145,8 @@ class _SkinTile extends ConsumerWidget {
                     owned
                         ? (def.isFree ? 'Free · Owned' : 'Owned')
                         : (def.isFree
-                            ? 'Free'
-                            : '${def.priceCents}¢ · ${def.unlockHint}'),
+                              ? 'Free'
+                              : '${def.priceCents}¢ · ${def.unlockHint}'),
                     style: TextStyle(
                       color: owned
                           ? MargeColors.sky
@@ -235,12 +237,14 @@ class _WatchAdForChipsCardState extends ConsumerState<_WatchAdForChipsCard> {
   bool _busy = false;
 
   Future<void> _watch() async {
-    if (_busy) return;
+    if (!kAdmobEnabled || _busy) return;
     setState(() => _busy = true);
     final ads = ref.read(adsServiceProvider);
     final earned = await ads.showRewardedForVirtualChips(
       onReward: (amount) async {
-        await ref.read(cosmeticsProvider.notifier).grantVirtualChips(
+        await ref
+            .read(cosmeticsProvider.notifier)
+            .grantVirtualChips(
               amount,
               reason: '+$amount¢ virtual chips from ad!',
             );
@@ -256,6 +260,7 @@ class _WatchAdForChipsCardState extends ConsumerState<_WatchAdForChipsCard> {
 
   @override
   Widget build(BuildContext context) {
+    if (!kAdmobEnabled) return const SizedBox.shrink();
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class MargeColors {
   static const velvet = Color(0xFF1B0F3B);
@@ -27,18 +26,15 @@ ThemeData buildMargeTheme() {
     ),
   );
 
-  TextTheme textTheme;
-  try {
-    textTheme = GoogleFonts.nunitoTextTheme(base.textTheme).apply(
-      bodyColor: MargeColors.cream,
-      displayColor: MargeColors.cream,
-    );
-  } catch (_) {
-    textTheme = base.textTheme.apply(
-      bodyColor: MargeColors.cream,
-      displayColor: MargeColors.cream,
-    );
-  }
+  // Nunito is not bundled. GoogleFonts.nunitoTextTheme() schedules a network
+  // fetch that can throw before the first frame on some devices (Flip 7 cold
+  // start). Use the Material text theme as a synchronous fallback. Runtime
+  // fetching is also disabled in main() so a later GoogleFonts call cannot
+  // hit the network.
+  final textTheme = base.textTheme.apply(
+    bodyColor: MargeColors.cream,
+    displayColor: MargeColors.cream,
+  );
 
   return base.copyWith(
     textTheme: textTheme,

@@ -9,7 +9,11 @@ import 'ad_ids.dart';
 import 'interstitial_gate.dart';
 
 /// Whether this build can host AdMob (mobile native only; not web/desktop).
+///
+/// [kAdmobEnabled] defaults to false (`--dart-define=ADMOB_ENABLED=true` to
+/// turn ads back on). When false, no UMP / MobileAds / ad-load calls run.
 bool get adsPlatformSupported =>
+    kAdmobEnabled &&
     !kIsWeb &&
     (defaultTargetPlatform == TargetPlatform.android ||
         defaultTargetPlatform == TargetPlatform.iOS);
@@ -41,6 +45,10 @@ class AdsService {
   Future<void> bootstrap() async {
     if (_initialized) return;
     _initialized = true;
+    if (!kAdmobEnabled) {
+      debugPrint('AdsService: ADMOB_ENABLED=false — skip MobileAds/UMP');
+      return;
+    }
     if (!adsPlatformSupported) {
       debugPrint('AdsService: platform unsupported — ads disabled');
       return;
@@ -49,24 +57,29 @@ class AdsService {
     // zone errors (not only as thrown Futures). Contain them so ads never
     // abort the app isolate after lobby is up.
     final done = Completer<void>();
-    runZonedGuarded(() async {
-      try {
-        await _gatherConsentThenInit();
-      } catch (e, st) {
-        debugPrint('AdsService: bootstrap failed: $e\n$st');
+    runZonedGuarded(
+      () async {
         try {
-          _consentReady = true;
-          await _ensureMobileAdsInitialized();
-        } catch (e2, st2) {
-          debugPrint('AdsService: fail-open MobileAds init failed: $e2\n$st2');
+          await _gatherConsentThenInit();
+        } catch (e, st) {
+          debugPrint('AdsService: bootstrap failed: $e\n$st');
+          try {
+            _consentReady = true;
+            await _ensureMobileAdsInitialized();
+          } catch (e2, st2) {
+            debugPrint(
+              'AdsService: fail-open MobileAds init failed: $e2\n$st2',
+            );
+          }
+        } finally {
+          if (!done.isCompleted) done.complete();
         }
-      } finally {
+      },
+      (e, st) {
+        debugPrint('AdsService: uncaught ads zone error: $e\n$st');
         if (!done.isCompleted) done.complete();
-      }
-    }, (e, st) {
-      debugPrint('AdsService: uncaught ads zone error: $e\n$st');
-      if (!done.isCompleted) done.complete();
-    });
+      },
+    );
     await done.future;
   }
 
@@ -79,7 +92,9 @@ class AdsService {
         params,
         () async {
           try {
-            ConsentForm.loadAndShowConsentFormIfRequired((FormError? error) async {
+            ConsentForm.loadAndShowConsentFormIfRequired((
+              FormError? error,
+            ) async {
               if (error != null) {
                 debugPrint(
                   'AdsService: consent form error ${error.errorCode}: ${error.message}',
@@ -126,7 +141,9 @@ class AdsService {
       if (allowed) {
         await _ensureMobileAdsInitialized();
       } else {
-        debugPrint('AdsService: canRequestAds=false — deferring MobileAds init');
+        debugPrint(
+          'AdsService: canRequestAds=false — deferring MobileAds init',
+        );
       }
     } catch (e) {
       debugPrint('AdsService: consent finish failed: $e');
@@ -158,15 +175,15 @@ class AdsService {
 
   /// Re-check consent (e.g. after privacy options). May unlock ads.
   Future<void> refreshConsentAndAds() async {
-    if (!adsPlatformSupported) return;
+    if (!kAdmobEnabled || !adsPlatformSupported) return;
     await _finishConsentAndMaybeInitAds();
   }
 
   Future<bool> isPrivacyOptionsRequired() async {
-    if (!adsPlatformSupported) return false;
+    if (!kAdmobEnabled || !adsPlatformSupported) return false;
     try {
-      final status =
-          await ConsentInformation.instance.getPrivacyOptionsRequirementStatus();
+      final status = await ConsentInformation.instance
+          .getPrivacyOptionsRequirementStatus();
       return status == PrivacyOptionsRequirementStatus.required;
     } catch (_) {
       return false;
@@ -174,7 +191,7 @@ class AdsService {
   }
 
   Future<void> showPrivacyOptions() async {
-    if (!adsPlatformSupported) return;
+    if (!kAdmobEnabled || !adsPlatformSupported) return;
     final completer = Completer<void>();
     try {
       ConsentForm.showPrivacyOptionsForm((FormError? error) {
@@ -199,7 +216,7 @@ class AdsService {
   }
 
   Future<bool> _adsAllowed() async {
-    if (!adsPlatformSupported) return false;
+    if (!kAdmobEnabled || !adsPlatformSupported) return false;
     if (!_mobileAdsInitialized) {
       try {
         final allowed = await ConsentInformation.instance.canRequestAds();
@@ -281,6 +298,7 @@ class AdsService {
   /// Show interstitial only at a natural break if the frequency gate allows.
   /// Returns true if an ad was presented.
   Future<bool> maybeShowInterstitialAtBreak() async {
+    if (!kAdmobEnabled) return false;
     if (!interstitialGate.canShow) return false;
     if (!await _adsAllowed()) return false;
 
@@ -302,6 +320,7 @@ class AdsService {
   Future<bool> showRewardedForVirtualChips({
     required FutureOr<void> Function(int amount) onReward,
   }) async {
+    if (!kAdmobEnabled) return false;
     if (!await _adsAllowed()) {
       // Test / unsupported: still allow a local grant in debug when using
       // test IDs so UI wiring can be verified without a device ad fill.
