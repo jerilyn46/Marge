@@ -355,6 +355,12 @@ void main() {
       c.bank();
       final human = c.snapshot.players.firstWhere((p) => p.profile.isHuman);
       expect(human.bankCents, humanBefore + 12);
+      // Win resets the same seat to a fresh 3 rolls. Does not hand off.
+      expect(c.snapshot.phase, MatchPhase.playing);
+      expect(c.snapshot.handoff, isNull);
+      expect(c.snapshot.currentPlayer.profile.isHuman, isTrue);
+      expect(c.snapshot.turn!.hasRolled, isFalse);
+      expect(c.snapshot.turn!.rollNumber, 0);
     });
 
     test('house stake tops up once when soft-broke', () {
@@ -417,25 +423,26 @@ void main() {
       expect(c.snapshot.phase, MatchPhase.playing);
     });
 
-    test('handoff gate: bank holds next seat until confirm', () {
-      final rng = ScriptedRandom([3, 3, 3]); // trips on 4
+    test('handoff gate: 3-miss bust holds next seat until confirm', () {
+      final seq = <int>[];
+      for (var r = 0; r < 3; r++) {
+        seq.addAll([0, 0, 1]);
+      }
       final c = MatchController(
         config: const MatchConfig(botCount: 3, otherHumanCount: 0),
-        rng: rng,
+        rng: ScriptedRandom(seq),
       );
       c.startMatch();
       c.roll();
-      c.bank();
+      c.roll();
+      c.roll();
       expect(c.snapshot.phase, MatchPhase.awaitingHandoff);
       expect(c.snapshot.handoff, isNotNull);
-      expect(c.snapshot.handoff!.outcomeText, 'Three of a kind');
-      expect(c.snapshot.handoff!.bankDeltaCents, 12);
-      expect(c.snapshot.handoff!.diceValues, [4, 4, 4]);
+      expect(c.snapshot.handoff!.outcomeText, 'Bust');
+      expect(c.snapshot.handoff!.bankDeltaCents, -2);
       expect(c.snapshot.handoff!.restartsRound, isFalse);
       expect(c.snapshot.currentSeatIndex, 0);
-      // Solo vs bots → Continue CTA (not Next player).
       expect(HandoffState.isHotseatCta(c.config), isFalse);
-      // Bots must not act while gated.
       expect(c.tickBot(), isFalse);
       c.confirmHandoff();
       expect(c.snapshot.phase, MatchPhase.playing);
@@ -468,11 +475,11 @@ void main() {
     });
 
     test('bot keeps rolling on no-score until 3rd miss', () {
-      // Human banks trips on 4, then bot whiffs three times (1,1,2).
-      // Faces chosen so an aggressive bot's keeps cannot accidentally score:
-      // 2,4,6 then re-roll the two low dice to 2,2 (pair kept) then the 6 → 1.
+      // Human busts (turn ends), then bot whiffs three times (2,4,6 → 2,2,6 → 2,2,1).
       final seq = <int>[
-        3, 3, 3, // human scoring roll
+        0, 0, 1, // human roll 1
+        0, 0, 1, // human roll 2
+        0, 0, 1, // human roll 3 bust
         1, 3, 5, // bot roll 1 → 2,4,6
         1, 1, // bot roll 2 → 2,2,6
         0, // bot roll 3 → 2,2,1
@@ -482,9 +489,9 @@ void main() {
         rng: ScriptedRandom(seq),
       );
       c.startMatch();
-      final humanId = c.snapshot.currentPlayer.profile.id;
       c.roll();
-      c.bank();
+      c.roll();
+      c.roll();
       c.confirmHandoff();
       expect(c.snapshot.currentPlayer.profile.isBot, isTrue);
       final botId = c.snapshot.currentPlayer.profile.id;
@@ -510,7 +517,7 @@ void main() {
       expect(c.snapshot.potCents, pot + 2);
       expect(c.snapshot.currentPlayer.profile.id, botId);
       c.confirmHandoff();
-      expect(c.snapshot.currentPlayer.profile.id, humanId);
+      expect(c.snapshot.currentPlayer.profile.isHuman, isTrue);
     });
 
     test('mid-turn no-score does not enter handoff (keep rolling)', () {

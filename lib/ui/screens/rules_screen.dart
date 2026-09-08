@@ -41,16 +41,15 @@ class RulesScreen extends ConsumerWidget {
             title: 'Your turn',
             body:
                 'Roll 3 dice, up to 3 times. Tap dice to keep them between rolls. '
-                'A non-scoring roll is still your turn — keep rolling. '
-                'Bank only when you have a scoring hand. '
-                'No score after 3 rolls: bust 2¢ into the pot.',
+                'A winning hand banks the payout and resets you to 3 new rolls. '
+                'The turn ends only after 3 rolls with no winning hand: bust 2¢ into the pot.',
           ),
           _RuleCard(
             emoji: '👑',
             title: 'Triple ones — first roll',
             body:
-                'Three 1s on your FIRST roll wins the ENTIRE pot. '
-                'New round starts with a fresh ante. Confetti time.',
+                'Three 1s on the first roll of a set takes the entire pot and ends the round. '
+                'A new round starts with a fresh ante. Confetti time.',
           ),
           _RuleCard(
             emoji: '💰',
