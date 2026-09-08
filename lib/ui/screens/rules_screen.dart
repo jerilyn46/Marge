@@ -49,7 +49,7 @@ class RulesScreen extends ConsumerWidget {
             title: 'Triple ones — first roll',
             body:
                 'Three 1s on the first roll of a set takes the entire pot and ends the round. '
-                'A new round starts with a fresh ante. Confetti time.',
+                'Everyone antes again, and it is still your turn for 3 new rolls.',
           ),
           _RuleCard(
             emoji: '💰',

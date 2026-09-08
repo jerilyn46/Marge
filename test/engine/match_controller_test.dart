@@ -165,32 +165,20 @@ void main() {
       expect(c.snapshot.currentPlayer.profile.isHuman, isTrue);
       final before = c.snapshot.currentPlayer.bankCents;
       c.roll();
-      var s = c.snapshot;
+      final s = c.snapshot;
       expect(s.lastPayout?.kind, ScoreKind.tripleOnesPotWin);
       expect(s.lastPayout?.celebratory, isTrue);
       expect(s.lastPayout?.amountCents, 40);
-      expect(s.phase, MatchPhase.awaitingHandoff);
-      expect(s.handoff, isNotNull);
-      expect(s.handoff!.outcomeText, 'Pot sweep!');
-      expect(s.handoff!.bankDeltaCents, 40);
-      expect(s.handoff!.diceValues, [1, 1, 1]);
-      expect(s.handoff!.restartsRound, isTrue);
-      // Banks updated, but ante / next round wait for confirm.
-      final winnerMid = s.players.firstWhere((p) => p.profile.isHuman);
-      expect(winnerMid.bankCents, before + 40);
-      expect(s.potCents, 0);
-      expect(s.roundNumber, 1);
-
-      c.confirmHandoff();
-      s = c.snapshot;
-      // After pot win + confirm, round restarts with ante.
-      // Winner: before+40, then ante -10 → before+30
+      // Pot taken, round ended, new ante, same winner keeps the seat.
+      expect(s.phase, MatchPhase.playing);
+      expect(s.handoff, isNull);
+      expect(s.currentPlayer.profile.isHuman, isTrue);
+      expect(s.turn!.hasRolled, isFalse);
+      expect(s.turn!.rollNumber, 0);
       final winner = s.players.firstWhere((p) => p.profile.isHuman);
       expect(winner.bankCents, before + 40 - 10);
       expect(s.potCents, 40); // new ante
       expect(s.roundNumber, 2);
-      expect(s.phase, MatchPhase.playing);
-      expect(s.handoff, isNull);
       expect(s.log.any((l) => l.contains('sweeps the pot')), isTrue);
     });
 

@@ -441,8 +441,9 @@ class MatchController {
         celebratory: true,
       );
       _log.add(_lastPayout!.message);
-      // Exception: first-roll triple ones takes the pot and ends the round.
-      _enterHandoff(restartsRound: true);
+      // First-roll triple ones: take the pot, end the round, re-ante, then
+      // the same winner starts a fresh 3 rolls. Do not pass the seat.
+      _continueSameSeatAfterWin(restartRound: true);
       return;
     }
 

@@ -172,10 +172,21 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       return;
     }
     final payout = c.snapshot.lastPayout;
+    if (payout?.kind == ScoreKind.tripleOnesPotWin) {
+      await _sfx.potWin();
+      await _applyLocalCosmetics(seat, payout);
+      // Winner keeps the seat on a fresh set. Confetti only — no handoff.
+      _publish(confetti: true);
+      Future<void>.delayed(const Duration(seconds: 2), () {
+        if (state != null) {
+          state = state!.copyWith(showConfetti: false);
+        }
+      });
+      return;
+    }
     if (payout?.celebratory == true &&
         c.snapshot.phase == MatchPhase.awaitingHandoff) {
       await _sfx.potWin();
-      // Celebration first; sticky strip after confetti.
       _publish(confetti: true, holdHandoffStrip: true);
       await _applyLocalCosmetics(seat, payout);
       await Future<void>.delayed(const Duration(seconds: 2));
@@ -186,7 +197,6 @@ class MatchNotifier extends Notifier<MatchViewState?> {
           snapshot: _controller!.snapshot,
         );
       }
-      // Do not schedule bots — wait for Next/Continue.
       return;
     }
     _publish();
