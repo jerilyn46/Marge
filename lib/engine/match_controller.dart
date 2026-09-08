@@ -441,7 +441,9 @@ class MatchController {
         celebratory: true,
       );
       _log.add(_lastPayout!.message);
-      _enterHandoff(restartsRound: true);
+      // First-roll triple ones: take the pot, end the round, re-ante, then
+      // the same winner starts a fresh 3 rolls. Do not pass the seat.
+      _continueSameSeatAfterWin(restartRound: true);
       return;
     }
 
@@ -455,6 +457,9 @@ class MatchController {
         celebratory: score.kind == ScoreKind.tripleOnesPay,
       );
       _log.add(_lastPayout!.message);
+      // Win banks, then this seat starts a fresh 3 rolls. Do not hand off.
+      _continueSameSeatAfterWin(restartRound: false);
+      return;
     } else if (t.rollNumber >= 3) {
       // Bust: put 2¢ in pot.
       final pen = HandEvaluator.bustPenalty.potPenaltyCents;
@@ -475,6 +480,39 @@ class MatchController {
     }
 
     _enterHandoff(restartsRound: false);
+  }
+
+  /// After a scoring bank: keep this seat and start a fresh 3-roll set.
+  /// Does not apply to first-roll triple ones (that ends the round).
+  void _continueSameSeatAfterWin({required bool restartRound}) {
+    final active = _players.where((p) => !p.eliminated).length;
+    if (active <= 1) {
+      _turn = null;
+      _handoff = null;
+      _endMatch();
+      return;
+    }
+    final payout = _lastPayout;
+    final seat = _seat;
+    _handoff = null;
+    if (restartRound) {
+      _round++;
+      _log.add('— Round $_round — ante ${config.anteCents}¢ —');
+      for (var i = 0; i < _players.length; i++) {
+        final p = _players[i];
+        if (p.eliminated) continue;
+        final paid = _takeFromBank(i, config.anteCents, soft: true);
+        _pot += paid;
+      }
+      if (_players[seat].eliminated) {
+        _seat = _firstActiveSeat(from: seat);
+      }
+    }
+    _startTurn();
+    _lastPayout = payout;
+    _log.add(
+      '${_players[_seat].profile.name} keeps the seat — fresh 3 rolls.',
+    );
   }
 
   String _describeScore(String name, ScoreResult score, int total) {
