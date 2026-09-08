@@ -390,9 +390,17 @@ class MatchController {
       return;
     }
 
+    // A non-winning hand with rolls remaining is still this player's turn.
+    // Do not bust, do not enter handoff, do not advance the seat.
+    if (!score.isScoring && nextRoll < 3) {
+      _log.add(
+        '${_players[_seat].profile.name} no score — keep rolling '
+        '(${3 - nextRoll} left).',
+      );
+      return;
+    }
+
     // Only after the 3rd roll with still no winning hand does bust apply.
-    // Earlier no-score rolls must leave the turn active so the player can
-    // keep / re-roll (up to 3 rolls total).
     if (!score.isScoring && nextRoll >= 3) {
       _resolveBank();
     }
@@ -404,7 +412,15 @@ class MatchController {
     if (_phase == MatchPhase.awaitingHandoff) return;
     final t = _turn;
     if (t == null || !t.hasRolled) return;
-    if (!t.canBank && !t.mustFinish) return;
+    // Refuse to end the turn on a miss while rolls remain. Banking a
+    // non-score is not an option; the player must keep rolling.
+    if (t.mustKeepRolling || (!t.canBank && !t.mustFinish)) {
+      _log.add(
+        '${_players[_seat].profile.name} cannot bank a miss — '
+        '${t.rollsLeft} rolls left.',
+      );
+      return;
+    }
     _resolveBank();
   }
 
@@ -564,6 +580,13 @@ class MatchController {
   /// Lock last dice and wait for Next/Continue before advancing.
   void _enterHandoff({required bool restartsRound}) {
     final t = _turn!;
+    // Hard stop: a mid-turn miss must never advance the seat.
+    if (!restartsRound && t.mustKeepRolling) {
+      _log.add(
+        '${_players[_seat].profile.name} still has rolls left — keep rolling.',
+      );
+      return;
+    }
     final payout = _lastPayout!;
     final active = _players.where((p) => !p.eliminated).length;
     if (active <= 1) {
@@ -638,26 +661,26 @@ class MatchController {
         p.profile.personality ?? BotPersonality.cautious;
     final decision = _botAI.decide(t, personality);
 
-    switch (decision) {
-      case BotRoll(:final keepIndices):
-        if (t.hasRolled) {
-          var dice = t.dice.clearKept();
-          for (final i in keepIndices) {
-            if (i >= 0 && i < 3) dice = dice.setKept(i, true);
-          }
-          _turn = t.copyWith(dice: dice);
-        }
-        roll();
-        // If pot win auto-resolved, stop.
-        return true;
-      case BotBank():
-        if (t.hasRolled) {
-          bank();
-        } else {
-          roll();
-        }
-        return true;
+    // Bank only a scoring hand, or a finished 3rd-roll miss.
+    // A miss with rolls left always rolls again — same rule as humans.
+    if (decision is BotBank &&
+        t.hasRolled &&
+        !t.mustKeepRolling &&
+        (t.canBank || t.mustFinish)) {
+      bank();
+      return true;
     }
+
+    if (t.hasRolled && decision is BotRoll) {
+      final keepIndices = decision.keepIndices;
+      var dice = t.dice.clearKept();
+      for (final i in keepIndices) {
+        if (i >= 0 && i < 3) dice = dice.setKept(i, true);
+      }
+      _turn = t.copyWith(dice: dice);
+    }
+    roll();
+    return true;
   }
 
   /// Convenience: run bots until a human must act or match ends.

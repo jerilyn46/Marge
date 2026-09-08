@@ -135,8 +135,7 @@ void main() {
         rng: Random(1),
       );
       c.startMatch();
-      final bots =
-          c.snapshot.players.where((p) => p.profile.isBot).toList();
+      final bots = c.snapshot.players.where((p) => p.profile.isBot).toList();
       expect(bots[0].profile.personality, BotPersonality.aggressive);
       expect(bots[1].profile.personality, BotPersonality.cautious);
       expect(bots[2].profile.personality, BotPersonality.chaotic);
@@ -177,8 +176,7 @@ void main() {
       expect(s.handoff!.diceValues, [1, 1, 1]);
       expect(s.handoff!.restartsRound, isTrue);
       // Banks updated, but ante / next round wait for confirm.
-      final winnerMid =
-          s.players.firstWhere((p) => p.profile.isHuman);
+      final winnerMid = s.players.firstWhere((p) => p.profile.isHuman);
       expect(winnerMid.bankCents, before + 40);
       expect(s.potCents, 0);
       expect(s.roundNumber, 1);
@@ -193,10 +191,7 @@ void main() {
       expect(s.roundNumber, 2);
       expect(s.phase, MatchPhase.playing);
       expect(s.handoff, isNull);
-      expect(
-        s.log.any((l) => l.contains('sweeps the pot')),
-        isTrue,
-      );
+      expect(s.log.any((l) => l.contains('sweeps the pot')), isTrue);
     });
 
     test('three of a kind collects face from others', () {
@@ -249,26 +244,62 @@ void main() {
       );
       c.startMatch();
       final humanId = c.snapshot.currentPlayer.profile.id;
+      final seat = c.snapshot.currentSeatIndex;
+      final pot = c.snapshot.potCents;
       c.roll();
       final turn = c.snapshot.turn;
       expect(turn, isNotNull);
       expect(turn!.rollNumber, 1);
       expect(turn.rollsLeft, 2);
       expect(turn.lastScore.isScoring, isFalse);
+      expect(turn.mustKeepRolling, isTrue);
       expect(turn.canRoll, isTrue);
       expect(turn.canBank, isFalse);
       expect(turn.mustFinish, isFalse);
-      // Still the same player's turn — must not auto-end.
+      // Still the same player's turn — must not auto-end or bust.
       expect(c.snapshot.currentPlayer.profile.id, humanId);
+      expect(c.snapshot.currentSeatIndex, seat);
       expect(c.snapshot.phase, MatchPhase.playing);
+      expect(c.snapshot.handoff, isNull);
+      expect(c.snapshot.potCents, pot);
+      expect(c.snapshot.lastPayout, isNull);
       // bank() must refuse to end early without a score.
       c.bank();
       expect(c.snapshot.turn, isNotNull);
       expect(c.snapshot.currentPlayer.profile.id, humanId);
+      expect(c.snapshot.currentSeatIndex, seat);
       expect(c.snapshot.turn!.rollsLeft, 2);
+      expect(c.snapshot.phase, MatchPhase.playing);
+      expect(c.snapshot.handoff, isNull);
     });
 
-    test('bust after 3 no-score rolls puts 2¢ in pot', () {
+    test('roll2 no score stays on turn with rollsLeft=1', () {
+      final rng = ScriptedRandom([0, 0, 1, 0, 0, 1]);
+      final c = MatchController(
+        config: const MatchConfig(botCount: 1, otherHumanCount: 0),
+        rng: rng,
+      );
+      c.startMatch();
+      final humanId = c.snapshot.currentPlayer.profile.id;
+      final pot = c.snapshot.potCents;
+      c.roll();
+      c.roll();
+      final turn = c.snapshot.turn!;
+      expect(turn.rollNumber, 2);
+      expect(turn.rollsLeft, 1);
+      expect(turn.lastScore.isScoring, isFalse);
+      expect(turn.mustKeepRolling, isTrue);
+      expect(turn.canBank, isFalse);
+      expect(c.snapshot.currentPlayer.profile.id, humanId);
+      expect(c.snapshot.phase, MatchPhase.playing);
+      expect(c.snapshot.handoff, isNull);
+      expect(c.snapshot.potCents, pot);
+      c.bank();
+      expect(c.snapshot.currentPlayer.profile.id, humanId);
+      expect(c.snapshot.phase, MatchPhase.playing);
+    });
+
+    test('bust after 3 no-score rolls puts 2¢ in pot then next', () {
       // Force non-scoring rolls. Keep re-rolling all.
       // Sequence of 9 faces all pairs-ish: 0,0,1, 0,0,1, 0,0,1 → 1,1,2
       final seq = <int>[];
@@ -283,20 +314,28 @@ void main() {
       c.startMatch();
       final potBefore = c.snapshot.potCents;
       final humanBefore = c.snapshot.currentPlayer.bankCents;
+      final humanId = c.snapshot.currentPlayer.profile.id;
       c.roll(); // 1 — no score, turn continues
       expect(c.snapshot.turn!.rollsLeft, 2);
-      expect(c.snapshot.turn!.lastScore.isScoring, isFalse);
+      expect(c.snapshot.turn!.mustKeepRolling, isTrue);
+      expect(c.snapshot.phase, MatchPhase.playing);
       c.roll(); // 2 — still no score
       expect(c.snapshot.turn!.rollsLeft, 1);
-      c.roll(); // 3 — auto-bust applies
+      expect(c.snapshot.currentPlayer.profile.id, humanId);
+      expect(c.snapshot.phase, MatchPhase.playing);
+      c.roll(); // 3 — auto-bust applies, then hand off
       expect(c.snapshot.potCents, potBefore + 2);
-      // Turn advanced after bust — human paid 2¢
       final human = c.snapshot.players.firstWhere((p) => p.profile.isHuman);
       expect(human.bankCents, humanBefore - 2);
-      expect(
-        c.snapshot.log.any((l) => l.contains('whiffs')),
-        isTrue,
-      );
+      expect(c.snapshot.log.any((l) => l.contains('whiffs')), isTrue);
+      expect(c.snapshot.phase, MatchPhase.awaitingHandoff);
+      expect(c.snapshot.currentPlayer.profile.id, humanId);
+      expect(c.snapshot.handoff!.outcomeText, 'Bust');
+      c.confirmHandoff();
+      expect(c.snapshot.phase, MatchPhase.playing);
+      expect(c.snapshot.currentPlayer.profile.id, isNot(humanId));
+      expect(c.snapshot.currentPlayer.profile.isBot, isTrue);
+      expect(c.snapshot.turn!.hasRolled, isFalse);
     });
 
     test('scoring hand can bank early while rolls remain', () {
@@ -426,6 +465,52 @@ void main() {
       expect(c.snapshot.handoff, isNull);
       expect(c.snapshot.turn!.hasRolled, isFalse);
       expect(c.snapshot.currentPlayer.profile.isBot, isTrue);
+    });
+
+    test('bot keeps rolling on no-score until 3rd miss', () {
+      // Human banks trips on 4, then bot whiffs three times (1,1,2).
+      // Faces chosen so an aggressive bot's keeps cannot accidentally score:
+      // 2,4,6 then re-roll the two low dice to 2,2 (pair kept) then the 6 → 1.
+      final seq = <int>[
+        3, 3, 3, // human scoring roll
+        1, 3, 5, // bot roll 1 → 2,4,6
+        1, 1, // bot roll 2 → 2,2,6
+        0, // bot roll 3 → 2,2,1
+      ];
+      final c = MatchController(
+        config: const MatchConfig(botCount: 1, otherHumanCount: 0),
+        rng: ScriptedRandom(seq),
+      );
+      c.startMatch();
+      final humanId = c.snapshot.currentPlayer.profile.id;
+      c.roll();
+      c.bank();
+      c.confirmHandoff();
+      expect(c.snapshot.currentPlayer.profile.isBot, isTrue);
+      final botId = c.snapshot.currentPlayer.profile.id;
+      final pot = c.snapshot.potCents;
+
+      expect(c.tickBot(), isTrue); // first roll, no score
+      expect(c.snapshot.currentPlayer.profile.id, botId);
+      expect(c.snapshot.turn!.rollsLeft, 2);
+      expect(c.snapshot.turn!.mustKeepRolling, isTrue);
+      expect(c.snapshot.phase, MatchPhase.playing);
+      expect(c.snapshot.handoff, isNull);
+      expect(c.snapshot.potCents, pot);
+
+      expect(c.tickBot(), isTrue); // second roll, still no score
+      expect(c.snapshot.currentPlayer.profile.id, botId);
+      expect(c.snapshot.turn!.rollsLeft, 1);
+      expect(c.snapshot.phase, MatchPhase.playing);
+      expect(c.snapshot.handoff, isNull);
+
+      expect(c.tickBot(), isTrue); // third roll → bust, then handoff
+      expect(c.snapshot.phase, MatchPhase.awaitingHandoff);
+      expect(c.snapshot.handoff!.outcomeText, 'Bust');
+      expect(c.snapshot.potCents, pot + 2);
+      expect(c.snapshot.currentPlayer.profile.id, botId);
+      c.confirmHandoff();
+      expect(c.snapshot.currentPlayer.profile.id, humanId);
     });
 
     test('mid-turn no-score does not enter handoff (keep rolling)', () {

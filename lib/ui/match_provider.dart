@@ -14,6 +14,7 @@ class MatchViewState {
     this.showConfetti = false,
     this.busyBot = false,
     this.unlockBanner,
+
     /// When true, pot-win celebration is playing; sticky strip waits.
     this.holdHandoffStrip = false,
   });
@@ -35,21 +36,22 @@ class MatchViewState {
     String? unlockBanner,
     bool clearUnlockBanner = false,
     bool? holdHandoffStrip,
-  }) =>
-      MatchViewState(
-        snapshot: snapshot ?? this.snapshot,
-        showConfetti: showConfetti ?? this.showConfetti,
-        busyBot: busyBot ?? this.busyBot,
-        unlockBanner:
-            clearUnlockBanner ? null : (unlockBanner ?? this.unlockBanner),
-        holdHandoffStrip: holdHandoffStrip ?? this.holdHandoffStrip,
-      );
+  }) => MatchViewState(
+    snapshot: snapshot ?? this.snapshot,
+    showConfetti: showConfetti ?? this.showConfetti,
+    busyBot: busyBot ?? this.busyBot,
+    unlockBanner: clearUnlockBanner
+        ? null
+        : (unlockBanner ?? this.unlockBanner),
+    holdHandoffStrip: holdHandoffStrip ?? this.holdHandoffStrip,
+  );
 }
 
 class MatchNotifier extends Notifier<MatchViewState?> {
   MatchController? _controller;
   final SfxService _sfx = SfxService();
   Timer? _botTimer;
+
   /// Seat index of the local (device) player — always 0.
   static const int localSeat = 0;
 
@@ -59,11 +61,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     return null;
   }
 
-  void start({
-    int botCount = 3,
-    int otherHumanCount = 0,
-    String? playerName,
-  }) {
+  void start({int botCount = 3, int otherHumanCount = 0, String? playerName}) {
     _botTimer?.cancel();
     final clamped = MatchConfig.clampLobby(botCount, otherHumanCount);
     botCount = clamped.$1;
@@ -138,7 +136,8 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     List<String> toasts = const [];
     if (payout.kind == ScoreKind.tripleOnesPotWin && payout.celebratory) {
       toasts = await cos.recordLocalPotWin();
-    } else if (payout.kind != ScoreKind.none && payout.kind != ScoreKind.tripleOnesPotWin) {
+    } else if (payout.kind != ScoreKind.none &&
+        payout.kind != ScoreKind.tripleOnesPotWin) {
       // Scoring bank (trips / straight / triple-ones pay).
       toasts = await cos.recordLocalHandWin();
     } else if (payout.kind == ScoreKind.none) {
@@ -164,6 +163,14 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     _syncSettings();
     await _sfx.roll();
     c.roll();
+    final afterTurn = c.snapshot.turn;
+    // Miss with rolls left: same player, still playing. Do not bust or hand off.
+    if (afterTurn != null &&
+        afterTurn.mustKeepRolling &&
+        c.snapshot.phase == MatchPhase.playing) {
+      _publish();
+      return;
+    }
     final payout = c.snapshot.lastPayout;
     if (payout?.celebratory == true &&
         c.snapshot.phase == MatchPhase.awaitingHandoff) {
@@ -206,7 +213,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     final t = c.snapshot.turn;
     if (t == null || !t.hasRolled) return;
     // Do not end the turn early without a winning hand while rolls remain.
-    if (!t.canBank && !t.mustFinish) return;
+    if (t.mustKeepRolling || (!t.canBank && !t.mustFinish)) return;
     _syncSettings();
     if (t.lastScore.isScoring) {
       await _sfx.bank();
@@ -297,9 +304,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
         // Wait for human to tap Continue / Next player.
         return;
       }
-      if (after != null &&
-          after != before &&
-          after.kind == ScoreKind.none) {
+      if (after != null && after != before && after.kind == ScoreKind.none) {
         await _sfx.bust();
       } else if (_controller!.snapshot.phase != MatchPhase.awaitingHandoff ||
           after == before) {
@@ -315,5 +320,6 @@ class MatchNotifier extends Notifier<MatchViewState?> {
   }
 }
 
-final matchProvider =
-    NotifierProvider<MatchNotifier, MatchViewState?>(MatchNotifier.new);
+final matchProvider = NotifierProvider<MatchNotifier, MatchViewState?>(
+  MatchNotifier.new,
+);

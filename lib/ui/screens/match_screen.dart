@@ -38,7 +38,8 @@ class MatchScreen extends ConsumerWidget {
     final hotseat = HandoffState.isHotseatCta(snap.config);
 
     // Locked faces during handoff (prefer frozen handoff values).
-    final List<int>? lockedFaces = handoff?.diceValues ??
+    final List<int>? lockedFaces =
+        handoff?.diceValues ??
         (turn != null && turn.hasRolled ? turn.dice.values : null);
 
     return Scaffold(
@@ -49,7 +50,11 @@ class MatchScreen extends ConsumerWidget {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [Color(0xFF1B0F3B), MargeColors.felt, Color(0xFF0A3D2A)],
+                colors: [
+                  Color(0xFF1B0F3B),
+                  MargeColors.felt,
+                  Color(0xFF0A3D2A),
+                ],
               ),
             ),
             child: SafeArea(
@@ -102,7 +107,8 @@ class MatchScreen extends ConsumerWidget {
                             kept: gated
                                 ? true
                                 : (turn?.dice.dice[i].kept ?? false),
-                            enabled: canInteract &&
+                            enabled:
+                                canInteract &&
                                 turn != null &&
                                 turn.rollNumber < 3,
                             theme: skinTheme,
@@ -132,18 +138,30 @@ class MatchScreen extends ConsumerWidget {
                         ),
                       ),
                     ),
-                  if (!gated &&
+                  if (!gated && turn != null && turn.mustKeepRolling)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Text(
+                        canInteract
+                            ? 'No score yet — keep rolling · ${turn.rollsLeft} rolls left'
+                            : '',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: MargeColors.cream.withValues(alpha: 0.7),
+                          fontSize: 13,
+                        ),
+                      ),
+                    )
+                  else if (!gated &&
                       turn != null &&
                       turn.hasRolled &&
+                      turn.canBank &&
                       turn.rollsLeft > 0)
                     Padding(
                       padding: const EdgeInsets.only(top: 10),
                       child: Text(
                         canInteract
-                            ? (turn.canBank
-                                ? 'Tap dice to keep · Roll again or Bank'
-                                : 'No score yet — tap dice to keep, then Roll again '
-                                    '(${turn.rollsLeft} left)')
+                            ? 'Tap dice to keep · roll again or bank'
                             : '',
                         style: TextStyle(
                           color: MargeColors.cream.withValues(alpha: 0.7),
@@ -174,44 +192,11 @@ class MatchScreen extends ConsumerWidget {
                   else
                     Padding(
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton(
-                              onPressed: canInteract &&
-                                      turn != null &&
-                                      turn.canRoll
-                                  ? () =>
-                                      ref.read(matchProvider.notifier).roll()
-                                  : null,
-                              child: Text(
-                                turn == null || !turn.hasRolled
-                                    ? 'ROLL'
-                                    : 'ROLL AGAIN (${turn.rollsLeft} left)',
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: FilledButton(
-                              onPressed: canInteract &&
-                                      turn != null &&
-                                      turn.hasRolled &&
-                                      (turn.canBank || turn.mustFinish)
-                                  ? () =>
-                                      ref.read(matchProvider.notifier).bank()
-                                  : null,
-                              child: Text(
-                                turn != null &&
-                                        turn.hasRolled &&
-                                        !turn.lastScore.isScoring &&
-                                        turn.mustFinish
-                                    ? 'BUST (2¢)'
-                                    : 'BANK',
-                              ),
-                            ),
-                          ),
-                        ],
+                      child: _TurnActions(
+                        canInteract: canInteract,
+                        turn: turn,
+                        onRoll: () => ref.read(matchProvider.notifier).roll(),
+                        onBank: () => ref.read(matchProvider.notifier).bank(),
                       ),
                     ),
                 ],
@@ -275,6 +260,85 @@ class MatchScreen extends ConsumerWidget {
   }
 }
 
+class _TurnActions extends StatelessWidget {
+  const _TurnActions({
+    required this.canInteract,
+    required this.turn,
+    required this.onRoll,
+    required this.onBank,
+  });
+
+  final bool canInteract;
+  final TurnState? turn;
+  final VoidCallback onRoll;
+  final VoidCallback onBank;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = turn;
+
+    // After a non-scoring roll with rolls left: do not say Roll or Bank.
+    if (t != null && t.mustKeepRolling) {
+      return SizedBox(
+        width: double.infinity,
+        child: ElevatedButton(
+          onPressed: canInteract ? onRoll : null,
+          child: Text('KEEP ROLLING · ${t.rollsLeft} LEFT'),
+        ),
+      );
+    }
+
+    final canRoll = canInteract && t != null && t.canRoll;
+    final showBank =
+        t != null &&
+        t.hasRolled &&
+        (t.canBank || (t.mustFinish && !t.lastScore.isScoring));
+    final canBankNow = canInteract && showBank;
+    final bankLabel =
+        t != null && t.hasRolled && !t.lastScore.isScoring && t.mustFinish
+        ? 'BUST (2¢)'
+        : 'BANK';
+    final rollLabel = t == null || !t.hasRolled
+        ? 'ROLL'
+        : 'ROLL AGAIN (${t.rollsLeft} left)';
+
+    if (!showBank) {
+      return SizedBox(
+        width: double.infinity,
+        child: ElevatedButton(
+          onPressed: canRoll ? onRoll : null,
+          child: Text(rollLabel),
+        ),
+      );
+    }
+
+    if (!canRoll) {
+      return SizedBox(
+        width: double.infinity,
+        child: FilledButton(
+          onPressed: canBankNow ? onBank : null,
+          child: Text(bankLabel),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        Expanded(
+          child: ElevatedButton(onPressed: onRoll, child: Text(rollLabel)),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: FilledButton(
+            onPressed: canBankNow ? onBank : null,
+            child: Text(bankLabel),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _TurnBanner extends StatelessWidget {
   const _TurnBanner({
     required this.snapshot,
@@ -291,14 +355,12 @@ class _TurnBanner extends StatelessWidget {
     final player = snapshot.currentPlayer;
     final turn = snapshot.turn;
     final humans = snapshot.players.where((p) => p.profile.isHuman).length;
-    final isHotseatOther = player.profile.isHuman &&
-        humans > 1 &&
-        player.profile.id != 'human_0';
+    final isHotseatOther =
+        player.profile.isHuman && humans > 1 && player.profile.id != 'human_0';
 
     final String title;
     if (gated) {
-      title =
-          '${player.profile.avatarEmoji} ${player.profile.name} — result';
+      title = '${player.profile.avatarEmoji} ${player.profile.name} — result';
     } else if (busyBot) {
       title =
           '${player.profile.avatarEmoji} ${player.profile.name} is rolling…';
@@ -317,10 +379,7 @@ class _TurnBanner extends StatelessWidget {
         Text(
           title,
           textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontWeight: FontWeight.w800,
-            fontSize: 16,
-          ),
+          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
         ),
         if (isHotseatOther && !busyBot && !gated) ...[
           const SizedBox(height: 6),
@@ -329,7 +388,9 @@ class _TurnBanner extends StatelessWidget {
             decoration: BoxDecoration(
               color: MargeColors.gold.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: MargeColors.gold.withValues(alpha: 0.5)),
+              border: Border.all(
+                color: MargeColors.gold.withValues(alpha: 0.5),
+              ),
             ),
             child: Text(
               'Pass the device to ${player.profile.name}',
@@ -458,9 +519,9 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
                 Text(
                   '🏆 Match over',
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: MargeColors.gold,
-                      ),
+                    fontWeight: FontWeight.w900,
+                    color: MargeColors.gold,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -479,10 +540,7 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
                     separatorBuilder: (_, _) => const SizedBox(height: 8),
                     itemBuilder: (context, i) {
                       final p = ranked[i];
-                      return PlayerChip(
-                        player: p,
-                        isActive: i == 0,
-                      );
+                      return PlayerChip(player: p, isActive: i == 0);
                     },
                   ),
                 ),
