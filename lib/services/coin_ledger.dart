@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../engine/player.dart';
+import '../engine/gem_label.dart';
 import '../engine/seat_coin_book.dart';
 import 'denver_time.dart';
 
@@ -30,7 +31,7 @@ class LobbyCoinSeat {
     if (waiting || coins == null) {
       return '$emoji  $name  —';
     }
-    return '$emoji  $name  $coins¢';
+    return '$emoji  $name  ${gemCount(coins!)}';
   }
 }
 
@@ -129,6 +130,34 @@ class PlayerCoinLedger implements SeatCoinBook {
     final next = current + cents;
     write(identity, bot: false, cents: next);
     return next;
+  }
+
+  /// Play-money denominations that fit a 10 gem ante. Not a cash price.
+  static const playGemDenominations = <int>[10, 25, 50, 100];
+
+  /// Uncommitted gem bank. Missing means the starting stake, not zero.
+  int availableHumanGems(String name) {
+    final identity = localIdentity(name);
+    if (_isWaitingName(identity)) return 0;
+    return savedCents(identity, bot: false) ?? startingCents;
+  }
+
+  /// Draw from the gem bank. Refuses more than available.
+  int? drawAvailable(String name, int gems) {
+    if (gems <= 0) return null;
+    final identity = localIdentity(name);
+    if (_isWaitingName(identity)) return null;
+    final available = availableHumanGems(identity);
+    if (gems > available) return null;
+    final next = available - gems;
+    write(identity, bot: false, cents: next);
+    return next;
+  }
+
+  /// How many gems a new game sits with, taken from the gem bank.
+  static int sitDownGems(int available, {int startBank = startingCents}) {
+    if (available <= 0) return 0;
+    return available < startBank ? available : startBank;
   }
 
   /// Drop every bot bank back to 100¢ if this Denver week has not been reset.
@@ -377,6 +406,12 @@ class CoinLedgerNotifier extends Notifier<PlayerCoinLedger> {
     final live = book;
     live.onChanged = _onLiveChanged;
     return live.grantHumanPlayCoins(name, cents: cents);
+  }
+
+  int? drawAvailable(String name, int gems) {
+    final live = book;
+    live.onChanged = _onLiveChanged;
+    return live.drawAvailable(name, gems);
   }
 
   Future<void> reload({DateTime? utcNow}) async {
