@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Auto-backup is disabled (allowBackup=false). These rules still name the
-     files that must never be copied if backup is turned on later. -->
-<full-backup-content>
-    <exclude domain="sharedpref" path="FlutterSharedPreferences.xml"/>
-    <exclude domain="file" path="marge_startup.log"/>
-</full-backup-content>

@@ -7,9 +7,11 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
-        android:fullBackupContent="@xml/backup_rules"
-        android:dataExtractionRules="@xml/data_extraction_rules"
-        tools:replace="android:allowBackup,android:fullBackupContent,android:dataExtractionRules">
+<<<<<<< HEAD
+        tools:replace="android:allowBackup">
+=======
+        tools:replace="android:allowBackup">
+>>>>>>> origin/main
         <activity
             android:name=".MainActivity"
             android:exported="true"
