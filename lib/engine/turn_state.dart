@@ -34,6 +34,11 @@ class TurnState {
   /// True after the 3rd roll — player must bank a score or take the bust.
   bool get mustFinish => rollNumber >= 3;
 
+  /// Non-winning hand with rolls still available. The turn is not over:
+  /// do not advance, bust, or offer bank.
+  bool get mustKeepRolling =>
+      hasRolled && !lastScore.isScoring && rollsLeft > 0;
+
   bool get isFirstRollComplete => rollNumber == 1;
 
   TurnState copyWith({
@@ -42,21 +47,20 @@ class TurnState {
     DiceSet? dice,
     bool? hasRolled,
     ScoreResult? lastScore,
-  }) =>
-      TurnState(
-        playerId: playerId ?? this.playerId,
-        rollNumber: rollNumber ?? this.rollNumber,
-        dice: dice ?? this.dice,
-        hasRolled: hasRolled ?? this.hasRolled,
-        lastScore: lastScore ?? this.lastScore,
-      );
+  }) => TurnState(
+    playerId: playerId ?? this.playerId,
+    rollNumber: rollNumber ?? this.rollNumber,
+    dice: dice ?? this.dice,
+    hasRolled: hasRolled ?? this.hasRolled,
+    lastScore: lastScore ?? this.lastScore,
+  );
 
   factory TurnState.start(String playerId) => TurnState(
-        playerId: playerId,
-        rollNumber: 0,
-        dice: DiceSet.blank(),
-        hasRolled: false,
-      );
+    playerId: playerId,
+    rollNumber: 0,
+    dice: DiceSet.blank(),
+    hasRolled: false,
+  );
 }
 
 /// Banner / log event shown in the UI after a payout.

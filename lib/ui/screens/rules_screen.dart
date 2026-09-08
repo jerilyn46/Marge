@@ -40,8 +40,10 @@ class RulesScreen extends ConsumerWidget {
             emoji: '🎲',
             title: 'Your turn',
             body:
-                'Roll 3 dice, up to 3 times. Tap dice to keep them between rolls '
-                '(Yahtzee-style). You may bank early once you have a scoring hand.',
+                'Roll 3 dice, up to 3 times. Tap dice to keep them between rolls. '
+                'A non-scoring roll is still your turn — keep rolling. '
+                'Bank only when you have a scoring hand. '
+                'No score after 3 rolls: bust 2¢ into the pot.',
           ),
           _RuleCard(
             emoji: '👑',
