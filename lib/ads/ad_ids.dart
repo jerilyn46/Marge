@@ -1,3 +1,16 @@
+/// Compile-time AdMob kill switch. **Default OFF** for the Flip 7 hotfix.
+///
+/// Dart never calls MobileAds / UMP / banner / interstitial / rewarded unless
+/// this is true. Native GMA auto-init is also stripped unless Gradle
+/// `-PADMOB_ENABLED=true` (see `AndroidManifest.xml`).
+///
+/// Re-enable both together:
+/// `--dart-define=ADMOB_ENABLED=true -PADMOB_ENABLED=true`
+const bool kAdmobEnabled = bool.fromEnvironment(
+  'ADMOB_ENABLED',
+  defaultValue: false,
+);
+
 /// AdMob IDs resolved from `--dart-define` with Google official **test** defaults.
 ///
 /// Never commit production App / unit IDs. Inject them at build time only.
@@ -20,7 +33,8 @@ class AdIds {
 
   /// Google official Android **test** unit IDs.
   static const String testBanner = 'ca-app-pub-3940256099942544/6300978111';
-  static const String testInterstitial = 'ca-app-pub-3940256099942544/1033173712';
+  static const String testInterstitial =
+      'ca-app-pub-3940256099942544/1033173712';
   static const String testRewarded = 'ca-app-pub-3940256099942544/5224354917';
 
   /// Virtual chips granted after a successful rewarded ad (cosmetics wallet).

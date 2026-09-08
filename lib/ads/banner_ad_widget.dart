@@ -22,6 +22,7 @@ class _LobbyBannerAdState extends ConsumerState<LobbyBannerAd> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (!kAdmobEnabled) return;
     // Wait for lobby layout so MediaQuery / adaptive AdSize are valid.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _loadIfNeeded();
@@ -29,7 +30,7 @@ class _LobbyBannerAdState extends ConsumerState<LobbyBannerAd> {
   }
 
   Future<void> _loadIfNeeded() async {
-    if (_banner != null || !adsPlatformSupported) return;
+    if (!kAdmobEnabled || _banner != null || !adsPlatformSupported) return;
     try {
       final ads = ref.read(adsServiceProvider);
       // Wait briefly for deferred consent + SDK init from main().
@@ -88,7 +89,7 @@ class _LobbyBannerAdState extends ConsumerState<LobbyBannerAd> {
 
   @override
   Widget build(BuildContext context) {
-    if (!adsPlatformSupported) {
+    if (!kAdmobEnabled || !adsPlatformSupported) {
       return const SizedBox.shrink();
     }
     final banner = _banner;
