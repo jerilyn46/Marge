@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../cosmetics/skins_service.dart';
 import '../engine/engine.dart';
+import '../services/saved_games.dart';
+import '../services/table_gem_book.dart';
 import '../services/coin_ledger.dart';
 import '../services/friends_service.dart';
 import '../services/local_turn_alerts.dart';
@@ -64,6 +66,8 @@ class MatchNotifier extends Notifier<MatchViewState?> {
   final LocalTurnAlerts _alerts = LocalTurnAlerts();
   Timer? _botTimer;
   String? _lastNoticeSeatId;
+  String? _savedId;
+  bool _releasedTable = false;
 
   /// Seat index of the local (device) player — always 0.
   static const int localSeat = 0;
@@ -107,12 +111,39 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       }
     }
 
+    _persistActive();
+
     final localName = playerName ?? 'You';
     final names = <String>[
       localName,
       for (var i = 0; i < otherHumanCount; i++) 'Player ${i + 2}',
     ];
-    final coins = ref.read(coinLedgerProvider.notifier).prepare();
+    final ledger = ref.read(coinLedgerProvider.notifier);
+    final live = ledger.prepare();
+    final available = live.availableHumanGems(localName);
+    final sit = PlayerCoinLedger.sitDownGems(available);
+    if (sit > 0) {
+      ledger.drawAvailable(localName, sit);
+    }
+    final book = TableGemBook();
+    book.seed(PlayerCoinLedger.localIdentity(localName), bot: false, gems: sit);
+    for (var i = 1; i < names.length; i++) {
+      book.seed(
+        names[i],
+        bot: false,
+        gems: live.openingCents(names[i], bot: false, fallback: 100),
+      );
+    }
+    for (var i = 0; i < botCount; i++) {
+      final name = BotRoster.nameAt(i);
+      book.seed(
+        name,
+        bot: true,
+        gems: live.openingCents(name, bot: true, fallback: 100),
+      );
+    }
+    _savedId = SavedGame.newId();
+    _releasedTable = false;
     _controller = MatchController(
       config: MatchConfig(
         botCount: botCount,
@@ -123,13 +154,14 @@ class MatchNotifier extends Notifier<MatchViewState?> {
         humanNames: names,
       ),
       rng: Random(),
-      coins: coins,
+      coins: book,
     );
     _controller!.startMatch();
     ref.read(cosmeticsProvider.notifier).beginMatch();
     _syncSettings();
     state = MatchViewState(snapshot: _controller!.snapshot);
     _announceTurn();
+    _persistActive();
     _scheduleBots();
   }
 
@@ -145,15 +177,178 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     );
   }
 
-  /// Add a free 100¢ play-money pack to the local human at this table.
-  /// Bots do not buy. House stake is unchanged.
-  int? buyLocalPlayCoins() {
+  int? moveFromMainBank(int gems) {
     final c = _controller;
-    if (c == null) return null;
-    final next = c.grantLocalPlayCoins(PlayerCoinLedger.playCoinPackCents);
-    if (next == null) return null;
+    if (c == null || gems <= 0) return null;
+    if (c.snapshot.phase == MatchPhase.matchEnd) return null;
+    final name = c.config.localPlayerName;
+    final ledger = ref.read(coinLedgerProvider.notifier);
+    if (ledger.drawAvailable(name, gems) == null) return null;
+    final next = c.grantLocalPlayCoins(gems);
+    if (next == null) {
+      ledger.grantHumanPlayCoins(name, cents: gems);
+      return null;
+    }
     _publish();
     return next;
+  }
+
+  bool resume(String id) {
+    final store = ref.read(savedGamesProvider.notifier).store;
+    final game = store.byId(id);
+    if (game == null) return false;
+    if (_savedId != null && _savedId != id) {
+      _persistActive();
+    }
+    _botTimer?.cancel();
+    _lastNoticeSeatId = null;
+    _savedId = id;
+    _releasedTable = false;
+    final book = TableGemBook();
+    for (final player in game.table.players) {
+      if (!player.profile.participates) continue;
+      book.seed(
+        player.profile.name,
+        bot: player.profile.isBot,
+        gems: player.bankCents,
+      );
+    }
+    _controller = MatchController(
+      config: game.table.config,
+      rng: Random(),
+      coins: book,
+    );
+    _controller!.restore(game.table);
+    _syncSettings();
+    state = MatchViewState(snapshot: _controller!.snapshot);
+    _announceTurn();
+    _scheduleBots();
+    return true;
+  }
+
+  Future<void> leaveUnfinished() async {
+    _botTimer?.cancel();
+    final c = _controller;
+    if (c == null) {
+      state = null;
+      return;
+    }
+    if (c.snapshot.phase == MatchPhase.matchEnd) {
+      _releaseFinishedTable();
+    } else {
+      _persistActive();
+      await ref.read(savedGamesProvider.notifier).flush();
+    }
+    _controller = null;
+    _savedId = null;
+    state = null;
+  }
+
+  void persistUnfinished() {
+    _persistActive();
+    unawaited(ref.read(savedGamesProvider.notifier).flush());
+  }
+
+  void dropSaved(String id) {
+    final store = ref.read(savedGamesProvider.notifier).store;
+    final game = store.byId(id);
+    if (game == null) return;
+    final local = game.table.localPlayer;
+    if (local != null && local.bankCents > 0) {
+      final ledger = ref.read(coinLedgerProvider.notifier);
+      SavedGameStore.returnLocalGems(
+        ledger: ledger.book,
+        localName: local.profile.name,
+        tableGems: local.bankCents,
+      );
+      ledger.publish();
+    }
+    ref.read(savedGamesProvider.notifier).remove(id);
+    if (_savedId == id) {
+      _botTimer?.cancel();
+      _controller = null;
+      _savedId = null;
+      state = null;
+    }
+  }
+
+  bool coverShortfall() {
+    final c = _controller;
+    final pending = c?.snapshot.pendingShortfall;
+    if (c == null || pending == null) return false;
+    final payer = c.snapshot.players[pending.payerSeatIndex];
+    final need = pending.dueGems - payer.bankCents;
+    final name = c.config.localPlayerName;
+    final ledger = ref.read(coinLedgerProvider.notifier);
+    if (need > 0) {
+      if (ledger.drawAvailable(name, need) == null) return false;
+      if (c.addTableGems(pending.payerSeatIndex, need) == null) {
+        ledger.grantHumanPlayCoins(name, cents: need);
+        return false;
+      }
+    }
+    final ok = c.coverShortfall();
+    _publish();
+    if (ok) _scheduleBots();
+    return ok;
+  }
+
+  void quitShortfall() {
+    final c = _controller;
+    if (c == null) return;
+    c.quitShortfall();
+    _publish();
+    _scheduleBots();
+  }
+
+  void _persistActive() {
+    final c = _controller;
+    final id = _savedId;
+    if (c == null || id == null) return;
+    if (c.snapshot.phase == MatchPhase.matchEnd ||
+        c.snapshot.phase == MatchPhase.setup) {
+      _releaseFinishedTable();
+      return;
+    }
+    ref
+        .read(savedGamesProvider.notifier)
+        .upsert(
+          SavedGame(
+            id: id,
+            savedAt: DateTime.now().toUtc(),
+            table: c.capture(),
+          ),
+        );
+  }
+
+  void _releaseFinishedTable() {
+    if (_releasedTable) return;
+    final c = _controller;
+    if (c == null) {
+      _releasedTable = true;
+      return;
+    }
+    PlayerState? local;
+    for (final p in c.snapshot.players) {
+      if (p.profile.id == 'human_0') {
+        local = p;
+        break;
+      }
+    }
+    if (local != null && local.bankCents > 0) {
+      final ledger = ref.read(coinLedgerProvider.notifier);
+      SavedGameStore.returnLocalGems(
+        ledger: ledger.book,
+        localName: c.config.localPlayerName,
+        tableGems: local.bankCents,
+      );
+      ledger.publish();
+    }
+    final id = _savedId;
+    if (id != null) {
+      ref.read(savedGamesProvider.notifier).remove(id);
+    }
+    _releasedTable = true;
   }
 
   void _syncSettings() {
@@ -178,6 +373,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       turnNotice: state?.turnNotice,
     );
     _announceTurn();
+    _persistActive();
   }
 
   /// Local "{name}'s turn" for You or a friend in the group. Bots never notify.
@@ -241,7 +437,9 @@ class MatchNotifier extends Notifier<MatchViewState?> {
   Future<void> roll() async {
     final c = _controller;
     if (c == null) return;
-    if (c.snapshot.phase == MatchPhase.awaitingHandoff) return;
+    if (c.snapshot.phase == MatchPhase.awaitingHandoff ||
+        c.snapshot.phase == MatchPhase.awaitingShortfall)
+      return;
     if (c.snapshot.currentPlayer.profile.isBot) return;
     final seat = c.snapshot.currentSeatIndex;
     _syncSettings();
@@ -291,7 +489,8 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       await _sfx.bust();
       await _applyLocalCosmetics(seat, payout);
     }
-    if (c.snapshot.phase == MatchPhase.awaitingHandoff) {
+    if (c.snapshot.phase == MatchPhase.awaitingHandoff ||
+        c.snapshot.phase == MatchPhase.awaitingShortfall) {
       // Gate: human must tap Continue / Next player.
       return;
     }
@@ -301,7 +500,9 @@ class MatchNotifier extends Notifier<MatchViewState?> {
   Future<void> bank() async {
     final c = _controller;
     if (c == null) return;
-    if (c.snapshot.phase == MatchPhase.awaitingHandoff) return;
+    if (c.snapshot.phase == MatchPhase.awaitingHandoff ||
+        c.snapshot.phase == MatchPhase.awaitingShortfall)
+      return;
     if (c.snapshot.currentPlayer.profile.isBot) return;
     final seat = c.snapshot.currentSeatIndex;
     final t = c.snapshot.turn;
@@ -333,7 +534,8 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     }
     _publish();
     await _applyLocalCosmetics(seat, payout);
-    if (c.snapshot.phase == MatchPhase.awaitingHandoff) {
+    if (c.snapshot.phase == MatchPhase.awaitingHandoff ||
+        c.snapshot.phase == MatchPhase.awaitingShortfall) {
       return;
     }
     _scheduleBots();
@@ -362,7 +564,8 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     if (c == null) return;
     if (c.snapshot.phase == MatchPhase.matchEnd) return;
     // Bots must not act while the handoff strip is up.
-    if (c.snapshot.phase == MatchPhase.awaitingHandoff) {
+    if (c.snapshot.phase == MatchPhase.awaitingHandoff ||
+        c.snapshot.phase == MatchPhase.awaitingShortfall) {
       if (state != null) state = state!.copyWith(busyBot: false);
       return;
     }
@@ -373,7 +576,8 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     if (state != null) state = state!.copyWith(busyBot: true);
     _botTimer = Timer(const Duration(milliseconds: 700), () async {
       if (_controller == null) return;
-      if (_controller!.snapshot.phase == MatchPhase.awaitingHandoff) {
+      if (_controller!.snapshot.phase == MatchPhase.awaitingHandoff ||
+          _controller!.snapshot.phase == MatchPhase.awaitingShortfall) {
         if (state != null) state = state!.copyWith(busyBot: false);
         return;
       }
@@ -405,7 +609,8 @@ class MatchNotifier extends Notifier<MatchViewState?> {
         await _sfx.roll();
       }
       _publish();
-      if (_controller!.snapshot.phase == MatchPhase.awaitingHandoff) {
+      if (_controller!.snapshot.phase == MatchPhase.awaitingHandoff ||
+          _controller!.snapshot.phase == MatchPhase.awaitingShortfall) {
         if (state != null) state = state!.copyWith(busyBot: false);
         return;
       }

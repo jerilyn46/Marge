@@ -27,13 +27,17 @@ void main() {
       expect(r.perOpponentCents, 10);
     });
 
-    test('three of a kind pays face value', () {
+    test('later three of a kind pays face; first roll pays 2x', () {
       for (final face in [2, 3, 4, 5, 6]) {
         final dice = DiceSet.fromValues([face, face, face]);
-        final r = HandEvaluator.evaluate(dice, rollNumber: 1);
-        expect(r.kind, ScoreKind.threeOfAKind);
-        expect(r.faceValue, face);
-        expect(r.perOpponentCents, face);
+        final first = HandEvaluator.evaluate(dice, rollNumber: 1);
+        expect(first.kind, ScoreKind.threeOfAKind);
+        expect(first.faceValue, face);
+        expect(first.perOpponentCents, face * 2);
+        expect(first.bankedOnly, isTrue);
+        final later = HandEvaluator.evaluate(dice, rollNumber: 2);
+        expect(later.perOpponentCents, face);
+        expect(later.bankedOnly, isFalse);
       }
     });
 
@@ -47,10 +51,7 @@ void main() {
         [6, 4, 5],
       ];
       for (final s in straights) {
-        final r = HandEvaluator.evaluate(
-          DiceSet.fromValues(s),
-          rollNumber: 2,
-        );
+        final r = HandEvaluator.evaluate(DiceSet.fromValues(s), rollNumber: 2);
         expect(r.kind, ScoreKind.straight, reason: '$s');
         expect(r.perOpponentCents, 5);
       }
@@ -65,10 +66,7 @@ void main() {
         [1, 2, 4],
       ];
       for (final j in junk) {
-        final r = HandEvaluator.evaluate(
-          DiceSet.fromValues(j),
-          rollNumber: 3,
-        );
+        final r = HandEvaluator.evaluate(DiceSet.fromValues(j), rollNumber: 3);
         expect(r.kind, ScoreKind.none, reason: '$j');
         expect(r.isScoring, isFalse);
       }

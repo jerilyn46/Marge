@@ -33,7 +33,7 @@ class ShopScreen extends ConsumerWidget {
                   border: Border.all(color: MargeColors.gold),
                 ),
                 child: Text(
-                  'Wallet ${cos.walletCents}¢',
+                  'Wallet ${cos.walletCents} gems',
                   style: const TextStyle(
                     color: MargeColors.gold,
                     fontWeight: FontWeight.w900,
@@ -146,7 +146,7 @@ class _SkinTile extends ConsumerWidget {
                         ? (def.isFree ? 'Free · Owned' : 'Owned')
                         : (def.isFree
                               ? 'Free'
-                              : '${def.priceCents}¢ · ${def.unlockHint}'),
+                              : '${def.priceCents} gems · ${def.unlockHint}'),
                     style: TextStyle(
                       color: owned
                           ? MargeColors.sky
@@ -211,7 +211,7 @@ class _SkinTile extends ConsumerWidget {
                                   }
                                 }
                               : null,
-                          child: Text('Buy ${def.priceCents}¢'),
+                          child: Text('Buy ${def.priceCents} gems'),
                         ),
                     ],
                   ),
@@ -244,16 +244,13 @@ class _WatchAdForChipsCardState extends ConsumerState<_WatchAdForChipsCard> {
       onReward: (amount) async {
         await ref
             .read(cosmeticsProvider.notifier)
-            .grantVirtualChips(
-              amount,
-              reason: '+$amount¢ virtual chips from ad!',
-            );
+            .grantVirtualChips(amount, reason: '+$amount gems gems from ad!');
       },
     );
     if (!mounted) return;
     setState(() => _busy = false);
     final msg = earned
-        ? 'Granted ${AdIds.rewardedChipGrant}¢ virtual chips!'
+        ? 'Granted ${AdIds.rewardedChipGrant} gems gems!'
         : 'Ad not available right now — try again later.';
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
@@ -268,12 +265,12 @@ class _WatchAdForChipsCardState extends ConsumerState<_WatchAdForChipsCard> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Free virtual chips',
+              'Free gems',
               style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
             ),
             const SizedBox(height: 4),
             Text(
-              'Watch a short ad to earn ${AdIds.rewardedChipGrant}¢ virtual chips '
+              'Watch a short ad to earn ${AdIds.rewardedChipGrant} gems gems '
               'for the dice shop. Not real money.',
               style: TextStyle(
                 color: MargeColors.cream.withValues(alpha: 0.8),
@@ -293,7 +290,7 @@ class _WatchAdForChipsCardState extends ConsumerState<_WatchAdForChipsCard> {
               label: Text(
                 _busy
                     ? 'Loading…'
-                    : 'Watch ad for +${AdIds.rewardedChipGrant}¢',
+                    : 'Watch ad for +${AdIds.rewardedChipGrant} gems',
               ),
             ),
           ],

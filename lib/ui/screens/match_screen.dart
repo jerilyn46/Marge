@@ -10,15 +10,33 @@ import '../widgets/confetti_overlay.dart';
 import '../widgets/die_widget.dart';
 import '../widgets/handoff_strip.dart';
 import '../widgets/payout_banner.dart';
+import '../../services/coin_ledger.dart';
+import '../widgets/gem_shortfall_dialog.dart';
 import '../widgets/play_coin_pack_button.dart';
 import '../widgets/player_chip.dart';
 import '../widgets/pot_meter.dart';
 
-void _buyLocalPlayCoins(BuildContext context, WidgetRef ref) {
-  final next = ref.read(matchProvider.notifier).buyLocalPlayCoins();
+void _addGems(BuildContext context, WidgetRef ref, int gems) {
+  final view = ref.read(matchProvider);
+  final name = view?.snapshot.config.localPlayerName ?? 'You';
+  final next = ref
+      .read(coinLedgerProvider.notifier)
+      .grantHumanPlayCoins(name, cents: gems);
   if (!context.mounted || next == null) return;
   ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text('Added 100¢ play coins. You have $next¢.')),
+    SnackBar(content: Text('Added $gems gems. Gem bank has $next gems.')),
+  );
+}
+
+void _moveIntoGame(BuildContext context, WidgetRef ref, int gems) {
+  final next = ref.read(matchProvider.notifier).moveFromMainBank(gems);
+  if (!context.mounted || next == null) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(
+        'Moved $gems gems into this game. You have $next gems at the table.',
+      ),
+    ),
   );
 }
 
@@ -29,6 +47,24 @@ class MatchScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final view = ref.watch(matchProvider);
     final skinTheme = ref.watch(cosmeticsProvider).equippedTheme;
+    ref.listen(matchProvider, (prev, next) {
+      final pending = next?.snapshot.pendingShortfall;
+      if (pending == null) return;
+      final previous = prev?.snapshot.pendingShortfall;
+      if (previous != null &&
+          previous.payerSeatIndex == pending.payerSeatIndex &&
+          previous.dueGems == pending.dueGems) {
+        return;
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => GemShortfallDialog(shortfall: pending),
+        );
+      });
+    });
     if (view == null) {
       return const Scaffold(body: Center(child: Text('No match')));
     }
@@ -51,235 +87,262 @@ class MatchScreen extends ConsumerWidget {
         handoff?.diceValues ??
         (turn != null && turn.hasRolled ? turn.dice.values : null);
 
-    return Scaffold(
-      body: Stack(
-        children: [
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xFF1B0F3B),
-                  MargeColors.felt,
-                  Color(0xFF0A3D2A),
-                ],
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        await ref.read(matchProvider.notifier).leaveUnfinished();
+        if (context.mounted) Navigator.of(context).pop();
+      },
+      child: Scaffold(
+        body: Stack(
+          children: [
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xFF1B0F3B),
+                    MargeColors.felt,
+                    Color(0xFF0A3D2A),
+                  ],
+                ),
               ),
-            ),
-            child: SafeArea(
-              child: Column(
-                children: [
-                  _TopBar(snap: snap),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: PotMeter(potCents: snap.potCents),
-                  ),
-                  const SizedBox(height: 12),
-                  if (view.turnNotice != null) ...[
-                    const SizedBox(height: 8),
+              child: SafeArea(
+                child: Column(
+                  children: [
+                    _TopBar(snap: snap),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Material(
-                        color: MargeColors.gold.withValues(alpha: 0.18),
-                        borderRadius: BorderRadius.circular(12),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          child: Text(
-                            view.turnNotice!,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: MargeColors.gold,
-                              fontWeight: FontWeight.w900,
+                      child: PotMeter(potCents: snap.potCents),
+                    ),
+                    const SizedBox(height: 12),
+                    if (view.turnNotice != null) ...[
+                      const SizedBox(height: 8),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Material(
+                          color: MargeColors.gold.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            child: Text(
+                              view.turnNotice!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: MargeColors.gold,
+                                fontWeight: FontWeight.w900,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ),
-                  ],
-                  SizedBox(
-                    height: 72,
-                    child: ListView.separated(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      scrollDirection: Axis.horizontal,
-                      itemCount: snap.players.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 8),
-                      itemBuilder: (context, i) {
-                        return PlayerChip(
-                          player: snap.players[i],
-                          isActive: i == snap.currentSeatIndex,
-                          compact: true,
-                        );
-                      },
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                    child: PlayCoinPackButton(
-                      compact: true,
-                      onPressed: () => _buyLocalPlayCoins(context, ref),
-                    ),
-                  ),
-                  if (snap.lastPayout != null && !showStrip) ...[
-                    const SizedBox(height: 10),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: PayoutBanner(event: snap.lastPayout!),
-                    ),
-                  ],
-                  const Spacer(),
-                  _TurnBanner(
-                    snapshot: snap,
-                    busyBot: view.busyBot,
-                    gated: gated,
-                  ),
-                  const SizedBox(height: 16),
-                  if (lockedFaces != null)
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        for (var i = 0; i < 3; i++) ...[
-                          if (i > 0) const SizedBox(width: 12),
-                          DieWidget(
-                            value: lockedFaces[i],
-                            kept: gated
-                                ? true
-                                : (turn?.dice.dice[i].kept ?? false),
-                            enabled:
-                                canInteract &&
-                                turn != null &&
-                                turn.rollNumber < 3,
-                            theme: skinTheme,
-                            onTap: () =>
-                                ref.read(matchProvider.notifier).toggleKeep(i),
-                          ),
-                        ],
-                      ],
-                    )
-                  else
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(
-                        3,
-                        (i) => Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                          child: Opacity(
-                            opacity: 0.35,
-                            child: DieWidget(
-                              value: 1,
-                              kept: false,
-                              enabled: false,
-                              size: 64,
-                              theme: skinTheme,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  if (!gated && turn != null && turn.mustKeepRolling)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 10),
-                      child: Text(
-                        canInteract
-                            ? 'No score yet — keep rolling · ${turn.rollsLeft} rolls left'
-                            : '',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: MargeColors.cream.withValues(alpha: 0.7),
-                          fontSize: 13,
-                        ),
-                      ),
-                    )
-                  else if (!gated &&
-                      turn != null &&
-                      turn.hasRolled &&
-                      turn.canBank &&
-                      turn.rollsLeft > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 10),
-                      child: Text(
-                        canInteract
-                            ? 'Tap dice to keep · roll again or bank'
-                            : '',
-                        style: TextStyle(
-                          color: MargeColors.cream.withValues(alpha: 0.7),
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                  if (!gated && turn != null && turn.lastScore.isScoring)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        _scoreHint(turn.lastScore),
-                        style: const TextStyle(
-                          color: MargeColors.gold,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  const Spacer(),
-                  if (showStrip && handoff != null)
-                    HandoffStrip(
-                      handoff: handoff,
-                      hotseat: hotseat,
-                      skinTheme: skinTheme,
-                      onConfirm: () =>
-                          ref.read(matchProvider.notifier).confirmHandoff(),
-                    )
-                  else
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                      child: _TurnActions(
-                        canInteract: canInteract,
-                        turn: turn,
-                        onRoll: () => ref.read(matchProvider.notifier).roll(),
-                        onBank: () => ref.read(matchProvider.notifier).bank(),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          ConfettiOverlay(active: view.showConfetti),
-          if (view.unlockBanner != null)
-            Positioned(
-              top: 72,
-              left: 16,
-              right: 16,
-              child: Material(
-                color: Colors.transparent,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: MargeColors.gold,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.35),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
                       ),
                     ],
-                  ),
-                  child: Text(
-                    view.unlockBanner!,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: MargeColors.velvet,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 15,
+                    SizedBox(
+                      height: 72,
+                      child: ListView.separated(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        scrollDirection: Axis.horizontal,
+                        itemCount: snap.players.length,
+                        separatorBuilder: (_, _) => const SizedBox(width: 8),
+                        itemBuilder: (context, i) {
+                          return PlayerChip(
+                            player: snap.players[i],
+                            isActive: i == snap.currentSeatIndex,
+                            compact: true,
+                          );
+                        },
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      child: Column(
+                        children: [
+                          GemDenominationPicker(
+                            compact: true,
+                            title: 'Add gems',
+                            onChosen: (gems) => _addGems(context, ref, gems),
+                          ),
+                          const SizedBox(height: 8),
+                          GemDenominationPicker(
+                            compact: true,
+                            title: 'Move into this game',
+                            available: ref
+                                .watch(coinLedgerProvider)
+                                .availableHumanGems(
+                                  snap.config.localPlayerName,
+                                ),
+                            hint: 'Draws from the gem bank. Not a real charge.',
+                            onChosen: (gems) =>
+                                _moveIntoGame(context, ref, gems),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (snap.lastPayout != null && !showStrip) ...[
+                      const SizedBox(height: 10),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: PayoutBanner(event: snap.lastPayout!),
+                      ),
+                    ],
+                    const Spacer(),
+                    _TurnBanner(
+                      snapshot: snap,
+                      busyBot: view.busyBot,
+                      gated: gated,
+                    ),
+                    const SizedBox(height: 16),
+                    if (lockedFaces != null)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          for (var i = 0; i < 3; i++) ...[
+                            if (i > 0) const SizedBox(width: 12),
+                            DieWidget(
+                              value: lockedFaces[i],
+                              kept: gated
+                                  ? true
+                                  : (turn?.dice.dice[i].kept ?? false),
+                              enabled:
+                                  canInteract &&
+                                  turn != null &&
+                                  turn.rollNumber < 3,
+                              theme: skinTheme,
+                              onTap: () => ref
+                                  .read(matchProvider.notifier)
+                                  .toggleKeep(i),
+                            ),
+                          ],
+                        ],
+                      )
+                    else
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: List.generate(
+                          3,
+                          (i) => Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            child: Opacity(
+                              opacity: 0.35,
+                              child: DieWidget(
+                                value: 1,
+                                kept: false,
+                                enabled: false,
+                                size: 64,
+                                theme: skinTheme,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (!gated && turn != null && turn.mustKeepRolling)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: Text(
+                          canInteract
+                              ? 'No score yet — keep rolling · ${turn.rollsLeft} rolls left'
+                              : '',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: MargeColors.cream.withValues(alpha: 0.7),
+                            fontSize: 13,
+                          ),
+                        ),
+                      )
+                    else if (!gated &&
+                        turn != null &&
+                        turn.hasRolled &&
+                        turn.canBank &&
+                        turn.rollsLeft > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: Text(
+                          canInteract
+                              ? 'Tap dice to keep · roll again or bank'
+                              : '',
+                          style: TextStyle(
+                            color: MargeColors.cream.withValues(alpha: 0.7),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    if (!gated && turn != null && turn.lastScore.isScoring)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          _scoreHint(turn.lastScore),
+                          style: const TextStyle(
+                            color: MargeColors.gold,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    const Spacer(),
+                    if (showStrip && handoff != null)
+                      HandoffStrip(
+                        handoff: handoff,
+                        hotseat: hotseat,
+                        skinTheme: skinTheme,
+                        onConfirm: () =>
+                            ref.read(matchProvider.notifier).confirmHandoff(),
+                      )
+                    else
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                        child: _TurnActions(
+                          canInteract: canInteract,
+                          turn: turn,
+                          onRoll: () => ref.read(matchProvider.notifier).roll(),
+                          onBank: () => ref.read(matchProvider.notifier).bank(),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            ConfettiOverlay(active: view.showConfetti),
+            if (view.unlockBanner != null)
+              Positioned(
+                top: 72,
+                left: 16,
+                right: 16,
+                child: Material(
+                  color: Colors.transparent,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: MargeColors.gold,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.35),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Text(
+                      view.unlockBanner!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: MargeColors.velvet,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -289,11 +352,11 @@ class MatchScreen extends ConsumerWidget {
       case ScoreKind.tripleOnesPotWin:
         return '🎯 POT WIN — triple ones!';
       case ScoreKind.tripleOnesPay:
-        return 'Triple ones — others pay 10¢';
+        return 'Triple ones — others pay 10 gems';
       case ScoreKind.threeOfAKind:
-        return 'Trips on ${s.faceValue} — others pay ${s.perOpponentCents}¢';
+        return 'Trips on ${s.faceValue} — others pay ${s.perOpponentCents} gems';
       case ScoreKind.straight:
-        return 'Straight — others pay 5¢';
+        return 'Straight — others pay 5 gems';
       case ScoreKind.none:
         return '';
     }
@@ -336,7 +399,7 @@ class _TurnActions extends StatelessWidget {
     final canBankNow = canInteract && showBank;
     final bankLabel =
         t != null && t.hasRolled && !t.lastScore.isScoring && t.mustFinish
-        ? 'BUST (2¢)'
+        ? 'BUST (2 gems)'
         : 'BANK';
     final rollLabel = t == null || !t.hasRolled
         ? 'ROLL'
@@ -568,7 +631,7 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
                 const SizedBox(height: 8),
                 Text(
                   '${winner.profile.avatarEmoji} ${winner.profile.name} '
-                  'wins with ${winner.bankCents}¢',
+                  'wins with ${winner.bankCents} gems',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     fontSize: 18,
@@ -588,8 +651,9 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
                     },
                   ),
                 ),
-                PlayCoinPackButton(
-                  onPressed: () => _buyLocalPlayCoins(context, ref),
+                GemDenominationPicker(
+                  title: 'Add gems',
+                  onChosen: (gems) => _addGems(context, ref, gems),
                 ),
                 const SizedBox(height: 10),
                 ElevatedButton(

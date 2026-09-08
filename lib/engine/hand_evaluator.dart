@@ -5,13 +5,14 @@ enum ScoreKind {
   /// Three 1s on the first roll of the turn → claim entire pot.
   tripleOnesPotWin,
 
-  /// Three 1s on roll 2 or 3 → each other pays 10¢.
+  /// Three 1s on roll 2 or 3 → each other pays 10 gems.
   tripleOnesPay,
 
-  /// Any other three-of-a-kind → each other pays face value ¢.
+  /// Three 2s–6s. First roll of the set: each other pays 2× the face.
+  /// Later rolls: each other pays the face.
   threeOfAKind,
 
-  /// Straight {1,2,3}|{2,3,4}|{3,4,5}|{4,5,6} → each other pays 5¢.
+  /// Straight {1,2,3}|{2,3,4}|{3,4,5}|{4,5,6} → each other pays 5 gems.
   straight,
 
   /// No scoring hand.
@@ -25,6 +26,7 @@ class ScoreResult {
     this.perOpponentCents = 0,
     this.takesPot = false,
     this.potPenaltyCents = 0,
+    this.bankedOnly = false,
   });
 
   final ScoreKind kind;
@@ -41,13 +43,20 @@ class ScoreResult {
   /// Amount the current player puts into the pot (bust after 3 rolls).
   final int potPenaltyCents;
 
+  /// Pay only gems already at the table. No house stake. Humans who cannot
+  /// cover the full amount get a choice instead of a silent partial pay.
+  final bool bankedOnly;
+
   bool get isScoring => kind != ScoreKind.none;
+
+  /// First-roll three 2s–6s: each other pays twice the face, or chooses.
+  bool get isFirstRollTripsPay => kind == ScoreKind.threeOfAKind && bankedOnly;
 
   static const none = ScoreResult(kind: ScoreKind.none);
 
   @override
   String toString() =>
-      'ScoreResult($kind face=$faceValue pay=$perOpponentCents pot=$takesPot pen=$potPenaltyCents)';
+      'ScoreResult($kind face=$faceValue pay=$perOpponentCents pot=$takesPot pen=$potPenaltyCents bankedOnly=$bankedOnly)';
 }
 
 /// Pure scoring rules for Marge.
@@ -62,7 +71,7 @@ class HandEvaluator {
   ];
 
   /// Evaluate current dice given which roll number just completed (1–3).
-  /// Does not apply the "bust put 2¢" rule — that is applied by the
+  /// Does not apply the "bust put 2 gems" rule — that is applied by the
   /// match controller when the player finishes 3 rolls with no score.
   static ScoreResult evaluate(DiceSet dice, {required int rollNumber}) {
     assert(rollNumber >= 1 && rollNumber <= 3);
@@ -79,6 +88,7 @@ class HandEvaluator {
       final face = tripleEntry.first.key;
       if (face == 1) {
         if (rollNumber == 1) {
+          // Pot only. Do not also charge 2 gems for triple 1s.
           return const ScoreResult(
             kind: ScoreKind.tripleOnesPotWin,
             faceValue: 1,
@@ -91,10 +101,12 @@ class HandEvaluator {
           perOpponentCents: 10,
         );
       }
+      final firstRoll = rollNumber == 1;
       return ScoreResult(
         kind: ScoreKind.threeOfAKind,
         faceValue: face,
-        perOpponentCents: face,
+        perOpponentCents: firstRoll ? face * 2 : face,
+        bankedOnly: firstRoll,
       );
     }
 
@@ -102,10 +114,7 @@ class HandEvaluator {
     final asSet = sorted.toSet();
     for (final s in straightSets) {
       if (asSet.length == 3 && asSet.containsAll(s)) {
-        return const ScoreResult(
-          kind: ScoreKind.straight,
-          perOpponentCents: 5,
-        );
+        return const ScoreResult(kind: ScoreKind.straight, perOpponentCents: 5);
       }
     }
 

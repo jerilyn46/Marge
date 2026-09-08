@@ -8,6 +8,8 @@ import 'ads/ad_ids.dart';
 import 'ads/ads_service.dart';
 import 'services/coin_ledger.dart';
 import 'services/friends_service.dart';
+import 'services/saved_games.dart';
+import 'ui/match_provider.dart';
 import 'startup_log.dart';
 import 'ui/screens/home_screen.dart';
 import 'ui/theme/marge_theme.dart';
@@ -21,7 +23,7 @@ Future<void> main() async {
   GoogleFonts.config.allowRuntimeFetching = false;
 
   // Coin banks must be on disk before the lobby paints, so a saved
-  // balance is never shown as a fresh 100¢.
+  // balance is never shown as a fresh 100 gems.
   try {
     PlayerCoinLedger.bootstrap = await PlayerCoinLedger.load();
   } catch (e, st) {
@@ -31,6 +33,11 @@ Future<void> main() async {
     FriendsNotifier.bootstrap = await FriendsNotifier.load();
   } catch (e, st) {
     debugPrint('main: friends load failed (empty list): $e\n$st');
+  }
+  try {
+    SavedGameStore.bootstrap = await SavedGameStore.load();
+  } catch (e, st) {
+    debugPrint('main: saved games load failed (none to resume): $e\n$st');
   }
 
   final container = ProviderContainer();
@@ -63,8 +70,32 @@ Future<void> _bootstrapAdsSafely(ProviderContainer container) async {
   }
 }
 
-class MargeApp extends StatelessWidget {
+class MargeApp extends ConsumerStatefulWidget {
   const MargeApp({super.key});
+
+  @override
+  ConsumerState<MargeApp> createState() => _MargeAppState();
+}
+
+class _MargeAppState extends ConsumerState<MargeApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) return;
+    ref.read(matchProvider.notifier).persistUnfinished();
+  }
 
   @override
   Widget build(BuildContext context) {
