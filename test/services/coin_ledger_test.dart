@@ -157,10 +157,7 @@ void main() {
   group('Monday bot reset', () {
     test('Denver week starts Monday 00:00 MDT', () {
       final tuesday = DateTime.utc(2026, 9, 8, 18);
-      expect(
-        DenverTime.weekStartUtc(tuesday),
-        DateTime.utc(2026, 9, 7, 6),
-      );
+      expect(DenverTime.weekStartUtc(tuesday), DateTime.utc(2026, 9, 7, 6));
     });
 
     test('bots reset once per Denver week; humans are never reset', () async {
@@ -203,7 +200,10 @@ void main() {
       expect(dup.error, isNotNull);
 
       final state = FriendsState(friends: added.friends, loaded: true);
-      await prefs.setString(FriendsNotifier.prefsKey, FriendsNotifier.encode(state));
+      await prefs.setString(
+        FriendsNotifier.prefsKey,
+        FriendsNotifier.encode(state),
+      );
 
       final removed = FriendsLogic.remove(state.friends, 'Sam');
       expect(removed, isEmpty);
@@ -243,11 +243,15 @@ void main() {
       expect(c.snapshot.players[2].profile.name, 'Riley');
       expect(c.snapshot.players[2].profile.isWaiting, isTrue);
       expect(
-        c.snapshot.players.where((p) => p.profile.isBot).map((p) => p.profile.name),
+        c.snapshot.players
+            .where((p) => p.profile.isBot)
+            .map((p) => p.profile.name),
         isNot(contains('Sam')),
       );
       expect(
-        c.snapshot.players.where((p) => p.profile.isBot).map((p) => p.profile.name),
+        c.snapshot.players
+            .where((p) => p.profile.isBot)
+            .map((p) => p.profile.name),
         isNot(contains('Riley')),
       );
       // 1 you + 2 friends + leftover bots, never more than 8, friends kept.
@@ -287,7 +291,7 @@ void main() {
       expect(online.line, isNot(contains('¢')));
       expect(online.line, isNot(contains('100')));
       // You still shows the saved bank. Waiting chairs do not.
-      expect(seats.first.line, contains('140¢'));
+      expect(seats.first.line, contains('140 gems'));
 
       const seated = FriendEntry(name: 'Sam');
       const aside = FriendEntry(name: 'Sam', seated: false);
@@ -313,10 +317,7 @@ void main() {
       expect(stuffed.coinTotalLabel, isNot(contains('100')));
 
       final c = MatchController(
-        config: const MatchConfig(
-          botCount: 1,
-          friendNames: ['Sam'],
-        ),
+        config: const MatchConfig(botCount: 1, friendNames: ['Sam']),
         rng: Random(1),
         coins: ledger,
       );
@@ -335,11 +336,18 @@ void main() {
       expect(ledger.savedCents('You', bot: false), 130);
 
       c.roll();
-      final after = c.snapshot.players.firstWhere((p) => p.profile.name == 'Sam');
+      final after = c.snapshot.players.firstWhere(
+        (p) => p.profile.name == 'Sam',
+      );
       expect(after.profile.isWaiting, isTrue);
       expect(after.coinTotalLabel, isNot(contains('¢')));
       expect(ledger.savedCents('Sam', bot: false), 250);
-      expect(c.snapshot.players.any((p) => p.profile.isBot && p.profile.name == 'Sam'), isFalse);
+      expect(
+        c.snapshot.players.any(
+          (p) => p.profile.isBot && p.profile.name == 'Sam',
+        ),
+        isFalse,
+      );
     });
   });
 

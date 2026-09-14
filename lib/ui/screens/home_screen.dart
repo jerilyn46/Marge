@@ -7,7 +7,9 @@ import '../../engine/engine.dart';
 import '../../services/coin_ledger.dart';
 import '../../services/friends_service.dart';
 import '../../services/settings_service.dart';
+import '../../engine/gem_label.dart';
 import '../match_provider.dart';
+import '../../services/saved_games.dart';
 import '../theme/marge_theme.dart';
 import 'match_screen.dart';
 import 'rules_screen.dart';
@@ -77,16 +79,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     setState(() => _applyPlan(_bots, _otherHumans, value, friends));
   }
 
-  void _buyPlayCoins(BuildContext context, WidgetRef ref) {
+  void _addGems(BuildContext context, WidgetRef ref, int gems) {
     final name = PlayerCoinLedger.localIdentity(
       ref.read(settingsProvider).playerName,
     );
     final next = ref
         .read(coinLedgerProvider.notifier)
-        .grantHumanPlayCoins(name);
+        .grantHumanPlayCoins(name, cents: gems);
     if (!context.mounted || next == null) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Added 100¢ play coins. $name has $next¢.')),
+      SnackBar(content: Text('Added $gems gems. Gem bank has $next gems.')),
     );
   }
 
@@ -114,6 +116,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final wallet = ref.watch(cosmeticsProvider).walletCents;
     final friends = ref.watch(friendsProvider);
     final ledger = ref.watch(coinLedgerProvider);
+    final savedGames = ref.watch(savedGamesProvider);
+    final gemBank = ledger.availableHumanGems(settings.playerName);
     final seated = friends.seatedNames;
     final friendCount = seated.length;
     final canStart = _canStart(friendCount);
@@ -154,7 +158,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         color: MargeColors.gold,
                       ),
                       label: Text(
-                        'Dice · $wallet¢',
+                        'Dice · $wallet gems',
                         style: const TextStyle(
                           color: MargeColors.gold,
                           fontWeight: FontWeight.w800,
@@ -325,7 +329,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               ],
                               const SizedBox(height: 8),
                               Text(
-                                'Coins',
+                                'Gems',
                                 style: TextStyle(
                                   color: MargeColors.gold.withValues(
                                     alpha: 0.9,
@@ -347,8 +351,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   ),
                                 ),
                               const SizedBox(height: 10),
-                              PlayCoinPackButton(
-                                onPressed: () => _buyPlayCoins(context, ref),
+                              Text(
+                                'Gem bank ${gemCount(gemBank)} available',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              GemDenominationPicker(
+                                onChosen: (gems) =>
+                                    _addGems(context, ref, gems),
                               ),
                               if (!canStart) ...[
                                 const SizedBox(height: 6),
@@ -407,6 +420,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   },
                 ),
                 const SizedBox(height: 16),
+                if (savedGames.isNotEmpty) ...[
+                  _SavedGamesCard(
+                    games: savedGames,
+                    onResume: (id) {
+                      final ok = ref.read(matchProvider.notifier).resume(id);
+                      if (!ok || !context.mounted) return;
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const MatchScreen()),
+                      );
+                    },
+                    onDrop: (id) =>
+                        ref.read(matchProvider.notifier).dropSaved(id),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 ElevatedButton(
                   onPressed: canStart
                       ? () {
@@ -650,6 +678,68 @@ class _FriendsCard extends StatelessWidget {
                   tooltip: 'Remove ${friend.name}',
                   onPressed: () => onRemove(friend.name),
                   icon: const Icon(Icons.close_rounded),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SavedGamesCard extends StatelessWidget {
+  const _SavedGamesCard({
+    required this.games,
+    required this.onResume,
+    required this.onDrop,
+  });
+
+  final List<SavedGame> games;
+  final ValueChanged<String> onResume;
+  final ValueChanged<String> onDrop;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Unfinished games',
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Resume one, or start a new game. Starting new does not delete these.',
+              style: TextStyle(
+                color: MargeColors.cream.withValues(alpha: 0.75),
+                fontSize: 12,
+              ),
+            ),
+            for (final game in games)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  game.resumeLine,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                subtitle: Text(game.seatSummary),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextButton(
+                      onPressed: () => onResume(game.id),
+                      child: const Text('Resume'),
+                    ),
+                    IconButton(
+                      tooltip: 'Drop game',
+                      onPressed: () => onDrop(game.id),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
                 ),
               ),
           ],

@@ -149,10 +149,10 @@ void main() {
       c.bank();
       // Face 4 from the one playable opponent, not the waiting chairs.
       final human = c.snapshot.players.firstWhere((p) => p.profile.isHuman);
-      expect(human.bankCents, 90 + 4);
+      expect(human.bankCents, 90 + 8);
       expect(c.snapshot.players[1].bankCents, 0);
       expect(c.snapshot.players[2].bankCents, 0);
-      expect(c.snapshot.players[3].bankCents, botBefore - 4);
+      expect(c.snapshot.players[3].bankCents, botBefore - 8);
       expect(c.snapshot.currentPlayer.profile.isHuman, isTrue);
     });
 
@@ -298,7 +298,7 @@ void main() {
       c.startMatch();
       c.roll();
       expect(c.snapshot.turn!.lastScore.kind, ScoreKind.threeOfAKind);
-      expect(c.snapshot.turn!.lastScore.perOpponentCents, 4);
+      expect(c.snapshot.turn!.lastScore.perOpponentCents, 8);
       final humanBefore = c.snapshot.currentPlayer.bankCents;
       final othersBefore = c.snapshot.players
           .where((p) => p.profile.isBot)
@@ -306,12 +306,101 @@ void main() {
           .toList();
       c.bank();
       final human = c.snapshot.players.firstWhere((p) => p.profile.isHuman);
-      expect(human.bankCents, humanBefore + 12); // 3 bots * 4
+      expect(human.bankCents, humanBefore + 24); // 3 bots * 8
       final others = c.snapshot.players.where((p) => p.profile.isBot).toList();
       for (var i = 0; i < others.length; i++) {
-        expect(others[i].bankCents, othersBefore[i] - 4);
+        expect(others[i].bankCents, othersBefore[i] - 8);
       }
     });
+
+    test('three 5s on the first roll: each other pays 10 gems', () {
+      // 5,5,5 → nextInt 4,4,4
+      final rng = ScriptedRandom([4, 4, 4]);
+      final c = MatchController(
+        config: const MatchConfig(botCount: 2, otherHumanCount: 1),
+        rng: rng,
+      );
+      c.startMatch();
+      expect(c.snapshot.potCents, 40);
+      c.roll();
+      expect(c.snapshot.turn!.lastScore.perOpponentCents, 10);
+      final before = {
+        for (final p in c.snapshot.players) p.profile.id: p.bankCents,
+      };
+      c.bank();
+      final you = c.snapshot.players.firstWhere(
+        (p) => p.profile.id == 'human_0',
+      );
+      final other = c.snapshot.players.firstWhere(
+        (p) => p.profile.id == 'human_1',
+      );
+      final bot = c.snapshot.players.firstWhere((p) => p.profile.isBot);
+      expect(you.bankCents, before['human_0']! + 30);
+      expect(other.bankCents, before['human_1']! - 10);
+      expect(bot.bankCents, before['bot_0']! - 10);
+      expect(c.snapshot.potCents, 40);
+      expect(c.snapshot.pendingShortfall, isNull);
+      expect(c.snapshot.players.any((p) => p.profile.isWaiting), isFalse);
+    });
+
+    test(
+      'bot that cannot cover first-roll trips pays what it has and quits',
+      () {
+        final rng = ScriptedRandom([4, 4, 4]);
+        final c = MatchController(
+          config: const MatchConfig(
+            botCount: 1,
+            otherHumanCount: 0,
+            startBankCents: 15,
+            houseStakeCents: 50,
+          ),
+          rng: rng,
+        );
+        c.startMatch();
+        // 15 start, ante 10, table 5. Due is 10. Must not invent house gems.
+        expect(c.snapshot.players[1].bankCents, 5);
+        c.roll();
+        c.bank();
+        final you = c.snapshot.players.firstWhere((p) => p.profile.isHuman);
+        final bot = c.snapshot.players.firstWhere((p) => p.profile.isBot);
+        expect(bot.bankCents, 0);
+        expect(bot.eliminated, isTrue);
+        expect(you.bankCents, 5 + 5);
+        expect(c.snapshot.pendingShortfall, isNull);
+      },
+    );
+
+    test(
+      'human shortfall waits for cover or quit and does not take a partial',
+      () {
+        final rng = ScriptedRandom([4, 4, 4]);
+        final c = MatchController(
+          config: const MatchConfig(
+            botCount: 0,
+            otherHumanCount: 1,
+            startBankCents: 15,
+          ),
+          rng: rng,
+        );
+        c.startMatch();
+        c.roll();
+        final owedBefore = c.snapshot.players[1].bankCents;
+        c.bank();
+        expect(c.snapshot.phase, MatchPhase.awaitingShortfall);
+        final pending = c.snapshot.pendingShortfall;
+        expect(pending, isNotNull);
+        expect(pending!.dueGems, 10);
+        expect(c.snapshot.players[1].bankCents, owedBefore);
+        expect(c.snapshot.players[1].eliminated, isFalse);
+        final rollerBefore = c.snapshot.players[0].bankCents;
+
+        c.quitShortfall();
+        expect(c.snapshot.players[1].bankCents, 0);
+        expect(c.snapshot.players[1].eliminated, isTrue);
+        expect(c.snapshot.players[0].bankCents, rollerBefore + owedBefore);
+        expect(c.snapshot.pendingShortfall, isNull);
+      },
+    );
 
     test('straight collects 5 from others', () {
       // 1,2,3 → nextInt 0,1,2
@@ -448,7 +537,7 @@ void main() {
       final humanBefore = c.snapshot.currentPlayer.bankCents;
       c.bank();
       final human = c.snapshot.players.firstWhere((p) => p.profile.isHuman);
-      expect(human.bankCents, humanBefore + 12);
+      expect(human.bankCents, humanBefore + 24);
       // Win resets the same seat to a fresh 3 rolls. Does not hand off.
       expect(c.snapshot.phase, MatchPhase.playing);
       expect(c.snapshot.handoff, isNull);

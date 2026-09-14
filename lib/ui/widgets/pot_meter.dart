@@ -18,10 +18,7 @@ class PotMeter extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            MargeColors.felt,
-            Color.lerp(MargeColors.felt, heat, 0.35)!,
-          ],
+          colors: [MargeColors.felt, Color.lerp(MargeColors.felt, heat, 0.35)!],
         ),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: heat.withValues(alpha: 0.7), width: 2),
@@ -38,18 +35,18 @@ class PotMeter extends StatelessWidget {
           Text(
             'POT',
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  letterSpacing: 3,
-                  color: MargeColors.gold,
-                  fontWeight: FontWeight.w800,
-                ),
+              letterSpacing: 3,
+              color: MargeColors.gold,
+              fontWeight: FontWeight.w800,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
-            '$potCents¢',
+            '$potCents gems',
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  color: MargeColors.cream,
-                ),
+              fontWeight: FontWeight.w900,
+              color: MargeColors.cream,
+            ),
           ),
           const SizedBox(height: 8),
           ClipRRect(
@@ -66,8 +63,8 @@ class PotMeter extends StatelessWidget {
             t > 0.75
                 ? '🔥 HOT POT'
                 : t > 0.4
-                    ? 'Warming up…'
-                    : 'Ante brewing',
+                ? 'Warming up…'
+                : 'Ante brewing',
             style: TextStyle(
               color: heat,
               fontWeight: FontWeight.w700,

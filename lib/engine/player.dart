@@ -1,3 +1,5 @@
+import 'gem_label.dart';
+
 enum SeatKind { human, bot, waiting }
 
 /// Reserved online chair with nobody joined. Not a bot and not a person.
@@ -78,7 +80,7 @@ class PlayerState {
   String get coinTotalLabel {
     if (profile.isWaiting) return 'Waiting';
     if (eliminated) return 'OUT';
-    return '$bankCents¢';
+    return gemCount(bankCents);
   }
 
   bool get showsCoinTotal => !profile.isWaiting && !eliminated;

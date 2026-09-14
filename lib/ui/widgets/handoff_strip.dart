@@ -25,15 +25,15 @@ class HandoffStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final delta = handoff.bankDeltaCents;
     final deltaLabel = delta > 0
-        ? '+$delta¢'
+        ? '+$delta gems'
         : delta < 0
-            ? '$delta¢'
-            : '0¢';
+        ? '$delta gems'
+        : '0 gems';
     final deltaColor = delta > 0
         ? MargeColors.gold
         : delta < 0
-            ? MargeColors.coral
-            : MargeColors.cream;
+        ? MargeColors.coral
+        : MargeColors.cream;
 
     return Material(
       elevation: 12,

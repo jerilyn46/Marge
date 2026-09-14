@@ -4,6 +4,9 @@ import 'bot_ai.dart';
 import 'dice.dart';
 import 'hand_evaluator.dart';
 import 'player.dart';
+import 'gem_label.dart';
+import 'gem_shortfall.dart';
+import 'match_checkpoint.dart';
 import 'seat_coin_book.dart';
 import 'turn_state.dart';
 
@@ -15,6 +18,9 @@ enum MatchPhase {
 
   /// Post–turn-end gate: last roll locked until Next/Continue.
   awaitingHandoff,
+
+  /// First-roll trips shortfall: a human must cover or quit.
+  awaitingShortfall,
   roundEnd,
   matchEnd,
 }
@@ -234,6 +240,7 @@ class MatchSnapshot {
     required this.winnerId,
     required this.config,
     this.handoff,
+    this.pendingShortfall,
   });
 
   final MatchPhase phase;
@@ -247,6 +254,7 @@ class MatchSnapshot {
   final String? winnerId;
   final MatchConfig config;
   final HandoffState? handoff;
+  final GemShortfall? pendingShortfall;
 
   PlayerState get currentPlayer => players[currentSeatIndex];
 
@@ -280,6 +288,8 @@ class MatchController {
   PayoutEvent? _lastPayout;
   String? _winnerId;
   HandoffState? _handoff;
+  GemShortfall? _shortfall;
+  int _tripsCollected = 0;
 
   MatchSnapshot get snapshot => MatchSnapshot(
     phase: _phase,
@@ -291,6 +301,7 @@ class MatchController {
     log: List.unmodifiable(_log),
     lastPayout: _lastPayout,
     winnerId: _winnerId,
+    pendingShortfall: _shortfall,
     config: config,
     handoff: _handoff,
   );
@@ -302,6 +313,8 @@ class MatchController {
     _seat = 0;
     _turn = null;
     _handoff = null;
+    _shortfall = null;
+    _tripsCollected = 0;
     _log.clear();
     _lastPayout = null;
     _winnerId = null;
@@ -312,7 +325,7 @@ class MatchController {
         : '';
     _log.add(
       'Match started — ${_players.length} seats$waitingBit, '
-      '${config.startBankCents}¢ banks.',
+      '${config.startBankCents} gems banks.',
     );
     _beginRound();
   }
@@ -368,8 +381,23 @@ class MatchController {
     _players[index] = updated;
     _remember(index);
     _log.add(
-      '${p.profile.name} adds $cents¢ play coins (play money, not a cash purchase).',
+      '${p.profile.name} adds ${gemCount(cents)} (free, not a real charge).',
     );
+    return next;
+  }
+
+  /// Move play-money gems onto a seated human at this table only.
+  int? addTableGems(int seatIndex, int gems) {
+    if (gems <= 0 || seatIndex < 0 || seatIndex >= _players.length) return null;
+    final p = _players[seatIndex];
+    if (!p.profile.isHuman || p.profile.isWaiting) return null;
+    final next = p.bankCents + gems;
+    var updated = p.copyWith(bankCents: next);
+    if (updated.eliminated && next > 0) {
+      updated = updated.copyWith(eliminated: false);
+    }
+    _players[seatIndex] = updated;
+    _remember(seatIndex);
     return next;
   }
 
@@ -415,7 +443,7 @@ class MatchController {
             avatarEmoji: '👋',
             colorSeed: 30 + i,
           ),
-          // Absent until they sit. No saved balance and no 100¢. Do not ante or roll.
+          // Absent until they sit. No saved balance and no 100 gems. Do not ante or roll.
           bankCents: 0,
         ),
       );
@@ -465,7 +493,7 @@ class MatchController {
     if (_lastPayout?.celebratory != true) {
       _lastPayout = null;
     }
-    _log.add('— Round $_round — ante ${config.anteCents}¢ —');
+    _log.add('— Round $_round — ante ${config.anteCents} gems —');
 
     // Collect ante from each seated player. Waiting chairs do not ante.
     for (var i = 0; i < _players.length; i++) {
@@ -474,7 +502,7 @@ class MatchController {
       final paid = _takeFromBank(i, config.anteCents, soft: true);
       _pot += paid;
       if (paid < config.anteCents) {
-        _log.add('${p.profile.name} ante short ($paid¢).');
+        _log.add('${p.profile.name} ante short ($paid gems).');
       }
     }
 
@@ -505,7 +533,9 @@ class MatchController {
 
   /// Human / external: toggle keep on a die (only after first roll).
   void toggleKeep(int index) {
-    if (_phase == MatchPhase.awaitingHandoff) return;
+    if (_phase == MatchPhase.awaitingHandoff ||
+        _phase == MatchPhase.awaitingShortfall)
+      return;
     final t = _turn;
     if (t == null || !t.hasRolled || t.rollNumber >= 3) return;
     if (_players[_seat].profile.isBot) return;
@@ -513,7 +543,9 @@ class MatchController {
   }
 
   void setKeeps(List<bool> flags) {
-    if (_phase == MatchPhase.awaitingHandoff) return;
+    if (_phase == MatchPhase.awaitingHandoff ||
+        _phase == MatchPhase.awaitingShortfall)
+      return;
     final t = _turn;
     if (t == null || !t.hasRolled) return;
     var dice = t.dice;
@@ -526,7 +558,9 @@ class MatchController {
   /// Roll non-kept dice (or all on first roll).
   void roll() {
     if (!_plays(_players[_seat])) return;
-    if (_phase == MatchPhase.awaitingHandoff) return;
+    if (_phase == MatchPhase.awaitingHandoff ||
+        _phase == MatchPhase.awaitingShortfall)
+      return;
     final t = _turn;
     if (t == null) return;
     if (t.rollNumber >= 3) return;
@@ -577,7 +611,9 @@ class MatchController {
   /// Bank current scoring hand (or finish after 3 rolls / bust).
   /// Refuses to end the turn early on a non-scoring hand while rolls remain.
   void bank() {
-    if (_phase == MatchPhase.awaitingHandoff) return;
+    if (_phase == MatchPhase.awaitingHandoff ||
+        _phase == MatchPhase.awaitingShortfall)
+      return;
     final t = _turn;
     if (t == null || !t.hasRolled) return;
     // Refuse to end the turn on a miss while rolls remain. Banking a
@@ -604,7 +640,7 @@ class MatchController {
       _lastPayout = PayoutEvent(
         message:
             '${player.profile.name} hit TRIPLE ONES on first roll '
-            'and sweeps the pot (+$won¢)!',
+            'and sweeps the pot (+$won gems)!',
         kind: ScoreKind.tripleOnesPotWin,
         amountCents: won,
         celebratory: true,
@@ -613,6 +649,11 @@ class MatchController {
       // First-roll triple ones: take the pot, end the round, re-ante, then
       // the same winner starts a fresh 3 rolls. Do not pass the seat.
       _continueSameSeatAfterWin(restartRound: true);
+      return;
+    }
+
+    if (score.isFirstRollTripsPay) {
+      _resolveFirstRollTrips(score);
       return;
     }
 
@@ -630,12 +671,12 @@ class MatchController {
       _continueSameSeatAfterWin(restartRound: false);
       return;
     } else if (t.rollNumber >= 3) {
-      // Bust: put 2¢ in pot.
+      // Bust: put 2 gems in pot.
       final pen = HandEvaluator.bustPenalty.potPenaltyCents;
       final paid = _takeFromBank(_seat, pen, soft: true);
       _pot += paid;
       _lastPayout = PayoutEvent(
-        message: '${player.profile.name} whiffs — $paid¢ to the pot.',
+        message: '${player.profile.name} whiffs — $paid gems to the pot.',
         kind: ScoreKind.none,
         amountCents: paid,
       );
@@ -651,19 +692,164 @@ class MatchController {
 
   /// After a scoring bank: keep this seat and start a fresh 3-roll set.
   /// Does not apply to first-roll triple ones (that ends the round).
+  /// First-roll three 2s–6s. Full payment from table gems, or a choice.
+  /// Triple 1s never comes here. Waiting seats do not pay.
+  void _resolveFirstRollTrips(ScoreResult score) {
+    final due = score.perOpponentCents;
+    final face = score.faceValue ?? 0;
+    final roller = _seat;
+    _tripsCollected = 0;
+    final humansShort = <int>[];
+
+    for (var i = 0; i < _players.length; i++) {
+      if (i == roller || !_plays(_players[i])) continue;
+      final p = _players[i];
+      if (p.bankCents >= due) {
+        final paid = _takeFromBank(i, due, soft: false);
+        _tripsCollected += paid;
+        _credit(roller, paid);
+        continue;
+      }
+      if (p.profile.isBot) {
+        _payWhatTheyHaveAndQuit(i, roller);
+        continue;
+      }
+      humansShort.add(i);
+    }
+
+    _noteTripsPayout(score, waiting: humansShort.isNotEmpty);
+    if (humansShort.isEmpty) {
+      _continueSameSeatAfterWin(restartRound: false);
+      return;
+    }
+    _shortfall = GemShortfall(
+      payerSeatIndex: humansShort.first,
+      rollerSeatIndex: roller,
+      dueGems: due,
+      face: face,
+      queuedSeatIndexes: humansShort.skip(1).toList(),
+    );
+    _phase = MatchPhase.awaitingShortfall;
+    final payer = _players[humansShort.first];
+    _log.add(
+      '${payer.profile.name} cannot cover ${gemCount(due)} '
+      'for three ${face}s. Choose: add gems and pay in full, '
+      'or pay ${gemCount(payer.bankCents)} and quit this game.',
+    );
+  }
+
+  void _noteTripsPayout(ScoreResult score, {required bool waiting}) {
+    final name = _players[_seat].profile.name;
+    final each = score.perOpponentCents;
+    final face = score.faceValue;
+    final message = waiting
+        ? '$name hits three ${face}s on the first roll. '
+              'Each other seated player owes ${gemCount(each)}. '
+              'Collected ${gemCount(_tripsCollected)} so far.'
+        : '$name hits three ${face}s on the first roll! '
+              'Each other pays ${gemCount(each)}. '
+              'Collects ${gemCount(_tripsCollected)}.';
+    _lastPayout = PayoutEvent(
+      message: message,
+      kind: score.kind,
+      amountCents: _tripsCollected,
+      celebratory: false,
+    );
+    _log.add(message);
+  }
+
+  /// Take this table's gems only. Leftover at this table is 0. Quit the game.
+  void _payWhatTheyHaveAndQuit(int payer, int roller) {
+    final p = _players[payer];
+    final paid = p.bankCents;
+    if (paid > 0) {
+      _players[payer] = p.copyWith(bankCents: 0);
+      _remember(payer);
+      _credit(roller, paid);
+      _tripsCollected += paid;
+    } else {
+      _players[payer] = p.copyWith(bankCents: 0);
+    }
+    final named = _players[payer];
+    _players[payer] = named.copyWith(bankCents: 0, eliminated: true);
+    _remember(payer);
+    _log.add(
+      '${named.profile.name} pays ${gemCount(paid)} and quits this game.',
+    );
+  }
+
+  /// Human choice: pay whatever is at this table and leave this game.
+  void quitShortfall() {
+    final pending = _shortfall;
+    if (pending == null || _phase != MatchPhase.awaitingShortfall) return;
+    _payWhatTheyHaveAndQuit(pending.payerSeatIndex, pending.rollerSeatIndex);
+    _advanceShortfall(pending);
+  }
+
+  /// Human choice: gems were moved onto this seat. Pay the full amount.
+  /// Returns false if the table still cannot cover — nothing is taken.
+  bool coverShortfall() {
+    final pending = _shortfall;
+    if (pending == null || _phase != MatchPhase.awaitingShortfall) return false;
+    final payer = _players[pending.payerSeatIndex];
+    if (payer.bankCents < pending.dueGems) return false;
+    final paid = _takeFromBank(
+      pending.payerSeatIndex,
+      pending.dueGems,
+      soft: false,
+    );
+    if (paid < pending.dueGems) return false;
+    _credit(pending.rollerSeatIndex, paid);
+    _tripsCollected += paid;
+    _log.add('${payer.profile.name} pays ${gemCount(paid)} in full.');
+    _advanceShortfall(pending);
+    return true;
+  }
+
+  void _advanceShortfall(GemShortfall pending) {
+    if (pending.queuedSeatIndexes.isEmpty) {
+      _shortfall = null;
+      final score = _turn?.lastScore;
+      if (score != null && score.isFirstRollTripsPay) {
+        _noteTripsPayout(score, waiting: false);
+      }
+      _continueSameSeatAfterWin(restartRound: false);
+      return;
+    }
+    final next = pending.queuedSeatIndexes.first;
+    _shortfall = GemShortfall(
+      payerSeatIndex: next,
+      rollerSeatIndex: pending.rollerSeatIndex,
+      dueGems: pending.dueGems,
+      face: pending.face,
+      queuedSeatIndexes: pending.queuedSeatIndexes.skip(1).toList(),
+    );
+    _phase = MatchPhase.awaitingShortfall;
+    final payer = _players[next];
+    _log.add(
+      '${payer.profile.name} cannot cover ${gemCount(pending.dueGems)} '
+      'for three ${pending.face}s. Choose: add gems and pay in full, '
+      'or pay ${gemCount(payer.bankCents)} and quit this game.',
+    );
+  }
+
   void _continueSameSeatAfterWin({required bool restartRound}) {
     if (_playableCount <= 1) {
       _turn = null;
       _handoff = null;
+      _shortfall = null;
+      _tripsCollected = 0;
       _endMatch();
       return;
     }
     final payout = _lastPayout;
     final seat = _seat;
     _handoff = null;
+    _shortfall = null;
+    _tripsCollected = 0;
     if (restartRound) {
       _round++;
-      _log.add('— Round $_round — ante ${config.anteCents}¢ —');
+      _log.add('— Round $_round — ante ${config.anteCents} gems —');
       for (var i = 0; i < _players.length; i++) {
         final p = _players[i];
         if (!_plays(p)) continue;
@@ -682,13 +868,13 @@ class MatchController {
   String _describeScore(String name, ScoreResult score, int total) {
     switch (score.kind) {
       case ScoreKind.tripleOnesPay:
-        return '$name rolls triple ones! Collects $total¢ '
-            '(${score.perOpponentCents}¢ each).';
+        return '$name rolls triple ones! Collects $total gems '
+            '(${score.perOpponentCents} gems each).';
       case ScoreKind.threeOfAKind:
         return '$name hits three ${score.faceValue}s! '
-            'Collects $total¢ (${score.perOpponentCents}¢ each).';
+            'Collects $total gems (${score.perOpponentCents} gems each).';
       case ScoreKind.straight:
-        return '$name nails a straight! Collects $total¢ (5¢ each).';
+        return '$name nails a straight! Collects $total gems (5 gems each).';
       case ScoreKind.tripleOnesPotWin:
         return '$name sweeps the pot!';
       case ScoreKind.none:
@@ -733,7 +919,7 @@ class MatchController {
       final topped = p.bankCents + config.houseStakeCents;
       _log.add(
         '🏠 House stake: ${p.profile.name} gets '
-        '+${config.houseStakeCents}¢ (once).',
+        '+${config.houseStakeCents} gems (once).',
       );
       p = p.copyWith(bankCents: topped, usedHouseStake: true);
       _players[index] = p;
@@ -799,6 +985,8 @@ class MatchController {
     if (_playableCount <= 1) {
       _turn = null;
       _handoff = null;
+      _shortfall = null;
+      _tripsCollected = 0;
       _endMatch();
       return;
     }
@@ -826,6 +1014,8 @@ class MatchController {
     if (_phase != MatchPhase.awaitingHandoff || _handoff == null) return;
     final h = _handoff!;
     _handoff = null;
+    _shortfall = null;
+    _tripsCollected = 0;
     _turn = null;
 
     if (h.restartsRound) {
@@ -846,6 +1036,8 @@ class MatchController {
     _phase = MatchPhase.matchEnd;
     _turn = null;
     _handoff = null;
+    _shortfall = null;
+    _tripsCollected = 0;
     final sorted = _players.where(_plays).toList()
       ..sort((a, b) => b.bankCents.compareTo(a.bankCents));
     if (sorted.isEmpty) {
@@ -856,7 +1048,7 @@ class MatchController {
     _winnerId = sorted.first.profile.id;
     _log.add(
       'Match over. Winner: ${sorted.first.profile.name} '
-      'with ${sorted.first.bankCents}¢.',
+      'with ${sorted.first.bankCents} gems.',
     );
   }
 
@@ -904,6 +1096,48 @@ class MatchController {
         _plays(_players[_seat])) {
       tickBot();
       steps++;
+    }
+  }
+
+  /// Freeze this table so it can be resumed without a new ante.
+  MatchCheckpoint capture() => MatchCheckpoint(
+    phase: _phase,
+    players: List<PlayerState>.from(_players),
+    potCents: _pot,
+    roundNumber: _round,
+    currentSeatIndex: _seat,
+    config: config,
+    turn: _turn,
+    handoff: _handoff,
+    log: List<String>.from(_log),
+    lastPayout: _lastPayout,
+    winnerId: _winnerId,
+    pendingShortfall: _shortfall,
+  );
+
+  /// Restore a saved table exactly. Does not ante, and does not reset banks.
+  void restore(MatchCheckpoint saved) {
+    _players = List<PlayerState>.from(saved.players);
+    _pot = saved.potCents;
+    _round = saved.roundNumber;
+    _seat = saved.currentSeatIndex.clamp(0, _players.length - 1);
+    _phase = saved.phase;
+    _turn = saved.turn;
+    _handoff = saved.handoff;
+    _shortfall = saved.pendingShortfall;
+    _tripsCollected = saved.lastPayout?.amountCents ?? 0;
+    _log
+      ..clear()
+      ..addAll(saved.log);
+    _lastPayout = saved.lastPayout;
+    _winnerId = saved.winnerId;
+    for (var i = 0; i < _players.length; i++) {
+      _remember(i);
+    }
+    if (_phase == MatchPhase.playing &&
+        _turn == null &&
+        _plays(_players[_seat])) {
+      _startTurn();
     }
   }
 }

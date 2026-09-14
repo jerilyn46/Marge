@@ -33,9 +33,9 @@ class RulesScreen extends ConsumerWidget {
             title: 'Banks & ante',
             body:
                 '2–8 seats. You and local hotseat humans sit first, then named friends (waiting if they are not here), then reserved online chairs, then bots in leftover seats. '
-                'Playing seats keep their saved coins (100¢ if that name is new). '
-                'Bots reset to 100¢ each Monday at midnight America/Denver. '
-                'Each round, every playing seat antes 10¢ into the pot.',
+                'The gem bank is uncommitted play money. A new game sits you with up to 100 gems from that bank. '
+                'Each unfinished game keeps its own pot and table gems. Bots on a saved table keep those gems until that game ends. '
+                'Each round, every playing seat antes 10 gems into the pot.',
           ),
           _RuleCard(
             emoji: '🎲',
@@ -43,7 +43,7 @@ class RulesScreen extends ConsumerWidget {
             body:
                 'Roll 3 dice, up to 3 times. Tap dice to keep them between rolls. '
                 'A winning hand banks the payout and resets you to 3 new rolls. '
-                'The turn ends only after 3 rolls with no winning hand: bust 2¢ into the pot.',
+                'The turn ends only after 3 rolls with no winning hand: bust 2 gems into the pot.',
           ),
           _RuleCard(
             emoji: '👑',
@@ -56,16 +56,16 @@ class RulesScreen extends ConsumerWidget {
             emoji: '💰',
             title: 'Other scores',
             body:
-                'Triple ones on roll 2/3: each other player pays you 10¢.\n'
-                'Other three-of-a-kind: each other pays the face value in ¢.\n'
-                'Straight (123/234/345/456): each other pays 5¢.\n'
-                'No score after 3 rolls: put 2¢ in the pot.',
+                'Triple ones on roll 2/3: each other player pays you 10 gems.\n'
+                'Three 2s-6s on the first roll: each other pays 2x the face. Later three-of-a-kind pays the face value.\n'
+                'Straight (123/234/345/456): each other pays 5 gems.\n'
+                'No score after 3 rolls: put 2 gems in the pot.',
           ),
           _RuleCard(
             emoji: '🏠',
             title: 'House stake',
             body:
-                'Soft bankrupt: once per match the House tops you up 50¢. '
+                'Soft bankrupt: once per match the House tops you up 50 gems. '
                 'After that, running dry can knock you out. Endless rounds until you End match.',
           ),
           _RuleCard(
