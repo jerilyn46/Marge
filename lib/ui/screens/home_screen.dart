@@ -3,23 +3,23 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../engine/engine.dart';
+import '../../engine/gem_label.dart';
 import '../../services/coin_ledger.dart';
 import '../../services/friends_service.dart';
-import '../../services/settings_service.dart';
-import '../../engine/gem_label.dart';
-import '../match_provider.dart';
 import '../../services/saved_games.dart';
-import '../theme/marge_theme.dart';
-import 'match_screen.dart';
-import 'rules_screen.dart';
-import 'settings_screen.dart';
-import '../widgets/play_coin_pack_button.dart';
-import 'shop_screen.dart';
-import '../../ads/banner_ad_widget.dart';
-import '../../cosmetics/skins_service.dart';
+import '../../services/settings_service.dart';
 import '../../startup_log.dart';
+import '../match_provider.dart';
+import '../theme/marge_theme.dart';
+import '../widgets/felt_hero_backdrop.dart';
+import '../widgets/gem_bank_sheet.dart';
+import 'friends_screen.dart';
+import 'match_screen.dart';
+import 'more_screen.dart';
+import 'setup_screen.dart';
+import 'shop_screen.dart';
 
+/// Inviting lobby — warm evening table. Dense setup lives after Play.
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -28,481 +28,153 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  /// Default: 3 bots, 0 other humans, 0 online (classic solo feel).
-  int _bots = 3;
-  int _otherHumans = 0;
-  int _online = 0;
-  final _friendName = TextEditingController();
-  String? _friendError;
-
-  @override
-  void dispose() {
-    _friendName.dispose();
-    super.dispose();
-  }
-
-  int _seatedFriends(FriendsState friends) => friends.seatedNames.length;
-
   @override
   void initState() {
     super.initState();
     unawaited(StartupLog.mark('lobby-widget'));
   }
 
-  /// Playable opponents only. Waiting online chairs do not count.
-  int get _playableOpponents => _bots + _otherHumans;
-  int _totalSeats(int friends) => 1 + _otherHumans + friends + _online + _bots;
-  bool _canStart(int friends) =>
-      _playableOpponents >= 1 &&
-      _playableOpponents <= MatchConfig.maxOpponents &&
-      _totalSeats(friends) <= MatchConfig.maxOpponents + 1;
-
-  void _applyPlan(int bots, int others, int online, int friends) {
-    final plan = MatchConfig.clampLobbyCounts(bots, others, online, friends);
-    _bots = plan.bots;
-    _otherHumans = plan.others;
-    _online = plan.online;
-  }
-
-  void _setBots(int value) {
-    final friends = _seatedFriends(ref.read(friendsProvider));
-    setState(() => _applyPlan(value, _otherHumans, _online, friends));
-  }
-
-  void _setOthers(int value) {
-    final friends = _seatedFriends(ref.read(friendsProvider));
-    setState(() => _applyPlan(_bots, value, _online, friends));
-  }
-
-  void _setOnline(int value) {
-    final friends = _seatedFriends(ref.read(friendsProvider));
-    setState(() => _applyPlan(_bots, _otherHumans, value, friends));
-  }
-
-  void _addGems(BuildContext context, WidgetRef ref, int gems) {
-    final name = PlayerCoinLedger.localIdentity(
-      ref.read(settingsProvider).playerName,
-    );
-    final next = ref
-        .read(coinLedgerProvider.notifier)
-        .grantHumanPlayCoins(name, cents: gems);
-    if (!context.mounted || next == null) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Added $gems gems. Gem bank has $next gems.')),
-    );
-  }
-
-  String get _seatSummary {
-    final parts = <String>['You'];
-    if (_otherHumans > 0) {
-      parts.add('$_otherHumans human${_otherHumans == 1 ? '' : 's'}');
-    }
-    final seatedFriends = _seatedFriends(ref.read(friendsProvider));
-    if (seatedFriends > 0) {
-      parts.add('$seatedFriends friend${seatedFriends == 1 ? '' : 's'}');
-    }
-    if (_online > 0) {
-      parts.add('$_online online (waiting)');
-    }
-    if (_bots > 0) {
-      parts.add('$_bots bot${_bots == 1 ? '' : 's'}');
-    }
-    return parts.join(' + ');
-  }
-
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
-    final wallet = ref.watch(cosmeticsProvider).walletCents;
     final friends = ref.watch(friendsProvider);
     final ledger = ref.watch(coinLedgerProvider);
     final savedGames = ref.watch(savedGamesProvider);
     final gemBank = ledger.availableHumanGems(settings.playerName);
     final seated = friends.seatedNames;
-    final friendCount = seated.length;
-    final canStart = _canStart(friendCount);
-    final seats = PlayerCoinLedger.lobbySeats(
-      localName: settings.playerName,
-      otherHumans: _otherHumans,
-      online: _online,
-      bots: _bots,
-      friendNames: seated,
-      ledger: ledger,
-    );
 
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [MargeColors.velvet, Color(0xFF2D1B69), MargeColors.felt],
-          ),
-        ),
+      body: FeltHeroBackdrop(
         child: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Row(
                   children: [
-                    TextButton.icon(
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const ShopScreen()),
-                        );
-                      },
-                      icon: const Icon(
-                        Icons.casino_rounded,
-                        color: MargeColors.gold,
-                      ),
-                      label: Text(
-                        'Dice · $wallet gems',
-                        style: const TextStyle(
-                          color: MargeColors.gold,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      tooltip: 'Settings',
-                      onPressed: () {
+                    _FriendsPeek(
+                      seatedCount: seated.length,
+                      totalCount: friends.friends.length,
+                      onTap: () {
                         Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) => const SettingsScreen(),
+                            builder: (_) => const FriendsScreen(),
                           ),
                         );
                       },
-                      icon: const Icon(Icons.settings_rounded),
-                      color: MargeColors.cream,
+                    ),
+                    const Spacer(),
+                    _GemJewelTray(
+                      gems: gemBank,
+                      onTap: () => showGemBankSheet(context, ref),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  '🎲 MARGE',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                    fontWeight: FontWeight.w900,
-                    color: MargeColors.gold,
-                    letterSpacing: 4,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Dice Game',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: MargeColors.cream,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Chase the pot. Bank the trips.\nHit triple ones on the first roll.',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: MargeColors.cream.withValues(alpha: 0.8),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Match setup',
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.w900),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Hello, ${settings.playerName}! You are Player 1.',
-                          style: TextStyle(
-                            color: MargeColors.cream.withValues(alpha: 0.75),
-                            fontSize: 13,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        _CountStepper(
-                          label: 'Other players',
-                          subtitle: 'Local hotseat humans · seated first',
-                          value: _otherHumans,
-                          onDecrement: _otherHumans > 0
-                              ? () => _setOthers(_otherHumans - 1)
-                              : null,
-                          onIncrement:
-                              MatchConfig.canIncrementOthers(
-                                _bots,
-                                _otherHumans,
-                                _online,
-                                friendCount,
-                              )
-                              ? () => _setOthers(_otherHumans + 1)
-                              : null,
-                        ),
-                        const SizedBox(height: 12),
-                        _CountStepper(
-                          label: 'Online players',
-                          subtitle:
-                              'Reserved before bots · waiting if no one joins',
-                          value: _online,
-                          onDecrement: _online > 0
-                              ? () => _setOnline(_online - 1)
-                              : null,
-                          onIncrement:
-                              MatchConfig.canIncrementOnline(
-                                _bots,
-                                _otherHumans,
-                                _online,
-                                friendCount,
-                              )
-                              ? () => _setOnline(_online + 1)
-                              : null,
-                        ),
-                        const SizedBox(height: 12),
-                        _CountStepper(
-                          label: 'Bots',
-                          subtitle: 'Fill leftover seats only',
-                          value: _bots,
-                          onDecrement: _bots > 0
-                              ? () => _setBots(_bots - 1)
-                              : null,
-                          onIncrement:
-                              MatchConfig.canIncrementBots(
-                                _bots,
-                                _otherHumans,
-                                _online,
-                                friendCount,
-                              )
-                              ? () => _setBots(_bots + 1)
-                              : null,
-                        ),
-                        const SizedBox(height: 16),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: MargeColors.velvet.withValues(alpha: 0.45),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Seats: ${_totalSeats(friendCount)} / 8',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 15,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                _seatSummary,
-                                style: TextStyle(
-                                  color: MargeColors.cream.withValues(
-                                    alpha: 0.8,
-                                  ),
-                                  fontSize: 13,
-                                ),
-                              ),
-                              if (_online > 0) ...[
-                                const SizedBox(height: 6),
-                                Text(
-                                  'No live match yet. Those seats show as '
-                                  '"Waiting for player" and are not filled by bots.',
-                                  style: TextStyle(
-                                    color: MargeColors.gold.withValues(
-                                      alpha: 0.9,
-                                    ),
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 12,
-                                  ),
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const SizedBox(height: 28),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const DieWidgetMini(value: 5),
+                          const SizedBox(width: 10),
+                          const DieWidgetMini(value: 3),
+                          const SizedBox(width: 10),
+                          const DieWidgetMini(value: 6),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      Text(
+                        'MARGE',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                              fontWeight: FontWeight.w900,
+                              color: MargeColors.lamp,
+                              letterSpacing: 6,
+                              shadows: [
+                                Shadow(
+                                  color: Colors.black.withValues(alpha: 0.45),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 3),
                                 ),
                               ],
-                              const SizedBox(height: 8),
-                              Text(
-                                'Gems',
-                                style: TextStyle(
-                                  color: MargeColors.gold.withValues(
-                                    alpha: 0.9,
-                                  ),
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 12,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              for (final seat in seats)
-                                Padding(
-                                  padding: const EdgeInsets.only(bottom: 2),
-                                  child: Text(
-                                    seat.line,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ),
-                              const SizedBox(height: 10),
-                              Text(
-                                'Gem bank ${gemCount(gemBank)} available',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              GemDenominationPicker(
-                                onChosen: (gems) =>
-                                    _addGems(context, ref, gems),
-                              ),
-                              if (!canStart) ...[
-                                const SizedBox(height: 6),
-                                Text(
-                                  _online > 0 || friendCount > 0
-                                      ? 'Waiting seats do not play. Add a bot or local player to start.'
-                                      : 'Add at least 1 bot or other player.',
-                                  style: const TextStyle(
-                                    color: MargeColors.coral,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                _FriendsCard(
-                  controller: _friendName,
-                  error: _friendError,
-                  friends: friends,
-                  onAdd: () async {
-                    final err = await ref
-                        .read(friendsProvider.notifier)
-                        .add(_friendName.text);
-                    if (!mounted) return;
-                    setState(() => _friendError = err);
-                    if (err == null) _friendName.clear();
-                    final count = ref.read(friendsProvider).seatedNames.length;
-                    setState(
-                      () => _applyPlan(_bots, _otherHumans, _online, count),
-                    );
-                  },
-                  onRemove: (name) async {
-                    await ref.read(friendsProvider.notifier).remove(name);
-                    if (!mounted) return;
-                    final count = ref.read(friendsProvider).seatedNames.length;
-                    setState(
-                      () => _applyPlan(_bots, _otherHumans, _online, count),
-                    );
-                  },
-                  onToggle: (name, seated) async {
-                    await ref
-                        .read(friendsProvider.notifier)
-                        .setSeated(name, seated);
-                    if (!mounted) return;
-                    final count = ref.read(friendsProvider).seatedNames.length;
-                    setState(
-                      () => _applyPlan(_bots, _otherHumans, _online, count),
-                    );
-                  },
-                ),
-                const SizedBox(height: 16),
-                if (savedGames.isNotEmpty) ...[
-                  _SavedGamesCard(
-                    games: savedGames,
-                    onResume: (id) {
-                      final ok = ref.read(matchProvider.notifier).resume(id);
-                      if (!ok || !context.mounted) return;
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const MatchScreen()),
-                      );
-                    },
-                    onDrop: (id) =>
-                        ref.read(matchProvider.notifier).dropSaved(id),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-                ElevatedButton(
-                  onPressed: canStart
-                      ? () {
-                          ref
-                              .read(matchProvider.notifier)
-                              .start(
-                                botCount: _bots,
-                                otherHumanCount: _otherHumans,
-                                onlinePlayerCount: _online,
-                                friendNames: seated,
-                                playerName: settings.playerName,
-                              );
+                            ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'An evening table with friends',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              color: MargeColors.cream.withValues(alpha: 0.9),
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Chase the pot. Bank the trips.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: MargeColors.cream.withValues(alpha: 0.72),
+                            ),
+                      ),
+                      const SizedBox(height: 28),
+                      _PlayPill(
+                        onPressed: () {
                           Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (_) => const MatchScreen(),
+                              builder: (_) => const SetupScreen(),
                             ),
                           );
-                          if (!settings.seenRules) {
+                        },
+                      ),
+                      if (savedGames.isNotEmpty) ...[
+                        const SizedBox(height: 18),
+                        _ResumeSection(
+                          games: savedGames,
+                          onResume: (id) {
+                            final ok =
+                                ref.read(matchProvider.notifier).resume(id);
+                            if (!ok || !context.mounted) return;
                             Navigator.of(context).push(
                               MaterialPageRoute(
-                                builder: (_) =>
-                                    const RulesScreen(fromOnboarding: true),
+                                builder: (_) => const MatchScreen(),
                               ),
                             );
-                          }
-                        }
-                      : null,
-                  child: const Text('START MATCH'),
-                ),
-                const SizedBox(height: 10),
-                OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: MargeColors.cream,
-                    side: const BorderSide(color: MargeColors.gold),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
-                    ),
+                          },
+                          onDrop: (id) =>
+                              ref.read(matchProvider.notifier).dropSaved(id),
+                        ),
+                      ],
+                      const SizedBox(height: 22),
+                      _SecondaryRow(
+                        onShop: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const ShopScreen(),
+                            ),
+                          );
+                        },
+                        onMore: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const MoreScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                      // Quiet reserved strip for a future lobby banner —
+                      // empty while ads stay off; does not crowd the lobby.
+                      const SizedBox(height: 56),
+                    ],
                   ),
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const ShopScreen()),
-                    );
-                  },
-                  child: const Text('Cosmetics / Dice shop'),
                 ),
-                const SizedBox(height: 10),
-                OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: MargeColors.cream,
-                    side: const BorderSide(color: MargeColors.gold),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                  ),
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const RulesScreen()),
-                    );
-                  },
-                  child: const Text('How to play'),
-                ),
-                const SizedBox(height: 12),
-                const Center(child: LobbyBannerAd()),
-                const SizedBox(height: 8),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -510,185 +182,188 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 }
 
-class _CountStepper extends StatelessWidget {
-  const _CountStepper({
-    required this.label,
-    required this.subtitle,
-    required this.value,
-    required this.onDecrement,
-    required this.onIncrement,
-  });
+class DieWidgetMini extends StatelessWidget {
+  const DieWidgetMini({super.key, required this.value});
 
-  final String label;
-  final String subtitle;
   final int value;
-  final VoidCallback? onDecrement;
-  final VoidCallback? onIncrement;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
-              Text(
-                subtitle,
-                style: TextStyle(
-                  color: MargeColors.cream.withValues(alpha: 0.65),
-                  fontSize: 12,
-                ),
-              ),
-            ],
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: MargeColors.cream,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: MargeColors.woodEdge, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
-        ),
-        IconButton.filledTonal(
-          onPressed: onDecrement,
-          icon: const Icon(Icons.remove_rounded),
-          style: IconButton.styleFrom(
-            backgroundColor: MargeColors.velvet.withValues(alpha: 0.55),
-            foregroundColor: MargeColors.cream,
-            disabledBackgroundColor: MargeColors.velvet.withValues(alpha: 0.25),
-          ),
-        ),
-        SizedBox(
-          width: 36,
-          child: Text(
-            '$value',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontWeight: FontWeight.w900,
-              fontSize: 20,
-              color: MargeColors.gold,
-            ),
-          ),
-        ),
-        IconButton.filledTonal(
-          onPressed: onIncrement,
-          icon: const Icon(Icons.add_rounded),
-          style: IconButton.styleFrom(
-            backgroundColor: MargeColors.velvet.withValues(alpha: 0.55),
-            foregroundColor: MargeColors.cream,
-            disabledBackgroundColor: MargeColors.velvet.withValues(alpha: 0.25),
-          ),
-        ),
-      ],
+        ],
+      ),
+      child: CustomPaint(painter: _MiniDiePainter(value)),
     );
   }
 }
 
-class _FriendsCard extends StatelessWidget {
-  const _FriendsCard({
-    required this.controller,
-    required this.error,
-    required this.friends,
-    required this.onAdd,
-    required this.onRemove,
-    required this.onToggle,
-  });
+class _MiniDiePainter extends CustomPainter {
+  _MiniDiePainter(this.value);
 
-  final TextEditingController controller;
-  final String? error;
-  final FriendsState friends;
-  final VoidCallback onAdd;
-  final void Function(String name) onRemove;
-  final void Function(String name, bool seated) onToggle;
+  final int value;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = const Color(0xFF2A2118);
+    final r = size.shortestSide * 0.1;
+    Offset p(double x, double y) => Offset(size.width * x, size.height * y);
+    final map = <int, List<Offset>>{
+      1: [p(0.5, 0.5)],
+      2: [p(0.28, 0.28), p(0.72, 0.72)],
+      3: [p(0.28, 0.28), p(0.5, 0.5), p(0.72, 0.72)],
+      4: [p(0.28, 0.28), p(0.72, 0.28), p(0.28, 0.72), p(0.72, 0.72)],
+      5: [
+        p(0.28, 0.28),
+        p(0.72, 0.28),
+        p(0.5, 0.5),
+        p(0.28, 0.72),
+        p(0.72, 0.72),
+      ],
+      6: [
+        p(0.28, 0.22),
+        p(0.72, 0.22),
+        p(0.28, 0.5),
+        p(0.72, 0.5),
+        p(0.28, 0.78),
+        p(0.72, 0.78),
+      ],
+    };
+    for (final o in map[value] ?? const <Offset>[]) {
+      canvas.drawCircle(o, r, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _MiniDiePainter oldDelegate) =>
+      oldDelegate.value != value;
+}
+
+class _GemJewelTray extends StatelessWidget {
+  const _GemJewelTray({required this.gems, required this.onTap});
+
+  final int gems;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Friends',
-              style: Theme.of(context).textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w900),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: MargeColors.velvet.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: MargeColors.gold.withValues(alpha: 0.65),
             ),
-            const SizedBox(height: 4),
-            Text(
-              'People you know. They sit before bots as named waiting chairs — no live connection.',
-              style: TextStyle(
-                color: MargeColors.cream.withValues(alpha: 0.75),
-                fontSize: 12,
+            boxShadow: [
+              BoxShadow(
+                color: MargeColors.lamp.withValues(alpha: 0.12),
+                blurRadius: 10,
               ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: controller,
-                    textCapitalization: TextCapitalization.words,
-                    decoration: const InputDecoration(
-                      hintText: 'Add a friend by name',
-                      isDense: true,
-                    ),
-                    onSubmitted: (_) => onAdd(),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                FilledButton(onPressed: onAdd, child: const Text('Add')),
-              ],
-            ),
-            if (error != null) ...[
-              const SizedBox(height: 6),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const GemChipAccent(size: 16),
+              const SizedBox(width: 8),
               Text(
-                error!,
+                gemCount(gems),
                 style: const TextStyle(
-                  color: MargeColors.coral,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
+                  color: MargeColors.gold,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 14,
                 ),
               ),
             ],
-            if (friends.friends.isEmpty) ...[
-              const SizedBox(height: 10),
-              Text(
-                'No friends yet.',
-                style: TextStyle(
-                  color: MargeColors.cream.withValues(alpha: 0.7),
-                  fontSize: 13,
-                ),
-              ),
-            ],
-            for (final friend in friends.friends)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Checkbox(
-                  value: friend.seated,
-                  onChanged: (v) => onToggle(friend.name, v ?? false),
-                ),
-                title: Text(
-                  friend.name,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-                subtitle: Text(
-                  FriendsLogic.statusLabel(friend),
-                  style: TextStyle(
-                    color: MargeColors.cream.withValues(alpha: 0.7),
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                trailing: IconButton(
-                  tooltip: 'Remove ${friend.name}',
-                  onPressed: () => onRemove(friend.name),
-                  icon: const Icon(Icons.close_rounded),
-                ),
-              ),
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _SavedGamesCard extends StatelessWidget {
-  const _SavedGamesCard({
+class _FriendsPeek extends StatelessWidget {
+  const _FriendsPeek({
+    required this.seatedCount,
+    required this.totalCount,
+    required this.onTap,
+  });
+
+  final int seatedCount;
+  final int totalCount;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = totalCount == 0
+        ? 'Friends'
+        : seatedCount > 0
+            ? 'Friends · $seatedCount seated'
+            : 'Friends · $totalCount';
+    return TextButton.icon(
+      onPressed: onTap,
+      icon: const Icon(Icons.people_alt_rounded, color: MargeColors.cream),
+      label: Text(
+        label,
+        style: const TextStyle(
+          color: MargeColors.cream,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _PlayPill extends StatelessWidget {
+  const _PlayPill({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 58,
+      child: ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: MargeColors.gold,
+          foregroundColor: MargeColors.velvet,
+          elevation: 6,
+          shadowColor: MargeColors.lamp.withValues(alpha: 0.45),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(32),
+          ),
+          textStyle: const TextStyle(
+            fontWeight: FontWeight.w900,
+            fontSize: 20,
+            letterSpacing: 1.2,
+          ),
+        ),
+        child: const Text('Play'),
+      ),
+    );
+  }
+}
+
+class _ResumeSection extends StatelessWidget {
+  const _ResumeSection({
     required this.games,
     required this.onResume,
     required this.onDrop,
@@ -700,51 +375,149 @@ class _SavedGamesCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Unfinished games',
-              style: Theme.of(context).textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Resume one, or start a new game. Starting new does not delete these.',
-              style: TextStyle(
-                color: MargeColors.cream.withValues(alpha: 0.75),
-                fontSize: 12,
+    final shown = games.take(3).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Continue',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w900,
+                color: MargeColors.lamp,
               ),
+        ),
+        const SizedBox(height: 8),
+        for (final game in shown) ...[
+          _ResumeCard(
+            game: game,
+            onResume: () => onResume(game.id),
+            onDrop: () => onDrop(game.id),
+          ),
+          const SizedBox(height: 8),
+        ],
+        if (games.length > 3)
+          Text(
+            '+${games.length - 3} more unfinished',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: MargeColors.cream.withValues(alpha: 0.65),
+              fontSize: 12,
             ),
-            for (final game in games)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(
-                  game.resumeLine,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-                subtitle: Text(game.seatSummary),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
+          ),
+      ],
+    );
+  }
+}
+
+class _ResumeCard extends StatelessWidget {
+  const _ResumeCard({
+    required this.game,
+    required this.onResume,
+    required this.onDrop,
+  });
+
+  final SavedGame game;
+  final VoidCallback onResume;
+  final VoidCallback onDrop;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: MargeColors.felt.withValues(alpha: 0.9),
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onResume,
+        borderRadius: BorderRadius.circular(18),
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: MargeColors.woodEdge.withValues(alpha: 0.55),
+            ),
+          ),
+          padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+          child: Row(
+            children: [
+              const GemChipAccent(size: 22, color: MargeColors.coral),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    TextButton(
-                      onPressed: () => onResume(game.id),
-                      child: const Text('Resume'),
+                    Text(
+                      game.resumeLine,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
-                    IconButton(
-                      tooltip: 'Drop game',
-                      onPressed: () => onDrop(game.id),
-                      icon: const Icon(Icons.close_rounded),
+                    Text(
+                      game.seatSummary,
+                      style: TextStyle(
+                        color: MargeColors.cream.withValues(alpha: 0.7),
+                        fontSize: 12,
+                      ),
                     ),
                   ],
                 ),
               ),
-          ],
+              TextButton(onPressed: onResume, child: const Text('Resume')),
+              IconButton(
+                tooltip: 'Drop game',
+                onPressed: onDrop,
+                icon: const Icon(Icons.close_rounded, size: 20),
+              ),
+            ],
+          ),
         ),
       ),
+    );
+  }
+}
+
+class _SecondaryRow extends StatelessWidget {
+  const _SecondaryRow({required this.onShop, required this.onMore});
+
+  final VoidCallback onShop;
+  final VoidCallback onMore;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: onShop,
+            icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+            label: const Text('Shop'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: MargeColors.cream,
+              side: BorderSide(
+                color: MargeColors.woodEdge.withValues(alpha: 0.7),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: onMore,
+            icon: const Icon(Icons.more_horiz_rounded, size: 18),
+            label: const Text('More'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: MargeColors.cream,
+              side: BorderSide(
+                color: MargeColors.woodEdge.withValues(alpha: 0.7),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
