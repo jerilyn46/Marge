@@ -44,10 +44,11 @@
              so MobileAdsInitProvider cannot cold-start GMA (Flip 7).
              PADMOB_ENABLED=true merges APPLICATION_ID (test ID by default).
              Pair with dart-define ADMOB_ENABLED=true. See docs/ads.md. -->
+        <!-- Default: strip APPLICATION_ID (Flip 7). Ads stay fail closed until a
+             Play ads flavor / overlay adds a real App ID. Provider stays removed. -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="${admobAppId}"
-            tools:node="${admobAppIdNode}" />
+            tools:node="remove" />
         <!-- Always strip ContentProvider auto-init; Dart bootstraps after first frame. -->
         <provider
             android:name="com.google.android.gms.ads.MobileAdsInitProvider"
