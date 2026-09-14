@@ -1,11 +1,14 @@
-/// Compile-time AdMob kill switch. **Default OFF** for the Flip 7 hotfix.
+/// Compile-time AdMob gate. Defaults **OFF** so Flip 7 / sideload builds
+/// never cold-start GMA. Turn ads on for Play monetization with both:
 ///
-/// Dart never calls MobileAds / UMP / banner / interstitial / rewarded unless
-/// this is true. Native GMA auto-init is also stripped unless Gradle
-/// `-PADMOB_ENABLED=true` (see `AndroidManifest.xml`).
-///
-/// Re-enable both together:
 /// `--dart-define=ADMOB_ENABLED=true -PADMOB_ENABLED=true`
+///
+/// Unit / App IDs default to Google **test** samples. Inject real IDs only
+/// at build time (never commit them).
+///
+/// When false, no UMP / MobileAds / ad-load calls run. Native GMA auto-init
+/// is also stripped unless Gradle `-PADMOB_ENABLED=true`
+/// (see `AndroidManifest.xml`).
 const bool kAdmobEnabled = bool.fromEnvironment(
   'ADMOB_ENABLED',
   defaultValue: false,
@@ -37,7 +40,7 @@ class AdIds {
       'ca-app-pub-3940256099942544/1033173712';
   static const String testRewarded = 'ca-app-pub-3940256099942544/5224354917';
 
-  /// Virtual chips granted after a successful rewarded ad (cosmetics wallet).
+  /// Virtual gems granted to the **main gem bank** after a successful rewarded ad.
   static const int rewardedChipGrant = 25;
 
   static String get appId {

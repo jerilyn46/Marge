@@ -190,7 +190,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         const GetMoreGemsButton(),
                       ],
                       const SizedBox(height: 18),
-                      // Quiet reserved house-art strip — ads stay off; no AdMob.
+                      // Reserved lobby strip — AdMob banner when enabled, else house art.
                       const ReservedBannerStrip(),
                       const SizedBox(height: 12),
                     ],

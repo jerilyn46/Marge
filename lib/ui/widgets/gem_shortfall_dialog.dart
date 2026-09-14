@@ -49,8 +49,8 @@ class GemShortfallDialog extends ConsumerWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              'Virtual gems (not real money). Daily drip, Coming soon packs, '
-              'or Coming soon rewarded — not an unlimited free mint.',
+              'Virtual gems (not real money). Daily drip, gem packs, '
+              'or a rewarded ad — not an unlimited free mint.',
               style: TextStyle(
                 color: MargeColors.cream.withValues(alpha: 0.75),
                 fontSize: 12,

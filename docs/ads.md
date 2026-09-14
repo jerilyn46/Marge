@@ -1,30 +1,36 @@
-# AdMob test scaffolding
+# AdMob + Play Billing (virtual gems)
 
-**v0.1.4 ads-off hotfix:** AdMob is **disabled by default**. Dart `ADMOB_ENABLED` defaults to false (no `MobileAds.initialize`, UMP, banner, interstitial, or rewarded). Android manifest removes `com.google.android.gms.ads.APPLICATION_ID` and `MobileAdsInitProvider` so play-services-ads cannot auto-init before Flutter. Re-enable only with both `--dart-define=ADMOB_ENABLED=true` and `-PADMOB_ENABLED=true`.
+**Kill switch:** AdMob is **off by default**. Dart `ADMOB_ENABLED` defaults to false (no `MobileAds.initialize`, UMP, banner, interstitial, or rewarded). Android leaves `APPLICATION_ID` removed unless `-PADMOB_ENABLED=true`, and always strips `MobileAdsInitProvider` so GMA cannot cold-start before Flutter. Enable monetization builds with **both**:
 
-Marge ships with **Google official test / sample AdMob IDs** when ads are turned back on. Production App ID and unit IDs must be injected at build time — never committed.
+```bash
+--dart-define=ADMOB_ENABLED=true -PADMOB_ENABLED=true
+```
+
+Unit / App IDs default to Google **test** samples. Inject real IDs only at build time — never commit them.
 
 Package: `com.jerilyn.marge`  
-Plugin: `google_mobile_ads` (see `pubspec.yaml`)
+Plugins: `google_mobile_ads`, `in_app_purchase`
 
-> Virtual chips only. Rewarded ads grant cosmetics-wallet ¢ — not real money.
+> Virtual gems only. No real-money cash-out, side bets, loot chests, or dark patterns.
 
 ## Placement rules
 
 | Format | Where | Notes |
 |--------|--------|--------|
-| Banner | Main menu / lobby (`HomeScreen`) only | Never over active dice / roll UI |
-| Interstitial | Match end / return to lobby | Max ~1 per 2–3 completed matches; never back-to-back; never mid-roll |
-| Rewarded | Dice shop — “Watch ad for +N¢” | Grants virtual chips via `CosmeticsNotifier.grantVirtualChips` |
+| Banner | Lobby reserved strip (`HomeScreen`) only | Never over active dice / Roll / Keep |
+| Interstitial | Match end (≤1 per completed match) | Never mid-roll; never cold-start; never back-to-back on same break |
+| Rewarded | Shop — “Watch for gems” | Credits **main gem bank** (+25) |
 | App-open | **Out of scope** | Not implemented |
+
+Fail closed: consent / SDK errors leave ads off.
 
 ## UMP consent
 
-On supported mobile platforms, `AdsService.bootstrap()` runs **User Messaging Platform** (`ConsentInformation` / `ConsentForm`) before initializing `MobileAds` and loading ads. Personalized ad requests are gated with `canRequestAds()`.
+On supported mobile platforms, `AdsService.bootstrap()` runs **User Messaging Platform** before initializing `MobileAds`. Personalized requests are gated with `canRequestAds()`.
 
-**Startup:** `main()` calls `runApp` first, then schedules `bootstrap()` after the first frame (try/catch). Never await MobileAds/UMP before the lobby — cold-start on Android (e.g. Flip 7) crashed when consent ran with no ready Activity.
+**Startup:** `main()` calls `runApp` first, then schedules `bootstrap()` after the first frame. Never await MobileAds/UMP before the lobby.
 
-Settings → **Privacy / ad consent** opens the UMP privacy options form when required (EU/EEA/UK message types).
+Settings → **Privacy / ad consent** opens the UMP privacy options form when required.
 
 ## Dart-define keys (ad unit IDs)
 
@@ -43,50 +49,50 @@ Resolved in Dart by `lib/ads/ad_ids.dart`. Empty defines fall back to the test I
 
 `android/app/build.gradle.kts` sets:
 
-- **Default (`ADMOB_ENABLED` unset/false):** `tools:node=remove` — APPLICATION_ID is absent. `MobileAdsInitProvider` is always `tools:node=remove`.
+- **Default (`ADMOB_ENABLED` unset/false):** `tools:node=remove` — APPLICATION_ID absent
 - **`-PADMOB_ENABLED=true`:** merge Google sample App ID (or `-PADMOB_APP_ID=`)
 - **Override IDs:** Gradle property `ADMOB_APP_ID` (do not commit real values)
 
 ```bash
-# Test APK (defaults — recommended for Tester)
-flutter build apk --debug
+# Monetization / Tester build with Google test IDs
+flutter build appbundle --release \
+  --dart-define=ADMOB_ENABLED=true \
+  -PADMOB_ENABLED=true
 
-# Or explicitly pass test IDs
-flutter build apk --debug \
-  --dart-define=ADMOB_BANNER_ID=ca-app-pub-3940256099942544/6300978111 \
-  --dart-define=ADMOB_INTERSTITIAL_ID=ca-app-pub-3940256099942544/1033173712 \
-  --dart-define=ADMOB_REWARDED_ID=ca-app-pub-3940256099942544/5224354917 \
-  -PADMOB_APP_ID=ca-app-pub-3940256099942544~3347511713
-```
-
-Production (local / CI secrets only — never in git):
-
-```bash
-flutter build apk --release \
+# Production IDs (CI secrets only — never in git)
+flutter build appbundle --release \
+  --dart-define=ADMOB_ENABLED=true \
   --dart-define=ADMOB_BANNER_ID="$PROD_BANNER" \
   --dart-define=ADMOB_INTERSTITIAL_ID="$PROD_INTERSTITIAL" \
   --dart-define=ADMOB_REWARDED_ID="$PROD_REWARDED" \
+  -PADMOB_ENABLED=true \
   -PADMOB_APP_ID="$PROD_APP_ID"
 ```
 
-APK output: `build/app/outputs/flutter-apk/app-debug.apk` (or `app-release.apk`).
+## Play Billing gem packs
 
-## Tester how-to
+SKUs (consumable) credit the **main gem bank** (`PlayerCoinLedger`). Free daily drip stays separate.
 
-1. Build the debug APK with defaults (test IDs).
-2. Install on an Android device / emulator with Google Play services.
-3. Cold-start the app — UMP may show a consent form in EEA/UK (or use AdMob debug geography while developing).
-4. **Lobby:** confirm a test banner at the bottom of the home screen.
-5. **Shop:** tap **Watch ad for +25¢** — complete the rewarded test ad; wallet should increase by 25¢.
-6. **Interstitial:** finish **2–3 matches** (End match → standings). An interstitial may appear at match end / when returning home; the next match end should not show back-to-back.
-7. Confirm **no banner** on the active dice table during rolls.
+| Product ID | Gems |
+|------------|------|
+| `marge_gems_small` | 100 |
+| `marge_gems_medium` | 500 |
+| `marge_gems_large` | 1200 |
+
+See `lib/services/gem_iap.dart`. Clear Shop copy: virtual gems, not real money, no cash-out.
+
+## Rematch
+
+After pot is settled at match end: stay on table, one **Rematch** (same seats / ante, one tap, no ready-check). **Leave table** quietly returns home. Stop-and-pass stays off.
 
 ## Code map
 
 ```
 lib/ads/
-  ad_ids.dart           dart-define + Google test defaults
-  interstitial_gate.dart  2–3 match frequency helper
-  ads_service.dart      UMP + MobileAds + interstitial/rewarded
-  banner_ad_widget.dart Lobby-only banner
+  ad_ids.dart             dart-define + Google test defaults
+  interstitial_gate.dart  ≤1 interstitial per completed match
+  ads_service.dart        UMP + MobileAds + interstitial/rewarded (fail closed)
+  banner_ad_widget.dart   Lobby-only banner
+lib/services/gem_iap.dart Play Billing packs → gem bank
+lib/ui/widgets/reserved_banner_strip.dart  banner or house-art fallback
 ```

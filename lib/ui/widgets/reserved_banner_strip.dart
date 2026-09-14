@@ -1,13 +1,28 @@
 import 'package:flutter/material.dart';
 
+import '../../ads/ad_ids.dart';
+import '../../ads/ads_service.dart';
+import '../../ads/banner_ad_widget.dart';
 import '../theme/marge_theme.dart';
 
-/// Quiet reserved lobby band — house art only. Ads stay off; no AdMob.
+/// Lobby reserved band: AdMob banner when ads are enabled and ready;
+/// quiet house art otherwise (fail closed — never crashes the lobby).
+///
+/// Never place on [MatchScreen] or over Roll / Keep.
 class ReservedBannerStrip extends StatelessWidget {
   const ReservedBannerStrip({super.key});
 
   @override
   Widget build(BuildContext context) {
+    if (kAdmobEnabled && adsPlatformSupported) {
+      return Semantics(
+        label: 'Lobby advertisement',
+        child: const ColoredBox(
+          color: Colors.transparent,
+          child: Center(child: LobbyBannerAd()),
+        ),
+      );
+    }
     return Semantics(
       label: 'Reserved decorative band',
       child: Container(

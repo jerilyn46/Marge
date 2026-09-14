@@ -637,17 +637,25 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
   Future<void> _onNaturalBreak() async {
     if (_breakHandled || !mounted) return;
     _breakHandled = true;
-    // Loop 2: natural match-end break for a future interstitial hook.
-    // Ads stay off (kAdmobEnabled=false) — notify/gate only; never mid-roll.
+    // Natural match-end break only — never mid-roll / never over Roll/Keep.
+    // ≤1 interstitial per completed match (InterstitialGate). Fail closed.
     final ads = ref.read(adsServiceProvider);
     ads.notifyMatchCompleted();
     await ads.maybeShowInterstitialAtBreak();
   }
 
-  Future<void> _leaveToLobby() async {
-    // Same reserved break on the way home — no ad while AdMob is off.
+  Future<void> _rematch() async {
+    // One tap, same seats / ante, no ready-check. Stay on the table.
+    ref.read(matchProvider.notifier).rematch();
+  }
+
+  Future<void> _leaveQuiet() async {
+    // Quiet out — no confirm dialog. Interstitial only if gate still allows
+    // (already shown at match-end → blocked).
     final ads = ref.read(adsServiceProvider);
     await ads.maybeShowInterstitialAtBreak();
+    if (!mounted) return;
+    await ref.read(matchProvider.notifier).leaveUnfinished();
     if (!mounted) return;
     Navigator.of(context).popUntil((r) => r.isFirst);
   }
@@ -716,11 +724,17 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
                   ),
                 ),
                 const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: _rematch,
+                  icon: const Icon(Icons.replay_rounded),
+                  label: const Text('Rematch'),
+                ),
+                const SizedBox(height: 10),
                 const GetMoreGemsButton(),
                 const SizedBox(height: 10),
                 TextButton(
-                  onPressed: _leaveToLobby,
-                  child: const Text('Back to home'),
+                  onPressed: _leaveQuiet,
+                  child: const Text('Leave table'),
                 ),
               ],
             ),

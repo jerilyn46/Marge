@@ -1,7 +1,7 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:marge/services/gem_iap.dart';
 import 'package:marge/ui/screens/shop_screen.dart';
 import 'package:marge/ui/theme/marge_theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,7 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('Shop shows Coming soon packs, rewarded, Designer Collection', (
+  testWidgets('Shop shows gem packs, rewarded, Designer Collection', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({});
@@ -24,20 +24,31 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.text('Play gems — not real money'), findsOneWidget);
-    expect(find.textContaining('Coming soon'), findsWidgets);
-    expect(find.textContaining('Watch ad for'), findsNothing);
+    expect(find.textContaining('Coming soon'), findsNothing);
+    expect(find.textContaining('cash-out'), findsWidgets);
     expect(find.textContaining('\$'), findsNothing);
 
     final scrollable = find.byType(Scrollable).first;
+    for (final pack in GemPack.all) {
+      await tester.scrollUntilVisible(
+        find.textContaining(pack.title),
+        240,
+        scrollable: scrollable,
+      );
+      await tester.pump();
+      expect(find.textContaining(pack.title), findsOneWidget);
+    }
+
     await tester.scrollUntilVisible(
       find.text('Watch for gems'),
       240,
       scrollable: scrollable,
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
     expect(find.text('Watch for gems'), findsOneWidget);
 
     await tester.scrollUntilVisible(
@@ -45,7 +56,7 @@ void main() {
       240,
       scrollable: scrollable,
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
     expect(find.text('Designer Collection'), findsOneWidget);
   });
 }

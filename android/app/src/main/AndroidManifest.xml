@@ -2,6 +2,8 @@
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Play Billing (in_app_purchase). Harmless when unused. -->
+    <uses-permission android:name="com.android.vending.BILLING"/>
     <application
         android:label="Marge"
         android:name="${applicationName}"
@@ -37,15 +39,16 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-        <!-- Flip 7 ads-off hotfix.
-             play-services-ads registers MobileAdsInitProvider, which calls
-             MobileAds.initialize from a ContentProvider before Flutter.
-             That path still crashed v0.1.3 after Dart deferred UMP/GMA.
-             Remove APPLICATION_ID and the provider so native GMA never starts.
-             See docs/ads.md. -->
+        <!-- Ads-on path (fail closed when off):
+             Default build.gradle leaves ADMOB_ENABLED unset → tools:node=remove
+             so MobileAdsInitProvider cannot cold-start GMA (Flip 7).
+             -PADMOB_ENABLED=true merges APPLICATION_ID (test ID by default).
+             Pair with --dart-define=ADMOB_ENABLED=true. See docs/ads.md. -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            tools:node="remove" />
+            android:value="${admobAppId}"
+            tools:node="${admobAppIdNode}" />
+        <!-- Always strip ContentProvider auto-init; Dart bootstraps after first frame. -->
         <provider
             android:name="com.google.android.gms.ads.MobileAdsInitProvider"
             android:authorities="${applicationId}.mobileadsinitprovider"

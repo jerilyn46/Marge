@@ -142,8 +142,12 @@ class PlayerCoinLedger implements SeatCoinBook {
   /// Gem move denominations that fit a 10 gem ante. Not a cash price.
   static const playGemDenominations = <int>[10, 25, 50, 100];
 
-  /// Preview-only Shop pack sizes (Coming soon — no charges).
-  static const previewPackGems = <int>[50, 150, 400, 1000];
+  /// Play Billing gem pack sizes (see [GemPack] / marge_gems_* SKUs).
+  /// Kept here for tests that assert bank credit amounts.
+  static const iapPackGems = <int>[100, 500, 1200];
+
+  /// Alias for older call sites / tests.
+  static const previewPackGems = iapPackGems;
 
   static String denverDayKey(DateTime utcNow) {
     final wall = DenverTime.wallClock(utcNow.toUtc());

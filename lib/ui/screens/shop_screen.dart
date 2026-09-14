@@ -2,22 +2,28 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../ads/ad_ids.dart';
+import '../../ads/ads_service.dart';
 import '../../cosmetics/dice_skin.dart';
 import '../../cosmetics/skins_service.dart';
 import '../../engine/gem_label.dart';
 import '../../services/coin_ledger.dart';
+import '../../services/gem_iap.dart';
+import '../../services/settings_service.dart';
 import '../theme/marge_theme.dart';
 import '../widgets/daily_drip_card.dart';
 import '../widgets/die_widget.dart';
 
-/// Virtual gems + Designer Collection. Packs / rewarded stay Coming soon.
-/// No Play Billing, no AdMob CTAs while ads are off.
+/// Virtual gems shop: daily drip, Play Billing packs, rewarded ads, skins.
+///
+/// Gems are virtual only — never real currency, never cash-out.
 class ShopScreen extends ConsumerWidget {
   const ShopScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cos = ref.watch(cosmeticsProvider);
+    final name = ref.watch(settingsProvider).playerName;
+    final bank = ref.watch(coinLedgerProvider).availableHumanGems(name);
 
     return Scaffold(
       appBar: AppBar(
@@ -37,7 +43,7 @@ class ShopScreen extends ConsumerWidget {
                   border: Border.all(color: MargeColors.gold),
                 ),
                 child: Text(
-                  gemCount(cos.walletCents),
+                  gemCount(bank),
                   style: const TextStyle(
                     color: MargeColors.gold,
                     fontWeight: FontWeight.w900,
@@ -70,7 +76,7 @@ class ShopScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'Virtual gems only — never real currency or payouts.',
+              'Virtual gems only — never real currency, payouts, or cash-out.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: MargeColors.cream.withValues(alpha: 0.65),
@@ -81,18 +87,27 @@ class ShopScreen extends ConsumerWidget {
             const DailyDripCard(),
             const SizedBox(height: 14),
             const _SectionTitle('Gem packs'),
+            const SizedBox(height: 4),
+            Text(
+              'Paid packs credit your gem bank. Separate from the free daily drip.',
+              style: TextStyle(
+                color: MargeColors.cream.withValues(alpha: 0.7),
+                fontSize: 12,
+              ),
+            ),
             const SizedBox(height: 8),
-            for (final gems in PlayerCoinLedger.previewPackGems) ...[
-              _ComingSoonPackTile(gems: gems),
+            for (final pack in GemPack.all) ...[
+              _IapPackTile(pack: pack),
               const SizedBox(height: 8),
             ],
             const SizedBox(height: 6),
-            const _ComingSoonRewardedCard(),
+            const _RewardedGemsCard(),
             const SizedBox(height: 18),
             const _SectionTitle('Designer Collection'),
             const SizedBox(height: 4),
             Text(
-              'Dice cosmetics unlocked with virtual gems or play milestones.',
+              'Dice cosmetics unlocked with virtual gems or play milestones. '
+              'Skin wallet: ${gemCount(cos.walletCents)}.',
               style: TextStyle(
                 color: MargeColors.cream.withValues(alpha: 0.7),
                 fontSize: 12,
@@ -127,48 +142,103 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
-class _ComingSoonPackTile extends StatelessWidget {
-  const _ComingSoonPackTile({required this.gems});
-  final int gems;
+class _IapPackTile extends ConsumerWidget {
+  const _IapPackTile({required this.pack});
+  final GemPack pack;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final iap = ref.watch(gemIapProvider);
+    final details = iap.products[pack.productId];
+    final busy = iap.purchasingId == pack.productId;
+    final price = details?.price;
+    final enabled = details != null && iap.purchasingId == null;
+
     return Card(
       child: ListTile(
         leading: const Icon(Icons.diamond_outlined, color: MargeColors.gold),
         title: Text(
-          gemCount(gems),
+          '${pack.title} · ${gemCount(pack.gems)}',
           style: const TextStyle(fontWeight: FontWeight.w800),
         ),
-        subtitle: const Text('Preview only — virtual gems (not real money)'),
-        trailing: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(
-            color: MargeColors.velvet.withValues(alpha: 0.55),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: MargeColors.woodEdge.withValues(alpha: 0.5),
-            ),
-          ),
-          child: const Text(
-            'Coming soon',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              color: MargeColors.cream,
-            ),
-          ),
+        subtitle: Text(
+          '${pack.blurb} Virtual gems (not real money). No cash-out.',
         ),
+        trailing: busy
+            ? const SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : FilledButton(
+                onPressed: enabled
+                    ? () async {
+                        final ok =
+                            await ref.read(gemIapProvider.notifier).buy(pack);
+                        if (!context.mounted) return;
+                        final err = ref.read(gemIapProvider).lastError;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              ok
+                                  ? 'Purchase started for ${gemCount(pack.gems)}…'
+                                  : (err ?? 'Purchase unavailable.'),
+                            ),
+                          ),
+                        );
+                      }
+                    : null,
+                child: Text(price ?? 'Unavailable'),
+              ),
       ),
     );
   }
 }
 
-class _ComingSoonRewardedCard extends StatelessWidget {
-  const _ComingSoonRewardedCard();
+class _RewardedGemsCard extends ConsumerStatefulWidget {
+  const _RewardedGemsCard();
+
+  @override
+  ConsumerState<_RewardedGemsCard> createState() => _RewardedGemsCardState();
+}
+
+class _RewardedGemsCardState extends ConsumerState<_RewardedGemsCard> {
+  var _busy = false;
+
+  Future<void> _watch() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final ads = ref.read(adsServiceProvider);
+      final name = ref.read(settingsProvider).playerName;
+      final earned = await ads.showRewardedForVirtualChips(
+        onReward: (amount) async {
+          ref
+              .read(coinLedgerProvider.notifier)
+              .grantHumanPlayCoins(name, cents: amount);
+        },
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            earned
+                ? 'Earned ${gemCount(AdIds.rewardedChipGrant)} virtual gems. Not real money.'
+                : kAdmobEnabled
+                    ? 'Ad unavailable — try again later.'
+                    : 'Ads are off in this build '
+                        '(ADMOB_ENABLED / -PADMOB_ENABLED).',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final adsOn = kAdmobEnabled;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -181,18 +251,33 @@ class _ComingSoonRewardedCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'A short video for +${AdIds.rewardedChipGrant} gems — Coming soon. '
-              'No ad plays while AdMob stays off.',
+              adsOn
+                  ? 'A short video for +${AdIds.rewardedChipGrant} gems in your '
+                      'gem bank. Virtual gems only — not real money.'
+                  : 'Rewarded ads credit +${AdIds.rewardedChipGrant} gems when '
+                      'AdMob is enabled for this build.',
               style: TextStyle(
                 color: MargeColors.cream.withValues(alpha: 0.8),
                 fontSize: 13,
               ),
             ),
             const SizedBox(height: 10),
-            OutlinedButton.icon(
-              onPressed: null,
-              icon: const Icon(Icons.ondemand_video_rounded),
-              label: const Text('Coming soon'),
+            FilledButton.icon(
+              onPressed: (_busy || !adsOn) ? null : _watch,
+              icon: _busy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.ondemand_video_rounded),
+              label: Text(
+                _busy
+                    ? 'Loading…'
+                    : adsOn
+                        ? 'Watch for +${AdIds.rewardedChipGrant}'
+                        : 'Ads off in this build',
+              ),
             ),
           ],
         ),

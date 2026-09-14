@@ -38,10 +38,10 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        // AdMob is OFF for the Flip 7 hotfix unless -PADMOB_ENABLED=true.
-        // tools:node=remove drops APPLICATION_ID so MobileAdsInitProvider
-        // (also stripped) cannot start GMA before Flutter. Pair with
-        // --dart-define=ADMOB_ENABLED=true when turning ads back on.
+        // Ads-on path (fail closed): OFF unless -PADMOB_ENABLED=true.
+        // tools:node=remove drops APPLICATION_ID so GMA cannot cold-start.
+        // MobileAdsInitProvider is always stripped; Dart bootstraps after
+        // first frame. Pair with --dart-define=ADMOB_ENABLED=true.
         val admobEnabled = (project.findProperty("ADMOB_ENABLED") as String?)
             ?.equals("true", ignoreCase = true) == true
         val admobAppId = (project.findProperty("ADMOB_APP_ID") as String?)

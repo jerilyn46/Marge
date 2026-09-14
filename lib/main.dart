@@ -50,8 +50,8 @@ Future<void> main() async {
   final container = ProviderContainer();
 
   // Always paint UI first. Ads/UMP must never block or abort cold start.
-  // v0.1.3 still crashed on Flip 7 because native MobileAdsInitProvider
-  // runs before Dart; this build also disables AdMob entirely.
+  // Native MobileAdsInitProvider is stripped; Dart bootstraps after first
+  // frame only when ADMOB_ENABLED=true (fail closed otherwise).
   unawaited(StartupLog.mark('before-runApp'));
   runApp(
     UncontrolledProviderScope(container: container, child: const MargeApp()),

@@ -1,16 +1,17 @@
 /// Frequency gate for interstitials at match-end / return-to-lobby.
 ///
-/// Policy: at most ~1 ad per 2–3 completed matches; never back-to-back;
-/// never mid-roll (caller must only invoke at natural breaks).
+/// Policy: at most **one** interstitial per completed match; never
+/// back-to-back on the same break; never mid-roll (caller must only
+/// invoke at natural breaks — match end / quiet leave).
 class InterstitialGate {
-  InterstitialGate({int initialMatchesRequired = 2})
-      : _matchesRequired = initialMatchesRequired.clamp(2, 3);
+  InterstitialGate({int initialMatchesRequired = 1})
+      : _matchesRequired = initialMatchesRequired.clamp(1, 1);
 
   int _completedSinceLastShow = 0;
   int _matchesRequired;
   bool _showedAtLastBreak = false;
 
-  /// Matches that must complete before the next eligible show (2 or 3).
+  /// Matches that must complete before the next eligible show (always 1).
   int get matchesRequired => _matchesRequired;
 
   int get completedSinceLastShow => _completedSinceLastShow;
@@ -31,7 +32,6 @@ class InterstitialGate {
   void onShown() {
     _completedSinceLastShow = 0;
     _showedAtLastBreak = true;
-    // Alternate 2 ↔ 3 so cadence stays in the ~2–3 match band.
-    _matchesRequired = _matchesRequired == 2 ? 3 : 2;
+    _matchesRequired = 1;
   }
 }
