@@ -33,7 +33,7 @@ class RulesScreen extends ConsumerWidget {
             title: 'Banks & ante',
             body:
                 '2–8 seats. You and local hotseat humans sit first, then named friends (waiting if they are not here), then reserved online chairs, then bots in leftover seats. '
-                'The gem bank is uncommitted play money. A new game sits you with up to 100 gems from that bank. '
+                'The gem bank holds virtual gems (not real money). A new game sits you with up to 100 gems from that bank. '
                 'Each unfinished game keeps its own pot and table gems. Bots on a saved table keep those gems until that game ends. '
                 'Each round, every playing seat antes 10 gems into the pot.',
           ),

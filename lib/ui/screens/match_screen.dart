@@ -4,29 +4,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../ads/ads_service.dart';
 import '../../cosmetics/skins_service.dart';
 import '../../engine/engine.dart';
+import '../../engine/gem_label.dart';
+import '../../services/coin_ledger.dart';
 import '../match_provider.dart';
 import '../theme/marge_theme.dart';
 import '../widgets/confetti_overlay.dart';
+import '../widgets/daily_drip_card.dart';
 import '../widgets/die_widget.dart';
+import '../widgets/get_more_gems_button.dart';
+import '../widgets/gem_shortfall_dialog.dart';
 import '../widgets/handoff_strip.dart';
 import '../widgets/payout_banner.dart';
-import '../../services/coin_ledger.dart';
-import '../widgets/gem_shortfall_dialog.dart';
 import '../widgets/play_coin_pack_button.dart';
 import '../widgets/player_chip.dart';
 import '../widgets/pot_meter.dart';
-
-void _addGems(BuildContext context, WidgetRef ref, int gems) {
-  final view = ref.read(matchProvider);
-  final name = view?.snapshot.config.localPlayerName ?? 'You';
-  final next = ref
-      .read(coinLedgerProvider.notifier)
-      .grantHumanPlayCoins(name, cents: gems);
-  if (!context.mounted || next == null) return;
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text('Added $gems gems. Gem bank has $next gems.')),
-  );
-}
 
 void _moveIntoGame(BuildContext context, WidgetRef ref, int gems) {
   final next = ref.read(matchProvider.notifier).moveFromMainBank(gems);
@@ -73,8 +64,8 @@ Future<void> _openTableGemsSheet(BuildContext context, WidgetRef ref) async {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Add free gems or move bank gems onto this table. '
-                    'Not a real charge.',
+                    'Move bank gems onto this table. Virtual gems (not real money). '
+                    'No unlimited free mint mid-match.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: MargeColors.cream.withValues(alpha: 0.75),
@@ -82,18 +73,16 @@ Future<void> _openTableGemsSheet(BuildContext context, WidgetRef ref) async {
                       fontSize: 13,
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  GemDenominationPicker(
-                    compact: true,
-                    title: 'Add gems',
-                    onChosen: (gems) => _addGems(context, ref, gems),
-                  ),
+                  const SizedBox(height: 12),
+                  const DailyDripCard(compact: true),
+                  const SizedBox(height: 8),
+                  const GetMoreGemsButton(compact: true),
                   const SizedBox(height: 16),
                   GemDenominationPicker(
                     compact: true,
                     title: 'Move into this game',
                     available: available,
-                    hint: 'Draws from the gem bank. Not a real charge.',
+                    hint: 'Draws from the gem bank. Virtual gems (not real money).',
                     onChosen: (gems) => _moveIntoGame(context, ref, gems),
                   ),
                 ],
@@ -637,14 +626,15 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
   Future<void> _onNaturalBreak() async {
     if (_breakHandled || !mounted) return;
     _breakHandled = true;
+    // Loop 2: natural match-end break for a future interstitial hook.
+    // Ads stay off (kAdmobEnabled=false) — notify/gate only; never mid-roll.
     final ads = ref.read(adsServiceProvider);
-    // Frequency-gated interstitial only at match end — never mid-roll.
     ads.notifyMatchCompleted();
     await ads.maybeShowInterstitialAtBreak();
   }
 
   Future<void> _leaveToLobby() async {
-    // Second chance if the end-screen attempt was gated / failed to load.
+    // Same reserved break on the way home — no ad while AdMob is off.
     final ads = ref.read(adsServiceProvider);
     await ads.maybeShowInterstitialAtBreak();
     if (!mounted) return;
@@ -685,7 +675,7 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
                 const SizedBox(height: 8),
                 Text(
                   '${winner.profile.avatarEmoji} ${winner.profile.name} '
-                  'wins with ${winner.bankCents} gems',
+                  'wins with ${gemCount(winner.bankCents)}',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     fontSize: 18,
@@ -705,17 +695,17 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
                     },
                   ),
                 ),
-                GemDenominationPicker(
-                  title: 'Add gems',
-                  onChosen: (gems) => _addGems(context, ref, gems),
+                Text(
+                  '${gemCount(winner.bankCents)} at the table · '
+                  'virtual gems (not real money)',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: MargeColors.cream.withValues(alpha: 0.7),
+                    fontSize: 12,
+                  ),
                 ),
-                const SizedBox(height: 10),
-                ElevatedButton(
-                  onPressed: () {
-                    ref.read(matchProvider.notifier).rematch();
-                  },
-                  child: const Text('REMATCH'),
-                ),
+                const SizedBox(height: 12),
+                const GetMoreGemsButton(),
                 const SizedBox(height: 10),
                 TextButton(
                   onPressed: _leaveToLobby,

@@ -5,15 +5,15 @@ import '../../engine/gem_label.dart';
 import '../../services/coin_ledger.dart';
 import '../theme/marge_theme.dart';
 
-/// Play-money gem denominations. Not a cash purchase and not Play Billing.
+/// Gem move denominations from the bank onto a table. Not Play Billing.
 class GemDenominationPicker extends StatefulWidget {
   const GemDenominationPicker({
     super.key,
     required this.onChosen,
     this.available,
     this.compact = false,
-    this.title = 'Add gems',
-    this.hint = 'Free gems. Not a real charge.',
+    this.title = 'Move gems',
+    this.hint = 'Virtual gems (not real money).',
   });
 
   /// Called with a denomination or a custom amount the player chose.

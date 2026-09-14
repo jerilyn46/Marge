@@ -48,6 +48,7 @@ class PlayerCoinLedger implements SeatCoinBook {
   PlayerCoinLedger({
     Map<String, int>? balances,
     this.lastBotResetAt,
+    this.lastDailyDripDay,
     this.loaded = false,
     SharedPreferences? prefs,
     this.onChanged,
@@ -56,13 +57,17 @@ class PlayerCoinLedger implements SeatCoinBook {
 
   static const startingCents = 100;
 
-  /// Free play-money pack. Same size as a starting stake so they can ante 10¢.
+  /// Legacy pack size (starting stake). Kept for tests / soft bankrupt drip math.
   /// Not a cash price — there is no real-money charge.
   static const playCoinPackCents = startingCents;
+
+  /// Small once-per-Denver-day free grant. Caps the open ATM; not unlimited mint.
+  static const dailyDripGems = 25;
 
   static const prefsKey = 'player_coin_ledger_v1';
   static const _kBalances = 'balances';
   static const _kLastBotResetAt = 'lastBotResetAt';
+  static const _kLastDailyDripDay = 'lastDailyDripDay';
 
   /// Storage key for a playing identity. Humans and bots never share a key.
   static String storageKey(String name, {required bool bot}) {
@@ -74,6 +79,9 @@ class PlayerCoinLedger implements SeatCoinBook {
 
   /// UTC instant of the Monday 00:00 Denver boundary last applied.
   DateTime? lastBotResetAt;
+
+  /// Denver civil date `YYYY-MM-DD` when the local human last claimed the drip.
+  String? lastDailyDripDay;
 
   final bool loaded;
 
@@ -115,11 +123,10 @@ class PlayerCoinLedger implements SeatCoinBook {
     return trimmed.isEmpty ? 'You' : trimmed;
   }
 
-  /// Add a free play-money pack to a human bank and persist it.
+  /// Credit virtual gems to a human bank (internal / drip / refunds).
   ///
-  /// Waiting names are ignored. This never writes a `bot:` key — bots do not
-  /// buy coins. A missing human balance is the same [startingCents] the lobby
-  /// already shows, so the pack is added on top of that.
+  /// Waiting names are ignored. This never writes a `bot:` key. UI must not
+  /// expose an unlimited free ATM — prefer [claimDailyDrip] for free grants.
   ///
   /// Returns the new balance, or null if the grant was refused.
   int? grantHumanPlayCoins(String name, {int cents = playCoinPackCents}) {
@@ -132,10 +139,39 @@ class PlayerCoinLedger implements SeatCoinBook {
     return next;
   }
 
-  /// Play-money denominations that fit a 10 gem ante. Not a cash price.
+  /// Gem move denominations that fit a 10 gem ante. Not a cash price.
   static const playGemDenominations = <int>[10, 25, 50, 100];
 
-  /// Uncommitted gem bank. Missing means the starting stake, not zero.
+  /// Preview-only Shop pack sizes (Coming soon — no charges).
+  static const previewPackGems = <int>[50, 150, 400, 1000];
+
+  static String denverDayKey(DateTime utcNow) {
+    final wall = DenverTime.wallClock(utcNow.toUtc());
+    final m = wall.month.toString().padLeft(2, '0');
+    final d = wall.day.toString().padLeft(2, '0');
+    return '${wall.year}-$m-$d';
+  }
+
+  bool canClaimDailyDrip({DateTime? utcNow}) {
+    final day = denverDayKey(utcNow ?? DateTime.now().toUtc());
+    return lastDailyDripDay != day;
+  }
+
+  /// Soft bankrupt / daily free drip. One claim per Denver day.
+  ///
+  /// Returns gems granted, or null if already claimed / refused.
+  int? claimDailyDrip(String name, {DateTime? utcNow}) {
+    final now = (utcNow ?? DateTime.now().toUtc()).toUtc();
+    if (!canClaimDailyDrip(utcNow: now)) return null;
+    final next = grantHumanPlayCoins(name, cents: dailyDripGems);
+    if (next == null) return null;
+    lastDailyDripDay = denverDayKey(now);
+    _persistNow();
+    onChanged?.call();
+    return dailyDripGems;
+  }
+
+  /// Gem bank balance. Missing means the starting stake, not zero.
   int availableHumanGems(String name) {
     final identity = localIdentity(name);
     if (_isWaitingName(identity)) return 0;
@@ -184,6 +220,7 @@ class PlayerCoinLedger implements SeatCoinBook {
   PlayerCoinLedger snapshot() => PlayerCoinLedger(
     balances: balances,
     lastBotResetAt: lastBotResetAt,
+    lastDailyDripDay: lastDailyDripDay,
     loaded: loaded,
     prefs: _prefs,
   );
@@ -194,6 +231,7 @@ class PlayerCoinLedger implements SeatCoinBook {
     _kBalances: balances,
     if (lastBotResetAt != null)
       _kLastBotResetAt: lastBotResetAt!.toUtc().toIso8601String(),
+    if (lastDailyDripDay != null) _kLastDailyDripDay: lastDailyDripDay,
   });
 
   static PlayerCoinLedger decode(
@@ -228,9 +266,13 @@ class PlayerCoinLedger implements SeatCoinBook {
       if (stamp is String && stamp.isNotEmpty) {
         last = DateTime.tryParse(stamp)?.toUtc();
       }
+      String? dripDay;
+      final dripRaw = decoded[_kLastDailyDripDay];
+      if (dripRaw is String && dripRaw.isNotEmpty) dripDay = dripRaw;
       return PlayerCoinLedger(
         balances: balances,
         lastBotResetAt: last,
+        lastDailyDripDay: dripDay,
         loaded: loaded,
         prefs: prefs,
       );
@@ -398,7 +440,7 @@ class CoinLedgerNotifier extends Notifier<PlayerCoinLedger> {
 
   void publish() => _onLiveChanged();
 
-  /// Credit the local human saved play coins. Bots are never credited.
+  /// Credit virtual gems (internal / drip / refunds). Bots are never credited.
   int? grantHumanPlayCoins(
     String name, {
     int cents = PlayerCoinLedger.playCoinPackCents,
@@ -406,6 +448,12 @@ class CoinLedgerNotifier extends Notifier<PlayerCoinLedger> {
     final live = book;
     live.onChanged = _onLiveChanged;
     return live.grantHumanPlayCoins(name, cents: cents);
+  }
+
+  int? claimDailyDrip(String name, {DateTime? utcNow}) {
+    final live = book;
+    live.onChanged = _onLiveChanged;
+    return live.claimDailyDrip(name, utcNow: utcNow);
   }
 
   int? drawAvailable(String name, int gems) {

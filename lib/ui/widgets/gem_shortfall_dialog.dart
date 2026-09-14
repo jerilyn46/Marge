@@ -6,7 +6,9 @@ import '../../engine/gem_label.dart';
 import '../../engine/gem_shortfall.dart';
 import '../../services/coin_ledger.dart';
 import '../match_provider.dart';
-import 'play_coin_pack_button.dart';
+import '../theme/marge_theme.dart';
+import 'daily_drip_card.dart';
+import 'get_more_gems_button.dart';
 
 /// Choice when a seated human cannot cover a first-roll trips payment.
 class GemShortfallDialog extends ConsumerWidget {
@@ -46,22 +48,18 @@ class GemShortfallDialog extends ConsumerWidget {
               'This table has ${gemCount(table)}. Gem bank has ${gemCount(bank)}.',
             ),
             const SizedBox(height: 12),
-            GemDenominationPicker(
-              compact: true,
-              title: 'Add gems',
-              hint: 'Free gems. Not a real charge.',
-              onChosen: (gems) {
-                final next = ref
-                    .read(coinLedgerProvider.notifier)
-                    .grantHumanPlayCoins(name, cents: gems);
-                if (!context.mounted || next == null) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Added $gems gems. Gem bank has $next gems.'),
-                  ),
-                );
-              },
+            Text(
+              'Virtual gems (not real money). Daily drip, Coming soon packs, '
+              'or Coming soon rewarded — not an unlimited free mint.',
+              style: TextStyle(
+                color: MargeColors.cream.withValues(alpha: 0.75),
+                fontSize: 12,
+              ),
             ),
+            const SizedBox(height: 10),
+            const DailyDripCard(compact: true),
+            const SizedBox(height: 8),
+            const GetMoreGemsButton(compact: true),
           ],
         ),
       ),
@@ -71,7 +69,7 @@ class GemShortfallDialog extends ConsumerWidget {
             ref.read(matchProvider.notifier).quitShortfall();
             Navigator.of(context).pop();
           },
-          child: Text('Pay ${gemCount(table)} and quit this game'),
+          child: Text('Spend ${gemCount(table)} and quit this game'),
         ),
         FilledButton(
           onPressed: canCover
@@ -80,7 +78,7 @@ class GemShortfallDialog extends ConsumerWidget {
                   if (ok && context.mounted) Navigator.of(context).pop();
                 }
               : null,
-          child: Text('Pay ${gemCount(due)}'),
+          child: Text('Cover ${gemCount(due)}'),
         ),
       ],
     );
