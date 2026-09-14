@@ -1,6 +1,6 @@
 /// A seated player cannot cover a first-roll trips payment (2s–6s).
 ///
-/// They must add play-money gems and pay the full amount, or pay what
+/// They must add virtual gems and pay the full amount, or pay what
 /// they have at this table and quit this game. Nothing is taken until
 /// they choose. Bots never reach this — they pay what they have and quit.
 class GemShortfall {

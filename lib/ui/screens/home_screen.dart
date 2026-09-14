@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../engine/gem_label.dart';
+import '../../engine/match_controller.dart';
 import '../../services/coin_ledger.dart';
 import '../../services/friends_service.dart';
 import '../../services/saved_games.dart';
@@ -13,6 +14,8 @@ import '../match_provider.dart';
 import '../theme/marge_theme.dart';
 import '../widgets/felt_hero_backdrop.dart';
 import '../widgets/gem_bank_sheet.dart';
+import '../widgets/get_more_gems_button.dart';
+import '../widgets/reserved_banner_strip.dart';
 import 'friends_screen.dart';
 import 'match_screen.dart';
 import 'more_screen.dart';
@@ -42,6 +45,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final savedGames = ref.watch(savedGamesProvider);
     final gemBank = ledger.availableHumanGems(settings.playerName);
     final seated = friends.seatedNames;
+    final ante = const MatchConfig().anteCents;
+    final needsGems = gemBank < ante;
 
     return Scaffold(
       body: FeltHeroBackdrop(
@@ -77,18 +82,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const SizedBox(height: 28),
+                      const SizedBox(height: 24),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           const DieWidgetMini(value: 5),
-                          const SizedBox(width: 10),
+                          const SizedBox(width: 12),
                           const DieWidgetMini(value: 3),
-                          const SizedBox(width: 10),
+                          const SizedBox(width: 12),
                           const DieWidgetMini(value: 6),
                         ],
                       ),
-                      const SizedBox(height: 18),
+                      const SizedBox(height: 16),
                       Text(
                         'MARGE',
                         textAlign: TextAlign.center,
@@ -120,6 +125,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                               color: MargeColors.cream.withValues(alpha: 0.72),
+                            ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Virtual gems only — no real money.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: MargeColors.cream.withValues(alpha: 0.58),
+                              fontWeight: FontWeight.w600,
                             ),
                       ),
                       const SizedBox(height: 28),
@@ -167,9 +181,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           );
                         },
                       ),
-                      // Quiet reserved strip for a future lobby banner —
-                      // empty while ads stay off; does not crowd the lobby.
-                      const SizedBox(height: 56),
+                      if (needsGems) ...[
+                        const SizedBox(height: 14),
+                        const GetMoreGemsButton(),
+                      ],
+                      const SizedBox(height: 18),
+                      // Quiet reserved house-art strip — ads stay off; no AdMob.
+                      const ReservedBannerStrip(),
+                      const SizedBox(height: 12),
                     ],
                   ),
                 ),

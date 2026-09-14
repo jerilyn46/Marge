@@ -281,7 +281,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Play gems only — free table chips, not a real charge.',
+                'Virtual gems only — no real money.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: MargeColors.cream.withValues(alpha: 0.65),

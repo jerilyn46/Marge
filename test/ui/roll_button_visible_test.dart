@@ -69,11 +69,12 @@ void main() {
     expect(find.text('Add gems'), findsNothing);
     expect(find.text('Move into this game'), findsNothing);
 
-    // Compact entry still opens the sheet when needed.
+    // Compact entry still opens the sheet when needed — move only, no free ATM.
     await tester.tap(find.byTooltip('Table gems'));
     await tester.pumpAndSettle();
-    expect(find.text('Add gems'), findsOneWidget);
+    expect(find.text('Add gems'), findsNothing);
     expect(find.text('Move into this game'), findsOneWidget);
+    expect(find.text('Get more gems'), findsOneWidget);
   });
 }
 

@@ -5,9 +5,10 @@ import '../../engine/gem_label.dart';
 import '../../services/coin_ledger.dart';
 import '../../services/settings_service.dart';
 import '../theme/marge_theme.dart';
-import 'play_coin_pack_button.dart';
+import 'daily_drip_card.dart';
+import 'get_more_gems_button.dart';
 
-/// Jewel-tray detail for the gem bank — play-money gems only.
+/// Jewel-tray detail for the gem bank — virtual gems only (not real money).
 Future<void> showGemBankSheet(BuildContext context, WidgetRef ref) {
   return showModalBottomSheet<void>(
     context: context,
@@ -22,19 +23,6 @@ Future<void> showGemBankSheet(BuildContext context, WidgetRef ref) {
 
 class _GemBankSheet extends ConsumerWidget {
   const _GemBankSheet();
-
-  void _addGems(BuildContext context, WidgetRef ref, int gems) {
-    final name = PlayerCoinLedger.localIdentity(
-      ref.read(settingsProvider).playerName,
-    );
-    final next = ref
-        .read(coinLedgerProvider.notifier)
-        .grantHumanPlayCoins(name, cents: gems);
-    if (!context.mounted || next == null) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Added $gems gems. Gem bank has $next gems.')),
-    );
-  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -78,19 +66,17 @@ class _GemBankSheet extends ConsumerWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Playful table chips. Free play gems — not a real charge.',
+            'Virtual gems (not real money). No unlimited free mint.',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: MargeColors.cream.withValues(alpha: 0.75),
               fontSize: 13,
             ),
           ),
-          const SizedBox(height: 16),
-          GemDenominationPicker(
-            title: 'Add play gems',
-            hint: 'Free gems. Not a real charge.',
-            onChosen: (gems) => _addGems(context, ref, gems),
-          ),
+          const SizedBox(height: 14),
+          const DailyDripCard(compact: true),
+          const SizedBox(height: 10),
+          const GetMoreGemsButton(),
           const SizedBox(height: 8),
         ],
       ),

@@ -353,7 +353,7 @@ class MatchController {
     book.write(p.profile.name, bot: p.profile.isBot, cents: p.bankCents);
   }
 
-  /// Add free play-money coins to the local human only.
+  /// Add virtual gems to the local human only (table grant / soft recovery).
   ///
   /// Bots and waiting chairs are never credited. If the local player was
   /// sitting out at zero, they come back so the next ante can include them.
@@ -381,12 +381,12 @@ class MatchController {
     _players[index] = updated;
     _remember(index);
     _log.add(
-      '${p.profile.name} adds ${gemCount(cents)} (free, not a real charge).',
+      '${p.profile.name} adds ${gemCount(cents)} (virtual gems, not real money).',
     );
     return next;
   }
 
-  /// Move play-money gems onto a seated human at this table only.
+  /// Move virtual gems onto a seated human at this table only.
   int? addTableGems(int seatIndex, int gems) {
     if (gems <= 0 || seatIndex < 0 || seatIndex >= _players.length) return null;
     final p = _players[seatIndex];
@@ -733,8 +733,8 @@ class MatchController {
     final payer = _players[humansShort.first];
     _log.add(
       '${payer.profile.name} cannot cover ${gemCount(due)} '
-      'for three ${face}s. Choose: add gems and pay in full, '
-      'or pay ${gemCount(payer.bankCents)} and quit this game.',
+      'for three ${face}s. Choose: cover with bank gems, '
+      'or spend ${gemCount(payer.bankCents)} and quit this game.',
     );
   }
 
@@ -828,8 +828,8 @@ class MatchController {
     final payer = _players[next];
     _log.add(
       '${payer.profile.name} cannot cover ${gemCount(pending.dueGems)} '
-      'for three ${pending.face}s. Choose: add gems and pay in full, '
-      'or pay ${gemCount(payer.bankCents)} and quit this game.',
+      'for three ${pending.face}s. Choose: cover with bank gems, '
+      'or spend ${gemCount(payer.bankCents)} and quit this game.',
     );
   }
 

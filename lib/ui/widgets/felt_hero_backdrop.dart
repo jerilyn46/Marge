@@ -63,9 +63,9 @@ class _FeltTablePainter extends CustomPainter {
         center: const Alignment(0, -0.2),
         radius: 0.95,
         colors: [
-          MargeColors.feltLight.withValues(alpha: 0.95),
+          MargeColors.feltLight.withValues(alpha: 0.98),
           MargeColors.felt,
-          const Color(0xFF163628),
+          const Color(0xFF143526),
         ],
       ).createShader(table.outerRect);
     canvas.drawRRect(table.deflate(10), felt);
@@ -75,8 +75,8 @@ class _FeltTablePainter extends CustomPainter {
         center: const Alignment(0, -0.55),
         radius: 0.75,
         colors: [
-          MargeColors.lamp.withValues(alpha: 0.22),
-          MargeColors.lamp.withValues(alpha: 0.06),
+          MargeColors.lamp.withValues(alpha: 0.28),
+          MargeColors.lamp.withValues(alpha: 0.08),
           Colors.transparent,
         ],
       ).createShader(rect);
