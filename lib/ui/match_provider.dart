@@ -237,7 +237,9 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       _releaseFinishedTable();
     } else {
       _persistActive();
-      await ref.read(savedGamesProvider.notifier).flush();
+      final n = ref.read(savedGamesProvider.notifier);
+      await n.ensureReady();
+      await n.flush();
     }
     _controller = null;
     _savedId = null;
@@ -246,7 +248,11 @@ class MatchNotifier extends Notifier<MatchViewState?> {
 
   void persistUnfinished() {
     _persistActive();
-    unawaited(ref.read(savedGamesProvider.notifier).flush());
+    unawaited(() async {
+      final n = ref.read(savedGamesProvider.notifier);
+      await n.ensureReady();
+      await n.flush();
+    }());
   }
 
   void dropSaved(String id) {

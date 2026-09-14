@@ -1,6 +1,6 @@
 {
-    "name": "marge",
-    "short_name": "marge",
+    "name": "Marge",
+    "short_name": "Marge",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
