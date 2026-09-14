@@ -40,6 +40,72 @@ void _moveIntoGame(BuildContext context, WidgetRef ref, int gems) {
   );
 }
 
+Future<void> _openTableGemsSheet(BuildContext context, WidgetRef ref) async {
+  final view = ref.read(matchProvider);
+  if (view == null) return;
+  final name = view.snapshot.config.localPlayerName;
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (sheetContext) {
+      return Padding(
+        padding: EdgeInsets.fromLTRB(
+          20,
+          8,
+          20,
+          20 + MediaQuery.viewInsetsOf(sheetContext).bottom,
+        ),
+        child: Consumer(
+          builder: (context, ref, _) {
+            final available = ref
+                .watch(coinLedgerProvider)
+                .availableHumanGems(name);
+            return SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Table gems',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Add free gems or move bank gems onto this table. '
+                    'Not a real charge.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: MargeColors.cream.withValues(alpha: 0.75),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  GemDenominationPicker(
+                    compact: true,
+                    title: 'Add gems',
+                    onChosen: (gems) => _addGems(context, ref, gems),
+                  ),
+                  const SizedBox(height: 16),
+                  GemDenominationPicker(
+                    compact: true,
+                    title: 'Move into this game',
+                    available: available,
+                    hint: 'Draws from the gem bank. Not a real charge.',
+                    onChosen: (gems) => _moveIntoGame(context, ref, gems),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      );
+    },
+  );
+}
+
 class MatchScreen extends ConsumerWidget {
   const MatchScreen({super.key});
 
@@ -77,9 +143,14 @@ class MatchScreen extends ConsumerWidget {
     final turn = snap.turn;
     final handoff = snap.handoff;
     final gated = snap.awaitingHandoff;
+    final shortfallGate = snap.phase == MatchPhase.awaitingShortfall;
     final showStrip = view.showHandoffStrip;
     final isHumanTurn = snap.currentPlayer.profile.isHuman;
-    final canInteract = isHumanTurn && !view.busyBot && !gated;
+    // Local human can roll only while the table is live — not during handoff
+    // or a shortfall choice. Gem tools live in a sheet so they never crowd
+    // Roll off a phone screen.
+    final canInteract =
+        isHumanTurn && !view.busyBot && !gated && !shortfallGate;
     final hotseat = HandoffState.isHotseatCta(snap.config);
 
     // Locked faces during handoff (prefer frozen handoff values).
@@ -112,7 +183,10 @@ class MatchScreen extends ConsumerWidget {
               child: SafeArea(
                 child: Column(
                   children: [
-                    _TopBar(snap: snap),
+                    _TopBar(
+                      snap: snap,
+                      onGems: () => _openTableGemsSheet(context, ref),
+                    ),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: PotMeter(potCents: snap.potCents),
@@ -156,31 +230,6 @@ class MatchScreen extends ConsumerWidget {
                             compact: true,
                           );
                         },
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                      child: Column(
-                        children: [
-                          GemDenominationPicker(
-                            compact: true,
-                            title: 'Add gems',
-                            onChosen: (gems) => _addGems(context, ref, gems),
-                          ),
-                          const SizedBox(height: 8),
-                          GemDenominationPicker(
-                            compact: true,
-                            title: 'Move into this game',
-                            available: ref
-                                .watch(coinLedgerProvider)
-                                .availableHumanGems(
-                                  snap.config.localPlayerName,
-                                ),
-                            hint: 'Draws from the gem bank. Not a real charge.',
-                            onChosen: (gems) =>
-                                _moveIntoGame(context, ref, gems),
-                          ),
-                        ],
                       ),
                     ),
                     if (snap.lastPayout != null && !showStrip) ...[
@@ -511,8 +560,9 @@ class _TurnBanner extends StatelessWidget {
 }
 
 class _TopBar extends ConsumerWidget {
-  const _TopBar({required this.snap});
+  const _TopBar({required this.snap, required this.onGems});
   final MatchSnapshot snap;
+  final VoidCallback onGems;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -556,7 +606,11 @@ class _TopBar extends ConsumerWidget {
               ),
             ),
           ),
-          const SizedBox(width: 48),
+          IconButton(
+            tooltip: 'Table gems',
+            onPressed: onGems,
+            icon: const Icon(Icons.diamond_outlined),
+          ),
         ],
       ),
     );
