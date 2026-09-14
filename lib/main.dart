@@ -9,9 +9,11 @@ import 'ads/ads_service.dart';
 import 'services/coin_ledger.dart';
 import 'services/friends_service.dart';
 import 'services/saved_games.dart';
+import 'services/settings_service.dart';
 import 'ui/match_provider.dart';
 import 'startup_log.dart';
 import 'ui/screens/home_screen.dart';
+import 'ui/screens/username_screen.dart';
 import 'ui/theme/marge_theme.dart';
 
 Future<void> main() async {
@@ -38,6 +40,11 @@ Future<void> main() async {
     SavedGameStore.bootstrap = await SavedGameStore.load();
   } catch (e, st) {
     debugPrint('main: saved games load failed (none to resume): $e\n$st');
+  }
+  try {
+    SettingsNotifier.bootstrap = await SettingsNotifier.load();
+  } catch (e, st) {
+    debugPrint('main: settings load failed (defaults): $e\n$st');
   }
 
   final container = ProviderContainer();
@@ -93,17 +100,33 @@ class _MargeAppState extends ConsumerState<MargeApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) return;
+    if (state == AppLifecycleState.resumed) {
+      // Refresh resume list after background / process pause.
+      unawaited(ref.read(savedGamesProvider.notifier).reload());
+      return;
+    }
     ref.read(matchProvider.notifier).persistUnfinished();
   }
 
   @override
   Widget build(BuildContext context) {
+    final settings = ref.watch(settingsProvider);
+    final Widget home;
+    if (!settings.loaded) {
+      home = const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    } else if (!settings.hasUsername) {
+      home = const UsernameScreen();
+    } else {
+      home = const HomeScreen();
+    }
+
     return MaterialApp(
       title: 'Marge Dice Game',
       debugShowCheckedModeBanner: false,
       theme: buildMargeTheme(),
-      home: const HomeScreen(),
+      home: home,
     );
   }
 }

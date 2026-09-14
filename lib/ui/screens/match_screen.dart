@@ -560,30 +560,41 @@ class _TopBar extends ConsumerWidget {
       child: Row(
         children: [
           IconButton(
-            tooltip: 'End match',
+            tooltip: 'Leave table',
             onPressed: () async {
-              final ok = await showDialog<bool>(
+              final choice = await showDialog<String>(
                 context: context,
                 builder: (ctx) => AlertDialog(
-                  title: const Text('End match?'),
-                  content: const Text('See final banks and crow a winner.'),
+                  title: const Text('Leave table?'),
+                  content: const Text(
+                    'Save this unfinished game for Resume on Home, '
+                    'or end it now and crow a winner.',
+                  ),
                   actions: [
                     TextButton(
-                      onPressed: () => Navigator.pop(ctx, false),
+                      onPressed: () => Navigator.pop(ctx, 'keep'),
                       child: const Text('Keep playing'),
                     ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, 'end'),
+                      child: const Text('End match'),
+                    ),
                     FilledButton(
-                      onPressed: () => Navigator.pop(ctx, true),
-                      child: const Text('End'),
+                      onPressed: () => Navigator.pop(ctx, 'leave'),
+                      child: const Text('Save & leave'),
                     ),
                   ],
                 ),
               );
-              if (ok == true) {
+              if (!context.mounted) return;
+              if (choice == 'leave') {
+                await ref.read(matchProvider.notifier).leaveUnfinished();
+                if (context.mounted) Navigator.of(context).pop();
+              } else if (choice == 'end') {
                 ref.read(matchProvider.notifier).endMatch();
               }
             },
-            icon: const Icon(Icons.close_rounded),
+            icon: const Icon(Icons.arrow_back_rounded),
           ),
           Expanded(
             child: Text(

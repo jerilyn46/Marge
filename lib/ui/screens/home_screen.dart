@@ -35,6 +35,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void initState() {
     super.initState();
     unawaited(StartupLog.mark('lobby-widget'));
+    // Disk may have unfinished tables from leave/pause; refresh list.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(ref.read(savedGamesProvider.notifier).reload());
+    });
   }
 
   @override
@@ -95,12 +99,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        'MARGE',
+                        'Marge',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.displaySmall?.copyWith(
                               fontWeight: FontWeight.w900,
                               color: MargeColors.lamp,
-                              letterSpacing: 6,
+                              letterSpacing: 2,
                               shadows: [
                                 Shadow(
                                   color: Colors.black.withValues(alpha: 0.45),

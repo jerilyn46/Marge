@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -71,6 +72,8 @@ class SavedGameStore {
   SharedPreferences? _prefs;
   Future<void> _saveChain = Future<void>.value();
 
+  bool get hasPrefs => _prefs != null;
+
   SavedGame? byId(String id) {
     for (final game in games) {
       if (game.id == id) return game;
@@ -130,11 +133,27 @@ class SavedGameStore {
 
   Future<void> flush() => _saveChain;
 
+  /// Attach prefs (and optionally seed from disk) without wiping memory.
+  Future<void> attachPrefs([SharedPreferences? prefs]) async {
+    _prefs ??= prefs ?? await SharedPreferences.getInstance();
+  }
+
   void _persistNow() {
     final prefs = _prefs;
-    if (prefs == null) return;
+    if (prefs == null) {
+      debugPrint('SavedGameStore: skip persist — prefs not attached yet');
+      return;
+    }
     final payload = encode();
-    _saveChain = _saveChain.then((_) => prefs.setString(prefsKey, payload));
+    _saveChain = _saveChain
+        .catchError((Object e, StackTrace st) {
+          debugPrint('SavedGameStore: prior save error cleared: $e\n$st');
+        })
+        .then((_) => prefs.setString(prefsKey, payload))
+        .then((_) {})
+        .catchError((Object e, StackTrace st) {
+          debugPrint('SavedGameStore: persist failed: $e\n$st');
+        });
   }
 
   static Future<SavedGameStore> load({SharedPreferences? prefs}) async {
@@ -160,6 +179,7 @@ class SavedGameStore {
 
 class SavedGamesNotifier extends Notifier<List<SavedGame>> {
   SavedGameStore? _live;
+  Future<void>? _prefsReady;
 
   SavedGameStore get store {
     final live = _live;
@@ -174,23 +194,24 @@ class SavedGamesNotifier extends Notifier<List<SavedGame>> {
     final seeded = SavedGameStore.bootstrap;
     if (seeded != null) {
       _live = seeded;
-      Future.microtask(() async {
-        try {
-          _live?._prefs ??= await SharedPreferences.getInstance();
-        } catch (e, st) {
-          debugPrint('SavedGamesNotifier: prefs attach failed: $e\n$st');
-        }
-      });
+      _prefsReady = _ensurePrefs();
       return List<SavedGame>.from(seeded.games);
     }
-    Future.microtask(() async {
-      try {
-        await reload();
-      } catch (e, st) {
-        debugPrint('SavedGamesNotifier: prefs load failed: $e\n$st');
-      }
-    });
+    _live = SavedGameStore();
+    _prefsReady = _ensurePrefs().then((_) => reload());
     return const [];
+  }
+
+  Future<void> _ensurePrefs() async {
+    try {
+      await store.attachPrefs();
+    } catch (e, st) {
+      debugPrint('SavedGamesNotifier: prefs attach failed: $e\n$st');
+    }
+  }
+
+  Future<void> ensureReady() async {
+    await (_prefsReady ?? _ensurePrefs());
   }
 
   void _publish() {
@@ -200,23 +221,60 @@ class SavedGamesNotifier extends Notifier<List<SavedGame>> {
   }
 
   void upsert(SavedGame game) {
+    // Kick prefs attach if somehow missing; persist no-ops until ready,
+    // then [ensureReady]/flush] from leave/pause writes the queue.
+    unawaited(_ensurePrefs());
     store.upsert(game);
     _publish();
   }
 
   void remove(String id) {
+    unawaited(_ensurePrefs());
     store.remove(id);
     _publish();
   }
 
-  Future<void> flush() => store.flush();
+  Future<void> flush() async {
+    await ensureReady();
+    // Re-encode after prefs attach in case earlier upserts were skipped.
+    if (store.hasPrefs && store.games.isNotEmpty) {
+      store._persistNow();
+    }
+    await store.flush();
+  }
 
+  /// Load from disk and merge with in-memory games (memory wins on same id).
+  /// Never drops an unfinished table that was upserted before prefs attached.
   Future<void> reload() async {
-    final loaded = await SavedGameStore.load();
-    _live = loaded;
-    state = List<SavedGame>.from(loaded.games);
+    try {
+      final loaded = await SavedGameStore.load();
+      final existing = _live;
+      if (existing == null) {
+        _live = loaded;
+        state = List<SavedGame>.from(loaded.games);
+        return;
+      }
+      await existing.attachPrefs(loaded._prefs);
+      final byId = <String, SavedGame>{
+        for (final g in loaded.games) g.id: g,
+        for (final g in existing.games) g.id: g,
+      };
+      final merged = byId.values.toList()
+        ..sort((a, b) => b.savedAt.compareTo(a.savedAt));
+      existing.games
+        ..clear()
+        ..addAll(merged);
+      if (existing.hasPrefs) {
+        existing._persistNow();
+      }
+      _live = existing;
+      state = List<SavedGame>.from(existing.games);
+    } catch (e, st) {
+      debugPrint('SavedGamesNotifier: reload failed: $e\n$st');
+    }
   }
 }
+
 
 final savedGamesProvider =
     NotifierProvider<SavedGamesNotifier, List<SavedGame>>(
