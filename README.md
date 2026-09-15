@@ -2,7 +2,7 @@
 
 A colorful casual dice table game for Android (and web). Configurable seats (bots + local hotseat), ante into a shared pot, Yahtzee-style keep-and-reroll, and a dramatic **triple ones on the first roll** pot sweep.
 
-**Package:** `com.jerilyn.marge`  
+**Package:** `com.jerilynroberts.marge`  
 **Repo:** https://github.com/jerilyn46/Marge
 
 > Virtual chips only. No real-money gambling.

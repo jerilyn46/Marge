@@ -28,7 +28,7 @@ class StartupLog {
 
   static Future<Directory?> _filesDir() async {
     if (defaultTargetPlatform != TargetPlatform.android) return null;
-    const pkg = 'com.jerilyn.marge';
+    const pkg = 'com.jerilynroberts.marge';
     final candidates = <String>[
       '/data/user/0/$pkg/files',
       '/data/data/$pkg/files',

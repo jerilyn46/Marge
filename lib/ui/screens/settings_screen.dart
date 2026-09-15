@@ -101,7 +101,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           const SizedBox(height: 24),
           Text(
-            'Marge Dice Game · com.jerilyn.marge\nVirtual chips only — no real money.',
+            'Marge Dice Game · com.jerilynroberts.marge\nVirtual chips only — no real money.',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: MargeColors.cream.withValues(alpha: 0.55),

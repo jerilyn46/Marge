@@ -8,7 +8,7 @@
 
 Unit / App IDs default to Google **test** samples. Inject real IDs only at build time — never commit them.
 
-Package: `com.jerilyn.marge`  
+Package: `com.jerilynroberts.marge`  
 Plugins: `google_mobile_ads`, `in_app_purchase`
 
 > Virtual gems only. No real-money cash-out, side bets, loot chests, or dark patterns.
