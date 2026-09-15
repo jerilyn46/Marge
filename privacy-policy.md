@@ -1,29 +1,50 @@
 # Privacy Policy — Marge
 
-**Effective date:** September 14, 2026  
+**Effective date:** September 15, 2026  
 **App:** Marge (Android), package `com.jerilynroberts.marge`  
 **Developer:** Jerilyn Roberts  
 **Contact:** jerilyn46@gmail.com
 
 ## What this app is
 
-Marge is a casual dice pot game for adults (18+). Gameplay uses **virtual gems only**. Virtual gems have no cash value. You cannot deposit real money, withdraw gems, sell gems to other people, or cash out for money, gift cards, or other prizes of real-world value.
+Marge is a casual dice pot game for adults (18+). Gameplay uses **virtual gems only**. Virtual gems have no cash value. You cannot deposit real money into a cashable balance, withdraw gems, sell gems to other people, or cash out for money, gift cards, or other prizes of real-world value.
 
 There is no real-money gambling in this app.
 
+Optional in-app purchases (via Google Play Billing) buy **more virtual gems** for use only in Marge. Those purchases are billed by Google. We never receive your credit-card number.
+
 ## Information we collect
 
-This version of Marge does **not** ask you to create an account. We do not ask for your email, phone number, or payment information inside the app.
+This version of Marge does **not** ask you to create an account. We do not ask for your email, phone number, or payment card inside the app.
 
-On first launch you may choose a **username**. That username is stored **on your device only** (local app preferences). It is not sent to our servers, because we do not operate a user-account backend for this version.
-
-The app also stores game settings and your virtual-gem balance **on your device** so the game can continue. That information stays on the device. We do not operate a server that receives your gem balance or match history.
+On first launch you may choose a **username**. That username is stored **on your device only**. Game settings and your virtual-gem balance also stay **on your device**. We do not operate a server that receives your gem balance or match history.
 
 We do not knowingly sell personal information. We do not knowingly collect personal information from children.
 
-**Ads are off** in the current published builds. This version does not show ads and does **not initialize** advertising SDKs (including Google AdMob) until a later version. We do not collect advertising identifiers, ad interaction data, or ad-related device data in this version. This matches a Play listing that states ads are not present.
+## Ads (Google AdMob)
 
-If a later version enables ads or analytics, we will update this policy **before** that version is released, and we will update the Google Play Data safety form to match.
+This version **shows ads** using **Google AdMob** (Google Mobile Ads SDK) and Google’s **User Messaging Platform (UMP)** consent form where required (including the EEA, UK, and Switzerland).
+
+Google may collect and process data as described in Google’s policies, including:
+
+- Advertising identifiers (Android Advertising ID) and other device identifiers
+- IP address, which may be used to estimate approximate location
+- App activity related to ads (for example launches, taps, and ad / video views)
+- Diagnostic and performance data about the app and the ads SDK
+
+That data is used for advertising, measuring ads, analytics, and fraud prevention. It is shared with Google. We do not sell it.
+
+You can reset or limit your advertising ID in Android settings. Where UMP is required, we ask for consent before personalized ads. Settings in the app includes a privacy / ad-consent control when Google requires a privacy-options entry point.
+
+See Google’s ads and privacy materials and the Play Data safety disclosures for the Google Mobile Ads SDK.
+
+## In-app purchases
+
+If you buy a virtual-gem pack, **Google Play Billing** processes the payment. Google collects payment details under Google’s terms. The app receives enough purchase information from Play to grant the gems (for example product ID and purchase status). We do not store payment cards.
+
+## Notifications
+
+The app may show **on-device** “your turn” notifications. These are local to the phone. They are not push messages to other people, and we do not run a notification server.
 
 ## Children’s privacy
 
@@ -31,25 +52,26 @@ Marge is intended for **adults 18 and older**. It is not directed to children un
 
 ## Data sharing
 
-We do not sell personal information. We do not share personal information with advertisers in this ads-off version, because ads are not enabled and AdMob is not initialized.
+We share ad-related data with **Google (AdMob)** as described above. Purchase processing is handled by **Google Play**. We may disclose information if required by law, or to protect the rights, safety, or property of users or the developer.
 
-We may disclose information if required by law, or to protect the rights, safety, or property of users or the developer.
+We do not sell personal information.
 
 ## Retention and security
 
-Your on-device username, virtual-gem balances, and settings stay on your device until you clear the app’s data or uninstall it. Uninstalling the app removes the on-device game data we control.
+On-device username, gem balances, and settings stay on your device until you clear the app’s data or uninstall it.
 
-No method of storage is 100% secure. Because this version does not send a user profile to us, there is no account for us to retain on a server.
+Ad and payments providers retain data per their policies. Google states that Mobile Ads SDK data is encrypted in transit. No method is 100% secure.
 
 ## Your choices
 
-- Uninstall the app, or clear its storage in Android settings, to delete on-device game data (including the local username and gem balance).
-- Email jerilyn46@gmail.com with privacy questions. Because we do not operate user accounts, we cannot look up an account by name or email.
-- Android’s advertising ID settings apply if a future version enables ads. They do not change anything in this ads-off version.
+- Opt out of personalized ads via Android advertising-ID settings and the in-app consent / privacy-options form where offered
+- Uninstall the app, or clear its storage, to delete on-device game data
+- Email jerilyn46@gmail.com with privacy requests. Because we do not operate user accounts, we cannot look up an account by name. We will delete on-device-related data we control where required, and we will point you to Google’s ad and Play purchase controls for data Google holds
+- Google Play purchase history and refunds are managed in your Google account
 
 ## Changes
 
-We may update this policy. The effective date above will change when we do. If a change is material (for example, turning ads on or initializing AdMob), we will update this page before that version is offered on Google Play.
+We may update this policy. The effective date above will change when we do. If a change is material, we will update this page before that version is offered on Google Play.
 
 ## Contact
 
