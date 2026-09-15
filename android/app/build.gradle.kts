@@ -13,6 +13,15 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
+// Ads-on path (fail closed): OFF unless -PADMOB_ENABLED=true.
+// AGP cannot use a Gradle placeholder for tools:node, so ads-on builds
+// swap in AndroidManifest.ads-on.xml (APPLICATION_ID + ${admobAppId}).
+val admobEnabled = (project.findProperty("ADMOB_ENABLED") as String?)
+    ?.equals("true", ignoreCase = true) == true
+val admobAppId = (project.findProperty("ADMOB_APP_ID") as String?)
+    ?.takeIf { it.isNotBlank() }
+    ?: "ca-app-pub-3940256099942544~3347511713"
+
 android {
     namespace = "com.jerilynroberts.marge"
     compileSdk = flutter.compileSdkVersion
@@ -38,17 +47,17 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        // Ads-on path (fail closed): OFF unless -PADMOB_ENABLED=true.
-        // tools:node=remove drops APPLICATION_ID so GMA cannot cold-start.
-        // MobileAdsInitProvider is always stripped; Dart bootstraps after
-        // first frame. Pair with --dart-define=ADMOB_ENABLED=true.
-        val admobEnabled = (project.findProperty("ADMOB_ENABLED") as String?)
-            ?.equals("true", ignoreCase = true) == true
-        val admobAppId = (project.findProperty("ADMOB_APP_ID") as String?)
-            ?.takeIf { it.isNotBlank() }
-            ?: "ca-app-pub-3940256099942544~3347511713"
+        // Pair with --dart-define=ADMOB_ENABLED=true. See docs/ads.md.
+        // MobileAdsInitProvider is always stripped; Dart bootstraps after first frame.
         manifestPlaceholders["admobAppId"] = if (admobEnabled) admobAppId else "unused"
-        manifestPlaceholders["admobAppIdNode"] = if (admobEnabled) "merge" else "remove"
+    }
+
+    sourceSets {
+        getByName("main") {
+            if (admobEnabled) {
+                manifest.srcFile("src/main/AndroidManifest.ads-on.xml")
+            }
+        }
     }
 
     signingConfigs {

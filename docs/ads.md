@@ -45,13 +45,11 @@ Resolved in Dart by `lib/ads/ad_ids.dart`. Empty defines fall back to the test I
 
 ## Android App ID (manifest)
 
-`AndroidManifest.xml` uses placeholder `${admobAppId}` with `tools:node="${admobAppIdNode}"`.
+AGP cannot use a Gradle placeholder for `tools:node`, so ads-on builds swap manifests:
 
-`android/app/build.gradle.kts` sets:
-
-- **Default (`ADMOB_ENABLED` unset/false):** `tools:node=remove` — APPLICATION_ID absent
-- **`-PADMOB_ENABLED=true`:** merge Google sample App ID (or `-PADMOB_APP_ID=`)
-- **Override IDs:** Gradle property `ADMOB_APP_ID` (do not commit real values)
+- **Default (`ADMOB_ENABLED` unset/false):** `AndroidManifest.xml` keeps `tools:node=remove` — APPLICATION_ID absent
+- **`-PADMOB_ENABLED=true`:** `build.gradle.kts` selects `AndroidManifest.ads-on.xml`, which sets `android:value="${admobAppId}"`
+- **Override IDs:** Gradle property `ADMOB_APP_ID` (do not commit real values); defaults to Google sample App ID
 
 ```bash
 # Monetization / Tester build with Google test IDs
