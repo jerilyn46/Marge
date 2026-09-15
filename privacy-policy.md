@@ -1,7 +1,7 @@
 # Privacy Policy — Marge
 
 **Effective date:** September 14, 2026  
-**App:** Marge (Android), package `com.jerilyn.marge`  
+**App:** Marge (Android), package `com.jerilynroberts.marge`  
 **Developer:** Jerilyn Roberts  
 **Contact:** jerilyn46@gmail.com
 
