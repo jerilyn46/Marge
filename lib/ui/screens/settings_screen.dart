@@ -54,14 +54,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 16),
           SwitchListTile(
             title: const Text('Sound effects'),
-            subtitle: const Text('Console stubs / future audio pack'),
+            subtitle: const Text('Dice and table sounds'),
             value: s.sfxEnabled,
             activeThumbColor: MargeColors.gold,
             onChanged: (v) => n.setSfx(v),
           ),
           SwitchListTile(
             title: const Text('Haptics'),
-            subtitle: const Text('No-op on Linux / web — fine on phones'),
+            subtitle: const Text('Vibrate on rolls and wins'),
             value: s.hapticsEnabled,
             activeThumbColor: MargeColors.gold,
             onChanged: (v) => n.setHaptics(v),

@@ -9,7 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('Shop shows gem packs, rewarded, Designer Collection', (
+  testWidgets('Shop: neutral note when packs fail to load, Designer Collection', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({});
@@ -33,23 +33,24 @@ void main() {
     expect(find.textContaining('\$'), findsNothing);
 
     final scrollable = find.byType(Scrollable).first;
+    // Billing has no products in tests: no disabled "Unavailable" buttons,
+    // just a short neutral note (Tester 7). Billing never answers in tests,
+    // so the load times out and the spinner gives way to the note.
+    await tester.pump(GemIapNotifier.billingTimeout);
+    await tester.pump(const Duration(milliseconds: 100));
     for (final pack in GemPack.all) {
-      await tester.scrollUntilVisible(
-        find.textContaining(pack.title),
-        240,
-        scrollable: scrollable,
-      );
-      await tester.pump();
-      expect(find.textContaining(pack.title), findsOneWidget);
+      expect(find.textContaining(pack.title), findsNothing);
     }
-
-    await tester.scrollUntilVisible(
-      find.text('Watch for gems'),
-      240,
-      scrollable: scrollable,
+    expect(find.text('Unavailable'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('gem-packs-unavailable')),
+      findsOneWidget,
     );
-    await tester.pump();
-    expect(find.text('Watch for gems'), findsOneWidget);
+
+    // Ads are off in tests: the rewarded card is hidden, with no
+    // developer-facing "ads off in this build" copy.
+    expect(find.text('Watch for gems'), findsNothing);
+    expect(find.textContaining('in this build'), findsNothing);
 
     await tester.scrollUntilVisible(
       find.text('Designer Collection'),

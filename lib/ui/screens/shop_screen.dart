@@ -96,12 +96,9 @@ class ShopScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 8),
-            for (final pack in GemPack.all) ...[
-              _IapPackTile(pack: pack),
-              const SizedBox(height: 8),
-            ],
+            const _GemPackList(),
             const SizedBox(height: 6),
-            const _RewardedGemsCard(),
+            if (kAdmobEnabled) const _RewardedGemsCard(),
             const SizedBox(height: 18),
             const _SectionTitle('Designer Collection'),
             const SizedBox(height: 4),
@@ -138,6 +135,56 @@ class _SectionTitle extends StatelessWidget {
         fontSize: 17,
         color: MargeColors.lamp,
       ),
+    );
+  }
+}
+
+/// Only packs Play actually returned are shown. If none loaded, a short
+/// neutral note replaces disabled "Unavailable" buttons.
+class _GemPackList extends ConsumerWidget {
+  const _GemPackList();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final iap = ref.watch(gemIapProvider);
+    final live = [
+      for (final pack in GemPack.all)
+        if (iap.products.containsKey(pack.productId)) pack,
+    ];
+    if (live.isEmpty) {
+      if (iap.loading) {
+        return const Padding(
+          padding: EdgeInsets.symmetric(vertical: 12),
+          child: Center(
+            child: SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        );
+      }
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Text(
+            'Gem packs are not available right now. Please check back later.',
+            key: const ValueKey('gem-packs-unavailable'),
+            style: TextStyle(
+              color: MargeColors.cream.withValues(alpha: 0.8),
+              fontSize: 13,
+            ),
+          ),
+        ),
+      );
+    }
+    return Column(
+      children: [
+        for (final pack in live) ...[
+          _IapPackTile(pack: pack),
+          const SizedBox(height: 8),
+        ],
+      ],
     );
   }
 }
@@ -188,7 +235,7 @@ class _IapPackTile extends ConsumerWidget {
                         );
                       }
                     : null,
-                child: Text(price ?? 'Unavailable'),
+                child: Text(price ?? ''),
               ),
       ),
     );
@@ -224,10 +271,7 @@ class _RewardedGemsCardState extends ConsumerState<_RewardedGemsCard> {
           content: Text(
             earned
                 ? 'Earned ${gemCount(AdIds.rewardedChipGrant)} virtual gems. Not real money.'
-                : kAdmobEnabled
-                    ? 'Ad unavailable — try again later.'
-                    : 'Ads are off in this build '
-                        '(ADMOB_ENABLED / -PADMOB_ENABLED).',
+                : 'Ad unavailable — try again later.',
           ),
         ),
       );
@@ -251,11 +295,8 @@ class _RewardedGemsCardState extends ConsumerState<_RewardedGemsCard> {
             ),
             const SizedBox(height: 4),
             Text(
-              adsOn
-                  ? 'A short video for +${AdIds.rewardedChipGrant} gems in your '
-                      'gem bank. Virtual gems only — not real money.'
-                  : 'Rewarded ads credit +${AdIds.rewardedChipGrant} gems when '
-                      'AdMob is enabled for this build.',
+              'A short video for +${AdIds.rewardedChipGrant} gems in your '
+              'gem bank. Virtual gems only — not real money.',
               style: TextStyle(
                 color: MargeColors.cream.withValues(alpha: 0.8),
                 fontSize: 13,
@@ -272,11 +313,7 @@ class _RewardedGemsCardState extends ConsumerState<_RewardedGemsCard> {
                     )
                   : const Icon(Icons.ondemand_video_rounded),
               label: Text(
-                _busy
-                    ? 'Loading…'
-                    : adsOn
-                        ? 'Watch for +${AdIds.rewardedChipGrant}'
-                        : 'Ads off in this build',
+                _busy ? 'Loading…' : 'Watch for +${AdIds.rewardedChipGrant}',
               ),
             ),
           ],
