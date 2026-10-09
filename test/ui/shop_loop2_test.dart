@@ -29,7 +29,7 @@ void main() {
 
     expect(find.text('Play gems — not real money'), findsOneWidget);
     expect(find.textContaining('Coming soon'), findsNothing);
-    expect(find.textContaining('cash-out'), findsWidgets);
+    expect(find.text('Virtual gems only, no real money'), findsOneWidget);
     expect(find.textContaining('\$'), findsNothing);
 
     final scrollable = find.byType(Scrollable).first;

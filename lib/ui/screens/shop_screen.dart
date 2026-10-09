@@ -76,7 +76,7 @@ class ShopScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'Virtual gems only — never real currency, payouts, or cash-out.',
+              'Virtual gems only, no real money',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: MargeColors.cream.withValues(alpha: 0.65),
