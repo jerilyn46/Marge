@@ -6,6 +6,7 @@ plugins {
 
 import java.util.Properties
 import java.io.FileInputStream
+import java.util.Base64
 
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
@@ -18,9 +19,35 @@ if (keystorePropertiesFile.exists()) {
 // swap in AndroidManifest.ads-on.xml (APPLICATION_ID + ${admobAppId}).
 val admobEnabled = (project.findProperty("ADMOB_ENABLED") as String?)
     ?.equals("true", ignoreCase = true) == true
-val admobAppId = (project.findProperty("ADMOB_APP_ID") as String?)
+val admobSampleAppId = "ca-app-pub-3940256099942544~3347511713"
+val admobInjectedAppId = (project.findProperty("ADMOB_APP_ID") as String?)
     ?.takeIf { it.isNotBlank() }
-    ?: "ca-app-pub-3940256099942544~3347511713"
+// Debug ads-on builds may use Google's sample App ID. Release ads-on builds
+// must inject a real one (-PADMOB_APP_ID) — checked below, fail closed.
+val admobAppId = admobInjectedAppId ?: admobSampleAppId
+val admobAllowTestIds = (project.findProperty("ADMOB_ALLOW_TEST_IDS") as String?)
+    ?.equals("true", ignoreCase = true) == true
+
+// Terms of Use effective date (fail closed for release). The Dart side reads
+// String.fromEnvironment('TERMS_EFFECTIVE_DATE'), so the one mechanism that
+// fills the app AND satisfies this check is the dart-define:
+//   flutter build appbundle --release --dart-define=TERMS_EFFECTIVE_DATE=...
+// Flutter hands dart-defines to Gradle as -Pdart-defines=<base64,base64,...>.
+// A bare -PTERMS_EFFECTIVE_DATE would not reach the app, so it is not accepted.
+fun dartDefine(name: String): String? {
+    val raw = project.findProperty("dart-defines") as String? ?: return null
+    return raw.split(",")
+        .mapNotNull { encoded ->
+            try {
+                String(Base64.getDecoder().decode(encoded.trim()), Charsets.UTF_8)
+            } catch (e: IllegalArgumentException) {
+                null
+            }
+        }
+        .firstOrNull { it.startsWith("$name=") }
+        ?.substringAfter("=")
+}
+val termsEffectiveDate = dartDefine("TERMS_EFFECTIVE_DATE")?.trim()?.takeIf { it.isNotEmpty() }
 
 android {
     namespace = "com.jerilynroberts.marge"
@@ -73,15 +100,47 @@ android {
 
     buildTypes {
         release {
-            // Prefer upload keystore when key.properties exists; else debug for local sideload.
-            signingConfig = if (keystorePropertiesFile.exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
-            }
+            // Always the upload key. No debug-keystore fallback: a release
+            // build without android/key.properties fails (see check below).
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             isShrinkResources = false
         }
+    }
+}
+
+// Release builds must be upload-key signed. Fail fast instead of silently
+// producing a debug-signed APK/AAB when key.properties is missing.
+gradle.taskGraph.whenReady {
+    val releaseTaskPrefixes = listOf("assemble", "bundle", "package", "sign")
+    val wantsRelease = allTasks.any { task ->
+        task.project == project &&
+            task.name.contains("Release") &&
+            releaseTaskPrefixes.any { task.name.startsWith(it) }
+    }
+    // Terms §9 refers to "the effective date above": release must carry it.
+    if (wantsRelease && termsEffectiveDate == null) {
+        throw GradleException(
+            "Release build needs the Terms of Use effective date: pass " +
+                "--dart-define=TERMS_EFFECTIVE_DATE=\"<Month D, YYYY>\" to " +
+                "flutter build (see docs/store/README.md).",
+        )
+    }
+    if (wantsRelease && !keystorePropertiesFile.exists()) {
+        throw GradleException(
+            "Release build needs android/key.properties (upload key). " +
+                "Refusing to fall back to the debug keystore.",
+        )
+    }
+    // Ads-on release: never ship Google's sample App ID by accident.
+    val sampleAppId = admobInjectedAppId == null ||
+        admobInjectedAppId.startsWith("ca-app-pub-3940256099942544")
+    if (wantsRelease && admobEnabled && sampleAppId && !admobAllowTestIds) {
+        throw GradleException(
+            "Ads-on release needs -PADMOB_APP_ID (real App ID, injected at " +
+                "build time). Pass -PADMOB_ALLOW_TEST_IDS=true only for Tester " +
+                "builds that intentionally use Google sample IDs.",
+        )
     }
 }
 

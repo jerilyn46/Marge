@@ -70,10 +70,20 @@ class PayoutEvent {
     required this.kind,
     this.amountCents = 0,
     this.celebratory = false,
+    this.diceValues,
+    this.seatIndex,
   });
 
   final String message;
   final ScoreKind kind;
   final int amountCents;
   final bool celebratory;
+
+  /// Faces that produced this payout when the turn is reset right away
+  /// (first-roll triple ones). Lets the table show the roll before the
+  /// celebration even though the winner already has a fresh 3 rolls.
+  final List<int>? diceValues;
+
+  /// Seat that rolled [diceValues] (set together with it).
+  final int? seatIndex;
 }

@@ -306,9 +306,11 @@ class MatchController {
     handoff: _handoff,
   );
 
-  void startMatch() {
+  /// [carryPotGems] seeds the pot with gems left in the previous table's pot
+  /// ("Continue playing"), so they are not destroyed between games.
+  void startMatch({int carryPotGems = 0}) {
     _players = _buildSeats();
-    _pot = 0;
+    _pot = carryPotGems > 0 ? carryPotGems : 0;
     _round = 0;
     _seat = 0;
     _turn = null;
@@ -327,6 +329,7 @@ class MatchController {
       'Match started — ${_players.length} seats$waitingBit, '
       '${config.startBankCents} gems banks.',
     );
+    if (_pot > 0) _log.add('Pot carried over: ${gemCount(_pot)}.');
     _beginRound();
   }
 
@@ -534,8 +537,9 @@ class MatchController {
   /// Human / external: toggle keep on a die (only after first roll).
   void toggleKeep(int index) {
     if (_phase == MatchPhase.awaitingHandoff ||
-        _phase == MatchPhase.awaitingShortfall)
+        _phase == MatchPhase.awaitingShortfall) {
       return;
+    }
     final t = _turn;
     if (t == null || !t.hasRolled || t.rollNumber >= 3) return;
     if (_players[_seat].profile.isBot) return;
@@ -544,8 +548,9 @@ class MatchController {
 
   void setKeeps(List<bool> flags) {
     if (_phase == MatchPhase.awaitingHandoff ||
-        _phase == MatchPhase.awaitingShortfall)
+        _phase == MatchPhase.awaitingShortfall) {
       return;
+    }
     final t = _turn;
     if (t == null || !t.hasRolled) return;
     var dice = t.dice;
@@ -559,8 +564,9 @@ class MatchController {
   void roll() {
     if (!_plays(_players[_seat])) return;
     if (_phase == MatchPhase.awaitingHandoff ||
-        _phase == MatchPhase.awaitingShortfall)
+        _phase == MatchPhase.awaitingShortfall) {
       return;
+    }
     final t = _turn;
     if (t == null) return;
     if (t.rollNumber >= 3) return;
@@ -612,8 +618,9 @@ class MatchController {
   /// Refuses to end the turn early on a non-scoring hand while rolls remain.
   void bank() {
     if (_phase == MatchPhase.awaitingHandoff ||
-        _phase == MatchPhase.awaitingShortfall)
+        _phase == MatchPhase.awaitingShortfall) {
       return;
+    }
     final t = _turn;
     if (t == null || !t.hasRolled) return;
     // Refuse to end the turn on a miss while rolls remain. Banking a
@@ -644,6 +651,8 @@ class MatchController {
         kind: ScoreKind.tripleOnesPotWin,
         amountCents: won,
         celebratory: true,
+        diceValues: List<int>.unmodifiable(t.dice.values),
+        seatIndex: _seat,
       );
       _log.add(_lastPayout!.message);
       // First-roll triple ones: take the pot, end the round, re-ante, then
@@ -901,6 +910,15 @@ class MatchController {
     _remember(index);
   }
 
+  /// Gems the House fronted this seat at this table (once per match).
+  /// The House stake is created by the House, not taken from the pot or
+  /// another player, so it is repaid when the table cashes out to the gem
+  /// bank (see SavedGameStore.returnLocalGems).
+  static int houseStakeOwed(PlayerState p, MatchConfig config) =>
+      p.usedHouseStake && config.houseStakeCents > 0
+      ? config.houseStakeCents
+      : 0;
+
   /// Soft take: apply house stake once if needed; never go negative.
   int _takeFromBank(int index, int amount, {required bool soft}) {
     if (amount <= 0) return 0;
@@ -935,7 +953,7 @@ class MatchController {
     p = p.copyWith(bankCents: 0);
     if (p.usedHouseStake && paid == 0) {
       p = p.copyWith(eliminated: true);
-      _log.add('${p.profile.name} is out of chips.');
+      _log.add('${p.profile.name} is out of gems.');
     } else if (p.usedHouseStake && p.bankCents == 0 && paid < amount) {
       // Still broke after paying remainder — soft eliminate next ante.
       if (p.bankCents == 0) {

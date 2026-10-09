@@ -9,9 +9,7 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
-        android:fullBackupContent="@xml/backup_rules"
-        android:dataExtractionRules="@xml/data_extraction_rules"
-        tools:replace="android:allowBackup,android:fullBackupContent,android:dataExtractionRules">
+        tools:replace="android:allowBackup">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -39,6 +37,11 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Daily free-gems reminder (flutter_local_notifications zonedSchedule).
+             Not exported; no extra permission. Nothing runs at app start. -->
+        <receiver
+            android:exported="false"
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
         <!-- Ads-on path (fail closed when off):
              Default build.gradle leaves ADMOB_ENABLED unset → tools:node=remove
              so MobileAdsInitProvider cannot cold-start GMA (Flip 7).
@@ -72,6 +75,15 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Settings: open the privacy policy (https) and email support (mailto). -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO"/>
+            <data android:scheme="mailto"/>
         </intent>
     </queries>
 </manifest>

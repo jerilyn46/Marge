@@ -14,6 +14,15 @@ const bool kAdmobEnabled = bool.fromEnvironment(
   defaultValue: false,
 );
 
+/// Explicit opt-in for a *release* build that still uses Google's sample
+/// unit IDs (Tester ads-on builds only). Without it, a release build with
+/// any missing/sample unit ID keeps ads OFF (fail closed) so production can
+/// never serve test ads by accident.
+const bool kAdmobAllowTestIds = bool.fromEnvironment(
+  'ADMOB_ALLOW_TEST_IDS',
+  defaultValue: false,
+);
+
 /// AdMob IDs resolved from `--dart-define` with Google official **test** defaults.
 ///
 /// Never commit production App / unit IDs. Inject them at build time only.
@@ -61,6 +70,30 @@ class AdIds {
   static String get rewarded {
     const v = String.fromEnvironment(rewardedDefine, defaultValue: '');
     return v.isEmpty ? testRewarded : v;
+  }
+
+  /// Google's public sample publisher prefix (test IDs only).
+  static const String samplePublisherPrefix = 'ca-app-pub-3940256099942544';
+
+  static bool isSampleId(String id) => id.startsWith(samplePublisherPrefix);
+
+  /// Whether ads may start with these unit IDs. Debug/profile always may
+  /// (sample IDs). A release build needs every unit ID injected via
+  /// dart-define (non-sample) unless [allowTest] is set.
+  static bool idsReady({
+    required bool release,
+    bool allowTest = kAdmobAllowTestIds,
+    String? bannerId,
+    String? interstitialId,
+    String? rewardedId,
+  }) {
+    if (!release || allowTest) return true;
+    final ids = [
+      bannerId ?? banner,
+      interstitialId ?? interstitial,
+      rewardedId ?? rewarded,
+    ];
+    return ids.every((id) => id.isNotEmpty && !isSampleId(id));
   }
 
   /// True when all resolved IDs are still Google's public test samples.

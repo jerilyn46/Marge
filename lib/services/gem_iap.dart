@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
+import '../ui/legal_links.dart';
 import 'coin_ledger.dart';
 import 'settings_service.dart';
 
@@ -104,9 +105,17 @@ class GemIapNotifier extends Notifier<GemIapState> {
       unawaited(_sub?.cancel());
       _sub = null;
     });
+    // Errors inside the microtask are caught in [_bootstrap]; never thrown
+    // into the app zone.
     Future.microtask(_bootstrap);
     return const GemIapState(loading: true);
   }
+
+  /// Max wait for Play Billing to report availability.
+  static Duration billingTimeout = const Duration(seconds: 10);
+
+  /// True once the purchase stream is attached (test/diagnostic hook).
+  bool get listening => _sub != null;
 
   Future<void> _bootstrap() async {
     if (kIsWeb) {
@@ -118,7 +127,8 @@ class GemIapNotifier extends Notifier<GemIapState> {
       return;
     }
     try {
-      final available = await _iap.isAvailable();
+      // Never leave the Shop spinning if Billing does not answer.
+      final available = await _iap.isAvailable().timeout(billingTimeout);
       if (!available) {
         state = const GemIapState(
           available: false,
@@ -138,6 +148,15 @@ class GemIapNotifier extends Notifier<GemIapState> {
         },
       );
       await refreshProducts();
+      // Re-deliver gem packs that were paid for but never completed (e.g. the
+      // app died mid-purchase) so they are credited and acknowledged instead
+      // of being auto-refunded by Play after 3 days. Consumed packs are not
+      // returned, so this cannot double-credit a finished purchase.
+      try {
+        await _iap.restorePurchases();
+      } catch (e, st) {
+        debugPrint('GemIap: restorePurchases failed (non-fatal): $e\n$st');
+      }
     } catch (e, st) {
       debugPrint('GemIap: bootstrap failed: $e\n$st');
       state = GemIapState(
@@ -151,7 +170,9 @@ class GemIapNotifier extends Notifier<GemIapState> {
   Future<void> refreshProducts() async {
     state = state.copyWith(loading: true, clearError: true);
     try {
-      final response = await _iap.queryProductDetails(GemPack.productIds);
+      final response = await _iap
+          .queryProductDetails(GemPack.productIds)
+          .timeout(billingTimeout);
       if (response.error != null) {
         debugPrint('GemIap: query error ${response.error}');
         state = state.copyWith(
@@ -267,7 +288,9 @@ class GemIapNotifier extends Notifier<GemIapState> {
       debugPrint('GemIap: grant refused for ${pack.productId}');
       state = state.copyWith(
         clearPurchasing: true,
-        lastError: 'Could not credit gems — contact support with receipt.',
+        lastError:
+            'Could not credit gems. Email ${LegalLinks.supportEmail} '
+            'with your Google Play receipt.',
       );
     } else {
       state = state.copyWith(clearPurchasing: true, clearError: true);

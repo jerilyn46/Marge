@@ -6,7 +6,7 @@ import 'match_controller.dart';
 import 'player.dart';
 import 'turn_state.dart';
 
-/// Enough of a live table to resume later without re-ante or a fresh 100¢.
+/// Enough of a live table to resume later without re-ante or a fresh 100 gems.
 ///
 /// Each checkpoint is one table: its pot, seats, and those players' totals.
 /// It does not share a pot or seated banks with any other unfinished game.
@@ -115,8 +115,7 @@ class MatchCheckpoint {
     final playersRaw = raw['players'];
     if (phase == null || config == null || playersRaw is! List) return null;
     final players = <PlayerState>[
-      for (final item in playersRaw)
-        if (_playerFromJson(item) case final p?) p,
+      for (final item in playersRaw) ?_playerFromJson(item),
     ];
     if (players.isEmpty) return null;
     final pot = _asInt(raw['potCents']) ?? 0;
@@ -295,6 +294,8 @@ class MatchCheckpoint {
     'kind': p.kind.name,
     'amountCents': p.amountCents,
     'celebratory': p.celebratory,
+    if (p.diceValues != null) 'diceValues': p.diceValues,
+    if (p.seatIndex != null) 'seatIndex': p.seatIndex,
   };
 
   static PayoutEvent? _payoutFromJson(Object? raw) {
@@ -307,7 +308,19 @@ class MatchCheckpoint {
       kind: kind,
       amountCents: _asInt(raw['amountCents']) ?? 0,
       celebratory: raw['celebratory'] == true,
+      diceValues: _diceFromJson(raw['diceValues']),
+      seatIndex: _asInt(raw['seatIndex']),
     );
+  }
+
+  static List<int>? _diceFromJson(Object? raw) {
+    if (raw is! List || raw.length != 3) return null;
+    final out = <int>[];
+    for (final v in raw) {
+      if (v is! int || v < 1 || v > 6) return null;
+      out.add(v);
+    }
+    return List<int>.unmodifiable(out);
   }
 
   static Map<String, Object?> _scoreToJson(ScoreResult s) => {

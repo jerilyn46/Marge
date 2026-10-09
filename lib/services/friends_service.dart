@@ -100,7 +100,7 @@ class FriendsLogic {
   static String statusLabel(FriendEntry friend) =>
       friend.seated ? 'Waiting to sit' : 'Not sitting';
 
-  /// Friends-list row. Does not show saved cents or a 100¢ placeholder.
+  /// Friends-list row. Does not show saved cents or a 100 gems placeholder.
   static String rowLabel(FriendEntry friend) =>
       '${friend.name}  ${statusLabel(friend)}';
 }

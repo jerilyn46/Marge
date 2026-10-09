@@ -49,13 +49,16 @@ AGP cannot use a Gradle placeholder for `tools:node`, so ads-on builds swap mani
 
 - **Default (`ADMOB_ENABLED` unset/false):** `AndroidManifest.xml` keeps `tools:node=remove` — APPLICATION_ID absent
 - **`-PADMOB_ENABLED=true`:** `build.gradle.kts` selects `AndroidManifest.ads-on.xml`, which sets `android:value="${admobAppId}"`
-- **Override IDs:** Gradle property `ADMOB_APP_ID` (do not commit real values); defaults to Google sample App ID
+- **Override IDs:** Gradle property `ADMOB_APP_ID` (do not commit real values); debug builds default to Google sample App ID
+- **Fail closed (release):** an ads-on *release* build fails in Gradle unless `-PADMOB_APP_ID` is a non-sample App ID, and the Dart side keeps ads OFF in release unless all three unit IDs are injected via dart-define. Tester builds that intentionally use Google sample IDs must opt in with `-PADMOB_ALLOW_TEST_IDS=true --dart-define=ADMOB_ALLOW_TEST_IDS=true`.
 
 ```bash
-# Monetization / Tester build with Google test IDs
+# Monetization / Tester build with Google test IDs (explicit opt-in)
 flutter build appbundle --release \
   --dart-define=ADMOB_ENABLED=true \
-  -PADMOB_ENABLED=true
+  --dart-define=ADMOB_ALLOW_TEST_IDS=true \
+  -PADMOB_ENABLED=true \
+  -PADMOB_ALLOW_TEST_IDS=true
 
 # Production IDs (CI secrets only — never in git)
 flutter build appbundle --release \
@@ -94,3 +97,36 @@ lib/ads/
 lib/services/gem_iap.dart Play Billing packs → gem bank
 lib/ui/widgets/reserved_banner_strip.dart  banner or house-art fallback
 ```
+
+## Verify which AdMob IDs an AAB contains (do not paste IDs anywhere)
+
+Google's sample publisher prefix is `ca-app-pub-3940256099942544`. Anything
+else is a real ID. These commands print only SAMPLE / NON-SAMPLE.
+
+```bash
+AAB=marge-x.y.z.aab
+# 1) Manifest App ID (APPLICATION_ID meta-data). Either:
+java -jar bundletool.jar dump manifest --bundle="$AAB" \
+  --xpath='/manifest/application/meta-data[@android:name="com.google.android.gms.ads.APPLICATION_ID"]/@android:value' \
+  | sed -E 's/^ca-app-pub-3940256099942544.*/SAMPLE/; t; s/^ca-app-pub-.*/NON-SAMPLE/'
+# ...or without bundletool (proto manifest strings):
+unzip -p "$AAB" base/manifest/AndroidManifest.xml | strings \
+  | grep -oE 'ca-app-pub-[0-9]{16}~[0-9]{10}' \
+  | sed -E 's/^ca-app-pub-3940256099942544.*/SAMPLE/; t; s/.*/NON-SAMPLE/' | sort | uniq -c
+# No output from either = APPLICATION_ID stripped (ads-off build).
+
+# 2) Dart-side unit IDs compiled into libapp.so (dart-defines):
+unzip -p "$AAB" base/lib/arm64-v8a/libapp.so | strings \
+  | grep -oE 'ca-app-pub-[0-9]{16}/[0-9]{10}' | sort -u \
+  | sed -E 's/^ca-app-pub-3940256099942544.*/SAMPLE/; t; s/.*/NON-SAMPLE/' | sort | uniq -c
+# Production: expect 3 NON-SAMPLE units and a NON-SAMPLE App ID.
+
+# 3) Package name:
+unzip -p "$AAB" base/manifest/AndroidManifest.xml | strings | grep -oE 'com\.jerilyn[a-z]*\.marge' | sort -u
+```
+
+For an installed/universal APK, `aapt2 dump xmltree --file AndroidManifest.xml app.apk | grep -A1 APPLICATION_ID`
+works the same way (pipe through the same `sed`).
+
+The Play Console ↔ AdMob app link (AdMob > Apps > App settings > link to
+Google Play) is a console setting, not code.

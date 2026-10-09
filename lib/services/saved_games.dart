@@ -58,9 +58,8 @@ class SavedGameStore {
   SavedGameStore({
     List<SavedGame> games = const [],
     this.loaded = false,
-    SharedPreferences? prefs,
-  }) : games = List<SavedGame>.from(games),
-       _prefs = prefs;
+    this._prefs,
+  }) : games = List<SavedGame>.from(games);
 
   static const prefsKey = 'saved_games_v1';
 
@@ -122,8 +121,7 @@ class SavedGameStore {
       final list = decoded['games'];
       final games = <SavedGame>[
         if (list is List)
-          for (final item in list)
-            if (SavedGame.fromJson(item) case final game?) game,
+          for (final item in list) ?SavedGame.fromJson(item),
       ]..sort((a, b) => b.savedAt.compareTo(a.savedAt));
       return SavedGameStore(games: games, loaded: loaded, prefs: prefs);
     } catch (_) {
@@ -163,15 +161,25 @@ class SavedGameStore {
 
   /// Put a finished or dropped table's local gems back in the main bank.
   /// Other tables are not touched. Uses the explicit bank, not an implicit 100.
+  ///
+  /// [houseStakeOwed] is the once-per-match House stake this seat received
+  /// at the table. It was minted by the House to keep the player in the
+  /// game, so it is paid back to the House before table gems return to the
+  /// persistent gem bank. Only the excess (if any) comes home. If the table
+  /// holds less than the stake, nothing returns and the House absorbs the
+  /// shortfall — the stake never becomes permanent bank gems.
   static int returnLocalGems({
     required PlayerCoinLedger ledger,
     required String localName,
     required int tableGems,
+    int houseStakeOwed = 0,
   }) {
-    if (tableGems <= 0) return ledger.availableHumanGems(localName);
+    final owed = houseStakeOwed > 0 ? houseStakeOwed : 0;
+    final net = tableGems - owed;
+    if (net <= 0) return ledger.availableHumanGems(localName);
     final name = PlayerCoinLedger.localIdentity(localName);
     final current = ledger.savedCents(name, bot: false) ?? 0;
-    final next = current + tableGems;
+    final next = current + net;
     ledger.write(name, bot: false, cents: next);
     return next;
   }
@@ -274,7 +282,6 @@ class SavedGamesNotifier extends Notifier<List<SavedGame>> {
     }
   }
 }
-
 
 final savedGamesProvider =
     NotifierProvider<SavedGamesNotifier, List<SavedGame>>(

@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../match_provider.dart';
 
 import '../screens/shop_screen.dart';
 import '../theme/marge_theme.dart';
@@ -14,10 +17,25 @@ class GetMoreGemsButton extends StatelessWidget {
   final bool compact;
   final String label;
 
-  static Future<void> openShop(BuildContext context) {
-    return Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const ShopScreen()),
-    );
+  /// Open the Shop. If a match is live, it is frozen (bots wait, table
+  /// saved) and picked back up unchanged when the Shop closes — the pot and
+  /// turn are never reset by a trip to the store.
+  static Future<void> openShop(BuildContext context) async {
+    MatchNotifier? match;
+    try {
+      match = ProviderScope.containerOf(context, listen: false)
+          .read(matchProvider.notifier);
+    } catch (_) {
+      match = null;
+    }
+    match?.suspendForShop();
+    try {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const ShopScreen()),
+      );
+    } finally {
+      match?.resumeAfterShop();
+    }
   }
 
   @override

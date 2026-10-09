@@ -12,11 +12,15 @@ import 'interstitial_gate.dart';
 ///
 /// [kAdmobEnabled] defaults to false (`--dart-define=ADMOB_ENABLED=true` to
 /// turn ads back on). When false, no UMP / MobileAds / ad-load calls run.
+///
+/// Release builds also need real unit IDs from dart-define (see
+/// [AdIds.idsReady]); otherwise ads stay off rather than serve test ads.
 bool get adsPlatformSupported =>
     kAdmobEnabled &&
     !kIsWeb &&
     (defaultTargetPlatform == TargetPlatform.android ||
-        defaultTargetPlatform == TargetPlatform.iOS);
+        defaultTargetPlatform == TargetPlatform.iOS) &&
+    AdIds.idsReady(release: kReleaseMode);
 
 /// Bootstraps UMP consent + Mobile Ads SDK, and owns interstitial / rewarded.
 ///

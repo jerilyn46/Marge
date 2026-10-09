@@ -42,18 +42,18 @@ class LobbyCoinSeat {
 /// * hotseat `Player 2`, `Player 3`, …
 /// * each bot name (`Spike`, `Mira`, …)
 ///
-/// Human balances persist forever. Bot balances reset to 100¢ once each
+/// Human balances persist forever. Bot balances reset to 100 gems once each
 /// Monday 00:00 America/Denver. Waiting online chairs are never stored.
 class PlayerCoinLedger implements SeatCoinBook {
   PlayerCoinLedger({
     Map<String, int>? balances,
     this.lastBotResetAt,
     this.lastDailyDripDay,
+    this.lastDailyDripAtUtc,
     this.loaded = false,
-    SharedPreferences? prefs,
+    this._prefs,
     this.onChanged,
-  }) : balances = Map<String, int>.from(balances ?? {}),
-       _prefs = prefs;
+  }) : balances = Map<String, int>.from(balances ?? {});
 
   static const startingCents = 100;
 
@@ -68,6 +68,7 @@ class PlayerCoinLedger implements SeatCoinBook {
   static const _kBalances = 'balances';
   static const _kLastBotResetAt = 'lastBotResetAt';
   static const _kLastDailyDripDay = 'lastDailyDripDay';
+  static const _kLastDailyDripAt = 'lastDailyDripAt';
 
   /// Storage key for a playing identity. Humans and bots never share a key.
   static String storageKey(String name, {required bool bot}) {
@@ -83,15 +84,19 @@ class PlayerCoinLedger implements SeatCoinBook {
   /// Denver civil date `YYYY-MM-DD` when the local human last claimed the drip.
   String? lastDailyDripDay;
 
+  /// Exact instant of the last daily-drip claim (UTC). Drives the
+  /// "free gems ready" reminder 24 h later. Null for pre-existing data.
+  DateTime? lastDailyDripAtUtc;
+
   final bool loaded;
 
-  SharedPreferences? _prefs;
+  final SharedPreferences? _prefs;
   Future<void> _saveChain = Future<void>.value();
 
   /// Fired after a memory write so the lobby can rebuild. Persistence is separate.
   void Function()? onChanged;
 
-  /// Cold-start ledger captured before [runApp] so the lobby does not flash 100¢.
+  /// Cold-start ledger captured before [runApp] so the lobby does not flash 100 gems.
   static PlayerCoinLedger? bootstrap;
 
   bool get hasHistory => balances.isNotEmpty;
@@ -161,6 +166,35 @@ class PlayerCoinLedger implements SeatCoinBook {
     return lastDailyDripDay != day;
   }
 
+  /// When the next daily drip unlocks, on the existing Denver-day clock
+  /// (no second timer). Null when the drip can already be claimed.
+  DateTime? nextDailyDripUtc({DateTime? utcNow}) {
+    final now = (utcNow ?? DateTime.now().toUtc()).toUtc();
+    if (canClaimDailyDrip(utcNow: now)) return null;
+    return nextDenverMidnightUtc(now);
+  }
+
+  /// When the "free gems ready" reminder should fire: exactly 24 h after the
+  /// last claim. Null if the drip is claimable now or the claim time is
+  /// unknown. 24 h after a claim is always at/after the next Denver midnight,
+  /// so the reminder can never announce gems that are not ready yet.
+  DateTime? dailyGemsReminderUtc({DateTime? utcNow}) {
+    final now = (utcNow ?? DateTime.now().toUtc()).toUtc();
+    if (canClaimDailyDrip(utcNow: now)) return null;
+    final at = lastDailyDripAtUtc;
+    if (at == null) return null;
+    final fire = at.toUtc().add(const Duration(hours: 24));
+    final unlock = nextDenverMidnightUtc(now);
+    return fire.isBefore(unlock) ? unlock : fire;
+  }
+
+  /// Next America/Denver midnight after [utcNow], as a UTC instant.
+  static DateTime nextDenverMidnightUtc(DateTime utcNow) {
+    final wall = DenverTime.wallClock(utcNow.toUtc());
+    final tomorrow = DateTime.utc(wall.year, wall.month, wall.day + 1);
+    return DenverTime.localToUtc(tomorrow.year, tomorrow.month, tomorrow.day);
+  }
+
   /// Soft bankrupt / daily free drip. One claim per Denver day.
   ///
   /// Returns gems granted, or null if already claimed / refused.
@@ -170,6 +204,7 @@ class PlayerCoinLedger implements SeatCoinBook {
     final next = grantHumanPlayCoins(name, cents: dailyDripGems);
     if (next == null) return null;
     lastDailyDripDay = denverDayKey(now);
+    lastDailyDripAtUtc = now;
     _persistNow();
     onChanged?.call();
     return dailyDripGems;
@@ -200,7 +235,7 @@ class PlayerCoinLedger implements SeatCoinBook {
     return available < startBank ? available : startBank;
   }
 
-  /// Drop every bot bank back to 100¢ if this Denver week has not been reset.
+  /// Drop every bot bank back to 100 gems if this Denver week has not been reset.
   ///
   /// Humans are never touched. Returns true when a reset was applied (and
   /// stored) so callers can refresh UI. Calling again the same week is a no-op.
@@ -225,6 +260,7 @@ class PlayerCoinLedger implements SeatCoinBook {
     balances: balances,
     lastBotResetAt: lastBotResetAt,
     lastDailyDripDay: lastDailyDripDay,
+    lastDailyDripAtUtc: lastDailyDripAtUtc,
     loaded: loaded,
     prefs: _prefs,
   );
@@ -236,6 +272,8 @@ class PlayerCoinLedger implements SeatCoinBook {
     if (lastBotResetAt != null)
       _kLastBotResetAt: lastBotResetAt!.toUtc().toIso8601String(),
     if (lastDailyDripDay != null) _kLastDailyDripDay: lastDailyDripDay,
+    if (lastDailyDripAtUtc != null)
+      _kLastDailyDripAt: lastDailyDripAtUtc!.toUtc().toIso8601String(),
   });
 
   static PlayerCoinLedger decode(
@@ -273,10 +311,16 @@ class PlayerCoinLedger implements SeatCoinBook {
       String? dripDay;
       final dripRaw = decoded[_kLastDailyDripDay];
       if (dripRaw is String && dripRaw.isNotEmpty) dripDay = dripRaw;
+      DateTime? dripAt;
+      final dripAtRaw = decoded[_kLastDailyDripAt];
+      if (dripAtRaw is String && dripAtRaw.isNotEmpty) {
+        dripAt = DateTime.tryParse(dripAtRaw)?.toUtc();
+      }
       return PlayerCoinLedger(
         balances: balances,
         lastBotResetAt: last,
         lastDailyDripDay: dripDay,
+        lastDailyDripAtUtc: dripAt,
         loaded: loaded,
         prefs: prefs,
       );
@@ -364,7 +408,7 @@ class PlayerCoinLedger implements SeatCoinBook {
           emoji: '👋',
           waiting: true,
           bot: false,
-          // Absent until they sit. No saved balance, no 100¢ placeholder.
+          // Absent until they sit. No saved balance, no 100 gems placeholder.
           coins: null,
         ),
       );

@@ -6,18 +6,21 @@ import '../../cosmetics/skins_service.dart';
 import '../../engine/engine.dart';
 import '../../engine/gem_label.dart';
 import '../../services/coin_ledger.dart';
+import '../../services/settings_service.dart';
+import '../../services/sfx_service.dart';
 import '../match_provider.dart';
 import '../theme/marge_theme.dart';
+import '../visuals/bank_button.dart';
+import '../visuals/dice_3d.dart';
+import '../visuals/pot_of_gems.dart';
 import '../widgets/confetti_overlay.dart';
 import '../widgets/daily_drip_card.dart';
-import '../widgets/die_widget.dart';
 import '../widgets/get_more_gems_button.dart';
 import '../widgets/gem_shortfall_dialog.dart';
 import '../widgets/handoff_strip.dart';
 import '../widgets/payout_banner.dart';
 import '../widgets/play_coin_pack_button.dart';
 import '../widgets/player_chip.dart';
-import '../widgets/pot_meter.dart';
 
 void _moveIntoGame(BuildContext context, WidgetRef ref, int gems) {
   final next = ref.read(matchProvider.notifier).moveFromMainBank(gems);
@@ -95,11 +98,43 @@ Future<void> _openTableGemsSheet(BuildContext context, WidgetRef ref) async {
   );
 }
 
-class MatchScreen extends ConsumerWidget {
+/// What a bank of the current winning hand pays: the per-opponent amount
+/// from every seated opponent, capped by what each can cover (table gems
+/// plus a still-unused House stake), mirroring the engine's soft take.
+@visibleForTesting
+int bankPreviewGems(MatchSnapshot snap) {
+  final t = snap.turn;
+  if (t == null || !t.lastScore.isScoring) return 0;
+  final each = t.lastScore.perOpponentCents;
+  var total = 0;
+  for (var i = 0; i < snap.players.length; i++) {
+    if (i == snap.currentSeatIndex) continue;
+    final p = snap.players[i];
+    if (!p.profile.participates || p.eliminated) continue;
+    final cover =
+        p.bankCents + (p.usedHouseStake ? 0 : snap.config.houseStakeCents);
+    total += each < cover ? each : cover;
+  }
+  return total;
+}
+
+class MatchScreen extends ConsumerStatefulWidget {
   const MatchScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MatchScreen> createState() => _MatchScreenState();
+}
+
+class _MatchScreenState extends ConsumerState<MatchScreen> {
+  /// Where Bank's gem particles fly: the table-gems readout in the top bar.
+  final GlobalKey _gemsTargetKey = GlobalKey(debugLabel: 'gems-target');
+
+  /// Last roll whose 3D dice have settled. Input stays locked (and the
+  /// win/near-miss readout and Bank wait) until it matches the view.
+  int? _settledSerial;
+
+  @override
+  Widget build(BuildContext context) {
     final view = ref.watch(matchProvider);
     final skinTheme = ref.watch(cosmeticsProvider).equippedTheme;
     ref.listen(matchProvider, (prev, next) {
@@ -138,14 +173,37 @@ class MatchScreen extends ConsumerWidget {
     // Local human can roll only while the table is live — not during handoff
     // or a shortfall choice. Gem tools live in a sheet so they never crowd
     // Roll off a phone screen.
-    final canInteract =
-        isHumanTurn && !view.busyBot && !gated && !shortfallGate;
+    _settledSerial ??= view.rollSerial;
+    final diceSettling = view.rollSerial != _settledSerial;
+    final canInteract = isHumanTurn &&
+        !view.busyBot &&
+        !gated &&
+        !shortfallGate &&
+        !view.revealingRoll &&
+        !diceSettling;
     final hotseat = HandoffState.isHotseatCta(snap.config);
+    final settings = ref.watch(settingsProvider);
+    final fx = SfxService(
+      sfxEnabled: settings.sfxEnabled,
+      hapticsEnabled: settings.hapticsEnabled,
+    );
+    // Bowl takes ~15 % of the screen height so Roll never leaves the screen.
+    final potWidth =
+        (MediaQuery.sizeOf(context).height * 0.15).clamp(90.0, 150.0) * 1.6;
 
     // Locked faces during handoff (prefer frozen handoff values).
+    // A first-roll triple-ones sweep resets the turn immediately; keep the
+    // winning dice on the table until the winner rolls again.
+    final potWinFaces = (turn == null || !turn.hasRolled) &&
+            snap.lastPayout?.kind == ScoreKind.tripleOnesPotWin &&
+            snap.lastPayout?.seatIndex == snap.currentSeatIndex
+        ? snap.lastPayout?.diceValues
+        : null;
     final List<int>? lockedFaces =
         handoff?.diceValues ??
-        (turn != null && turn.hasRolled ? turn.dice.values : null);
+        (turn != null && turn.hasRolled ? turn.dice.values : potWinFaces);
+    final showingPotWinFaces = handoff == null && potWinFaces != null &&
+        identical(lockedFaces, potWinFaces);
 
     return PopScope(
       canPop: false,
@@ -174,11 +232,18 @@ class MatchScreen extends ConsumerWidget {
                   children: [
                     _TopBar(
                       snap: snap,
+                      gemsKey: _gemsTargetKey,
                       onGems: () => _openTableGemsSheet(context, ref),
                     ),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: PotMeter(potCents: snap.potCents),
+                      child: PotOfGems(
+                        potGems: view.displayPotCents,
+                        anteGems: snap.config.anteCents,
+                        seats: snap.players.length,
+                        width: potWidth,
+                        sfx: fx,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     if (view.turnNotice != null) ...[
@@ -221,7 +286,10 @@ class MatchScreen extends ConsumerWidget {
                         },
                       ),
                     ),
-                    if (snap.lastPayout != null && !showStrip) ...[
+                    if (snap.lastPayout != null &&
+                        !showStrip &&
+                        !view.revealingRoll &&
+                        !diceSettling) ...[
                       const SizedBox(height: 10),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -235,50 +303,48 @@ class MatchScreen extends ConsumerWidget {
                       gated: gated,
                     ),
                     const SizedBox(height: 16),
-                    if (lockedFaces != null)
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          for (var i = 0; i < 3; i++) ...[
-                            if (i > 0) const SizedBox(width: 12),
-                            DieWidget(
-                              value: lockedFaces[i],
-                              kept: gated
+                    DiceTray(
+                      values: lockedFaces ?? const [1, 1, 1],
+                      dim: lockedFaces == null,
+                      rollSerial: view.rollSerial,
+                      // Gold outline = kept (held through handoff and the
+                      // pot-win display too). Kept dice never tumble.
+                      kept: [
+                        for (var i = 0; i < 3; i++)
+                          lockedFaces != null &&
+                              (gated || showingPotWinFaces
                                   ? true
-                                  : (turn?.dice.dice[i].kept ?? false),
-                              enabled:
-                                  canInteract &&
-                                  turn != null &&
-                                  turn.rollNumber < 3,
-                              theme: skinTheme,
-                              onTap: () => ref
-                                  .read(matchProvider.notifier)
-                                  .toggleKeep(i),
-                            ),
-                          ],
-                        ],
-                      )
-                    else
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: List.generate(
-                          3,
-                          (i) => Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 6),
-                            child: Opacity(
-                              opacity: 0.35,
-                              child: DieWidget(
-                                value: 1,
-                                kept: false,
-                                enabled: false,
-                                size: 64,
-                                theme: skinTheme,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    if (!gated && turn != null && turn.mustKeepRolling)
+                                  : (turn?.dice.dice[i].kept ?? false)),
+                      ],
+                      animate: [
+                        for (var i = 0; i < 3; i++)
+                          !(turn != null &&
+                              turn.hasRolled &&
+                              turn.dice.dice[i].kept),
+                      ],
+                      enabled: [
+                        for (var i = 0; i < 3; i++)
+                          lockedFaces != null &&
+                              canInteract &&
+                              !showingPotWinFaces &&
+                              turn != null &&
+                              !turn.canBank &&
+                              turn.rollNumber < 3,
+                      ],
+                      onTap: (i) =>
+                          ref.read(matchProvider.notifier).toggleKeep(i),
+                      size: 64,
+                      theme: skinTheme,
+                      sfx: fx,
+                      onSettled: (serial) {
+                        if (mounted && serial != _settledSerial) {
+                          setState(() => _settledSerial = serial);
+                        }
+                      },
+                    ),
+                    if (diceSettling)
+                      const SizedBox.shrink()
+                    else if (!gated && turn != null && turn.mustKeepRolling)
                       Padding(
                         padding: const EdgeInsets.only(top: 10),
                         child: Text(
@@ -300,16 +366,17 @@ class MatchScreen extends ConsumerWidget {
                       Padding(
                         padding: const EdgeInsets.only(top: 10),
                         child: Text(
-                          canInteract
-                              ? 'Tap dice to keep · roll again or bank'
-                              : '',
+                          canInteract ? 'Winning hand · bank it' : '',
                           style: TextStyle(
                             color: MargeColors.cream.withValues(alpha: 0.7),
                             fontSize: 13,
                           ),
                         ),
                       ),
-                    if (!gated && turn != null && turn.lastScore.isScoring)
+                    if (!gated &&
+                        !diceSettling &&
+                        turn != null &&
+                        turn.lastScore.isScoring)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: Text(
@@ -335,6 +402,10 @@ class MatchScreen extends ConsumerWidget {
                         child: _TurnActions(
                           canInteract: canInteract,
                           turn: turn,
+                          bankPreview: bankPreviewGems(snap),
+                          diceSettling: diceSettling,
+                          sfx: fx,
+                          gemsTargetKey: _gemsTargetKey,
                           onRoll: () => ref.read(matchProvider.notifier).roll(),
                           onBank: () => ref.read(matchProvider.notifier).bank(),
                         ),
@@ -407,10 +478,20 @@ class _TurnActions extends StatelessWidget {
     required this.turn,
     required this.onRoll,
     required this.onBank,
+    required this.bankPreview,
+    required this.sfx,
+    required this.gemsTargetKey,
+    this.diceSettling = false,
   });
+
+  /// 3D dice still in the air: Bank enters only after they settle.
+  final bool diceSettling;
 
   final bool canInteract;
   final TurnState? turn;
+  final int bankPreview;
+  final SfxService sfx;
+  final GlobalKey gemsTargetKey;
   final VoidCallback onRoll;
   final VoidCallback onBank;
 
@@ -426,6 +507,21 @@ class _TurnActions extends StatelessWidget {
           onPressed: canInteract ? onRoll : null,
           child: Text('KEEP ROLLING · ${t.rollsLeft} LEFT'),
         ),
+      );
+    }
+
+    // A winning (bankable) hand: Bank is the only action on this beat.
+    if (t != null && t.canBank) {
+      if (diceSettling) {
+        return const SizedBox(height: BankButton.height);
+      }
+      return BankButton(
+        key: const ValueKey('bank-only'),
+        amountGems: bankPreview,
+        enabled: canInteract,
+        sfx: sfx,
+        particleTargetKey: gemsTargetKey,
+        onBank: onBank,
       );
     }
 
@@ -549,8 +645,13 @@ class _TurnBanner extends StatelessWidget {
 }
 
 class _TopBar extends ConsumerWidget {
-  const _TopBar({required this.snap, required this.onGems});
+  const _TopBar({
+    required this.snap,
+    required this.onGems,
+    required this.gemsKey,
+  });
   final MatchSnapshot snap;
+  final GlobalKey gemsKey;
   final VoidCallback onGems;
 
   @override
@@ -607,6 +708,7 @@ class _TopBar extends ConsumerWidget {
             ),
           ),
           IconButton(
+            key: gemsKey,
             tooltip: 'Table gems',
             onPressed: onGems,
             icon: const Icon(Icons.diamond_outlined),
@@ -637,23 +739,31 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
   Future<void> _onNaturalBreak() async {
     if (_breakHandled || !mounted) return;
     _breakHandled = true;
-    // Natural match-end break only — never mid-roll / never over Roll/Keep.
-    // ≤1 interstitial per completed match (InterstitialGate). Fail closed.
-    final ads = ref.read(adsServiceProvider);
-    ads.notifyMatchCompleted();
-    await ads.maybeShowInterstitialAtBreak();
+    // Record the completed match only. No ad while results are on screen;
+    // the interstitial waits for the player's own tap (Continue or Quit).
+    ref.read(adsServiceProvider).notifyMatchCompleted();
+  }
+
+  /// Natural break after a user action. ≤1 interstitial per completed match
+  /// (InterstitialGate). Never mid-roll. Fail closed.
+  Future<void> _adAfterUserAction() async {
+    try {
+      await ref.read(adsServiceProvider).maybeShowInterstitialAtBreak();
+    } catch (_) {
+      // Ads must never block Continue / Quit.
+    }
   }
 
   Future<void> _rematch() async {
+    await _adAfterUserAction();
+    if (!mounted) return;
     // One tap, same seats / ante, no ready-check. Stay on the table.
     ref.read(matchProvider.notifier).rematch();
   }
 
   Future<void> _leaveQuiet() async {
-    // Quiet out — no confirm dialog. Interstitial only if gate still allows
-    // (already shown at match-end → blocked).
-    final ads = ref.read(adsServiceProvider);
-    await ads.maybeShowInterstitialAtBreak();
+    // Quiet out — no confirm dialog. Interstitial only if the gate allows.
+    await _adAfterUserAction();
     if (!mounted) return;
     await ref.read(matchProvider.notifier).leaveUnfinished();
     if (!mounted) return;

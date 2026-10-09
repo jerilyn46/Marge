@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../theme/marge_theme.dart';
 import 'rules_screen.dart';
 import 'settings_screen.dart';
+import 'terms_screen.dart';
 
 /// Settings, rules, and quiet legal hooks — off the home lobby.
 class MoreScreen extends ConsumerWidget {
@@ -58,6 +59,18 @@ class MoreScreen extends ConsumerWidget {
                   ),
                   const Divider(height: 1),
                   ListTile(
+                    leading: const Icon(Icons.gavel_rounded,
+                        color: MargeColors.gold),
+                    title: const Text('Terms of Use'),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const TermsScreen()),
+                      );
+                    },
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
                     leading: const Icon(Icons.info_outline_rounded,
                         color: MargeColors.gold),
                     title: const Text('About'),
@@ -72,7 +85,7 @@ class MoreScreen extends ConsumerWidget {
                         context: context,
                         applicationName: 'Marge',
                         applicationLegalese:
-                            'Playful table chips only. Not a cash game.',
+                            'Playful table gems only. Not a cash game.',
                       );
                     },
                   ),
