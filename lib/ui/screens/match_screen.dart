@@ -4,22 +4,157 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../ads/ads_service.dart';
 import '../../cosmetics/skins_service.dart';
 import '../../engine/engine.dart';
+import '../../engine/gem_label.dart';
+import '../../services/coin_ledger.dart';
+import '../../services/settings_service.dart';
+import '../../services/sfx_service.dart';
 import '../match_provider.dart';
 import '../theme/marge_theme.dart';
+import '../visuals/bank_button.dart';
+import '../visuals/dice_3d.dart';
+import '../visuals/pot_of_gems.dart';
 import '../widgets/confetti_overlay.dart';
-import '../widgets/die_widget.dart';
+import '../widgets/daily_drip_card.dart';
+import '../widgets/get_more_gems_button.dart';
+import '../widgets/gem_shortfall_dialog.dart';
 import '../widgets/handoff_strip.dart';
 import '../widgets/payout_banner.dart';
+import '../widgets/play_coin_pack_button.dart';
 import '../widgets/player_chip.dart';
-import '../widgets/pot_meter.dart';
 
-class MatchScreen extends ConsumerWidget {
+void _moveIntoGame(BuildContext context, WidgetRef ref, int gems) {
+  final next = ref.read(matchProvider.notifier).moveFromMainBank(gems);
+  if (!context.mounted || next == null) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(
+        'Moved $gems gems into this game. You have $next gems at the table.',
+      ),
+    ),
+  );
+}
+
+Future<void> _openTableGemsSheet(BuildContext context, WidgetRef ref) async {
+  final view = ref.read(matchProvider);
+  if (view == null) return;
+  final name = view.snapshot.config.localPlayerName;
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (sheetContext) {
+      return Padding(
+        padding: EdgeInsets.fromLTRB(
+          20,
+          8,
+          20,
+          20 + MediaQuery.viewInsetsOf(sheetContext).bottom,
+        ),
+        child: Consumer(
+          builder: (context, ref, _) {
+            final available = ref
+                .watch(coinLedgerProvider)
+                .availableHumanGems(name);
+            return SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Table gems',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Move bank gems onto this table. Virtual gems (not real money). '
+                    'No unlimited free mint mid-match.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: MargeColors.cream.withValues(alpha: 0.75),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const DailyDripCard(compact: true),
+                  const SizedBox(height: 8),
+                  const GetMoreGemsButton(compact: true),
+                  const SizedBox(height: 16),
+                  GemDenominationPicker(
+                    compact: true,
+                    title: 'Move into this game',
+                    available: available,
+                    hint: 'Draws from the gem bank. Virtual gems (not real money).',
+                    onChosen: (gems) => _moveIntoGame(context, ref, gems),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      );
+    },
+  );
+}
+
+/// What a bank of the current winning hand pays: the per-opponent amount
+/// from every seated opponent, capped by what each can cover (table gems
+/// plus a still-unused House stake), mirroring the engine's soft take.
+@visibleForTesting
+int bankPreviewGems(MatchSnapshot snap) {
+  final t = snap.turn;
+  if (t == null || !t.lastScore.isScoring) return 0;
+  final each = t.lastScore.perOpponentCents;
+  var total = 0;
+  for (var i = 0; i < snap.players.length; i++) {
+    if (i == snap.currentSeatIndex) continue;
+    final p = snap.players[i];
+    if (!p.profile.participates || p.eliminated) continue;
+    final cover =
+        p.bankCents + (p.usedHouseStake ? 0 : snap.config.houseStakeCents);
+    total += each < cover ? each : cover;
+  }
+  return total;
+}
+
+class MatchScreen extends ConsumerStatefulWidget {
   const MatchScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MatchScreen> createState() => _MatchScreenState();
+}
+
+class _MatchScreenState extends ConsumerState<MatchScreen> {
+  /// Where Bank's gem particles fly: the table-gems readout in the top bar.
+  final GlobalKey _gemsTargetKey = GlobalKey(debugLabel: 'gems-target');
+
+  /// Last roll whose 3D dice have settled. Input stays locked (and the
+  /// win/near-miss readout and Bank wait) until it matches the view.
+  int? _settledSerial;
+
+  @override
+  Widget build(BuildContext context) {
     final view = ref.watch(matchProvider);
     final skinTheme = ref.watch(cosmeticsProvider).equippedTheme;
+    ref.listen(matchProvider, (prev, next) {
+      final pending = next?.snapshot.pendingShortfall;
+      if (pending == null) return;
+      final previous = prev?.snapshot.pendingShortfall;
+      if (previous != null &&
+          previous.payerSeatIndex == pending.payerSeatIndex &&
+          previous.dueGems == pending.dueGems) {
+        return;
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => GemShortfallDialog(shortfall: pending),
+        );
+      });
+    });
     if (view == null) {
       return const Scaffold(body: Center(child: Text('No match')));
     }
@@ -32,214 +167,291 @@ class MatchScreen extends ConsumerWidget {
     final turn = snap.turn;
     final handoff = snap.handoff;
     final gated = snap.awaitingHandoff;
+    final shortfallGate = snap.phase == MatchPhase.awaitingShortfall;
     final showStrip = view.showHandoffStrip;
     final isHumanTurn = snap.currentPlayer.profile.isHuman;
-    final canInteract = isHumanTurn && !view.busyBot && !gated;
+    // Local human can roll only while the table is live — not during handoff
+    // or a shortfall choice. Gem tools live in a sheet so they never crowd
+    // Roll off a phone screen.
+    _settledSerial ??= view.rollSerial;
+    final diceSettling = view.rollSerial != _settledSerial;
+    final canInteract = isHumanTurn &&
+        !view.busyBot &&
+        !gated &&
+        !shortfallGate &&
+        !view.revealingRoll &&
+        !diceSettling;
     final hotseat = HandoffState.isHotseatCta(snap.config);
+    final settings = ref.watch(settingsProvider);
+    final fx = SfxService(
+      sfxEnabled: settings.sfxEnabled,
+      hapticsEnabled: settings.hapticsEnabled,
+    );
+    // Bowl takes ~15 % of the screen height so Roll never leaves the screen.
+    final potWidth =
+        (MediaQuery.sizeOf(context).height * 0.15).clamp(90.0, 150.0) * 1.6;
 
     // Locked faces during handoff (prefer frozen handoff values).
+    // A first-roll triple-ones sweep resets the turn immediately; keep the
+    // winning dice on the table until the winner rolls again.
+    final potWinFaces = (turn == null || !turn.hasRolled) &&
+            snap.lastPayout?.kind == ScoreKind.tripleOnesPotWin &&
+            snap.lastPayout?.seatIndex == snap.currentSeatIndex
+        ? snap.lastPayout?.diceValues
+        : null;
     final List<int>? lockedFaces =
         handoff?.diceValues ??
-        (turn != null && turn.hasRolled ? turn.dice.values : null);
+        (turn != null && turn.hasRolled ? turn.dice.values : potWinFaces);
+    final showingPotWinFaces = handoff == null && potWinFaces != null &&
+        identical(lockedFaces, potWinFaces);
 
-    return Scaffold(
-      body: Stack(
-        children: [
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xFF1B0F3B),
-                  MargeColors.felt,
-                  Color(0xFF0A3D2A),
-                ],
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        await ref.read(matchProvider.notifier).leaveUnfinished();
+        if (context.mounted) Navigator.of(context).pop();
+      },
+      child: Scaffold(
+        body: Stack(
+          children: [
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xFF1B0F3B),
+                    MargeColors.felt,
+                    Color(0xFF0A3D2A),
+                  ],
+                ),
               ),
-            ),
-            child: SafeArea(
-              child: Column(
-                children: [
-                  _TopBar(snap: snap),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: PotMeter(potCents: snap.potCents),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    height: 72,
-                    child: ListView.separated(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      scrollDirection: Axis.horizontal,
-                      itemCount: snap.players.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 8),
-                      itemBuilder: (context, i) {
-                        return PlayerChip(
-                          player: snap.players[i],
-                          isActive: i == snap.currentSeatIndex,
-                          compact: true,
-                        );
-                      },
+              child: SafeArea(
+                child: Column(
+                  children: [
+                    _TopBar(
+                      snap: snap,
+                      gemsKey: _gemsTargetKey,
+                      onGems: () => _openTableGemsSheet(context, ref),
                     ),
-                  ),
-                  if (snap.lastPayout != null && !showStrip) ...[
-                    const SizedBox(height: 10),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: PayoutBanner(event: snap.lastPayout!),
+                      child: PotOfGems(
+                        potGems: view.displayPotCents,
+                        anteGems: snap.config.anteCents,
+                        seats: snap.players.length,
+                        width: potWidth,
+                        sfx: fx,
+                      ),
                     ),
-                  ],
-                  const Spacer(),
-                  _TurnBanner(
-                    snapshot: snap,
-                    busyBot: view.busyBot,
-                    gated: gated,
-                  ),
-                  const SizedBox(height: 16),
-                  if (lockedFaces != null)
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        for (var i = 0; i < 3; i++) ...[
-                          if (i > 0) const SizedBox(width: 12),
-                          DieWidget(
-                            value: lockedFaces[i],
-                            kept: gated
-                                ? true
-                                : (turn?.dice.dice[i].kept ?? false),
-                            enabled:
-                                canInteract &&
-                                turn != null &&
-                                turn.rollNumber < 3,
-                            theme: skinTheme,
-                            onTap: () =>
-                                ref.read(matchProvider.notifier).toggleKeep(i),
-                          ),
-                        ],
-                      ],
-                    )
-                  else
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(
-                        3,
-                        (i) => Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                          child: Opacity(
-                            opacity: 0.35,
-                            child: DieWidget(
-                              value: 1,
-                              kept: false,
-                              enabled: false,
-                              size: 64,
-                              theme: skinTheme,
+                    const SizedBox(height: 12),
+                    if (view.turnNotice != null) ...[
+                      const SizedBox(height: 8),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Material(
+                          color: MargeColors.gold.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            child: Text(
+                              view.turnNotice!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: MargeColors.gold,
+                                fontWeight: FontWeight.w900,
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                  if (!gated && turn != null && turn.mustKeepRolling)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 10),
-                      child: Text(
-                        canInteract
-                            ? 'No score yet — keep rolling · ${turn.rollsLeft} rolls left'
-                            : '',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: MargeColors.cream.withValues(alpha: 0.7),
-                          fontSize: 13,
-                        ),
-                      ),
-                    )
-                  else if (!gated &&
-                      turn != null &&
-                      turn.hasRolled &&
-                      turn.canBank &&
-                      turn.rollsLeft > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 10),
-                      child: Text(
-                        canInteract
-                            ? 'Tap dice to keep · roll again or bank'
-                            : '',
-                        style: TextStyle(
-                          color: MargeColors.cream.withValues(alpha: 0.7),
-                          fontSize: 13,
-                        ),
+                    ],
+                    SizedBox(
+                      height: 72,
+                      child: ListView.separated(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        scrollDirection: Axis.horizontal,
+                        itemCount: snap.players.length,
+                        separatorBuilder: (_, _) => const SizedBox(width: 8),
+                        itemBuilder: (context, i) {
+                          return PlayerChip(
+                            player: snap.players[i],
+                            isActive: i == snap.currentSeatIndex,
+                            compact: true,
+                          );
+                        },
                       ),
                     ),
-                  if (!gated && turn != null && turn.lastScore.isScoring)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        _scoreHint(turn.lastScore),
-                        style: const TextStyle(
-                          color: MargeColors.gold,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  const Spacer(),
-                  if (showStrip && handoff != null)
-                    HandoffStrip(
-                      handoff: handoff,
-                      hotseat: hotseat,
-                      skinTheme: skinTheme,
-                      onConfirm: () =>
-                          ref.read(matchProvider.notifier).confirmHandoff(),
-                    )
-                  else
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                      child: _TurnActions(
-                        canInteract: canInteract,
-                        turn: turn,
-                        onRoll: () => ref.read(matchProvider.notifier).roll(),
-                        onBank: () => ref.read(matchProvider.notifier).bank(),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          ConfettiOverlay(active: view.showConfetti),
-          if (view.unlockBanner != null)
-            Positioned(
-              top: 72,
-              left: 16,
-              right: 16,
-              child: Material(
-                color: Colors.transparent,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: MargeColors.gold,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.35),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
+                    if (snap.lastPayout != null &&
+                        !showStrip &&
+                        !view.revealingRoll &&
+                        !diceSettling) ...[
+                      const SizedBox(height: 10),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: PayoutBanner(event: snap.lastPayout!),
                       ),
                     ],
-                  ),
-                  child: Text(
-                    view.unlockBanner!,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: MargeColors.velvet,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 15,
+                    const Spacer(),
+                    _TurnBanner(
+                      snapshot: snap,
+                      busyBot: view.busyBot,
+                      gated: gated,
+                    ),
+                    const SizedBox(height: 16),
+                    DiceTray(
+                      values: lockedFaces ?? const [1, 1, 1],
+                      dim: lockedFaces == null,
+                      rollSerial: view.rollSerial,
+                      // Gold outline = kept (held through handoff and the
+                      // pot-win display too). Kept dice never tumble.
+                      kept: [
+                        for (var i = 0; i < 3; i++)
+                          lockedFaces != null &&
+                              (gated || showingPotWinFaces
+                                  ? true
+                                  : (turn?.dice.dice[i].kept ?? false)),
+                      ],
+                      animate: [
+                        for (var i = 0; i < 3; i++)
+                          !(turn != null &&
+                              turn.hasRolled &&
+                              turn.dice.dice[i].kept),
+                      ],
+                      enabled: [
+                        for (var i = 0; i < 3; i++)
+                          lockedFaces != null &&
+                              canInteract &&
+                              !showingPotWinFaces &&
+                              turn != null &&
+                              !turn.canBank &&
+                              turn.rollNumber < 3,
+                      ],
+                      onTap: (i) =>
+                          ref.read(matchProvider.notifier).toggleKeep(i),
+                      size: 64,
+                      theme: skinTheme,
+                      sfx: fx,
+                      onSettled: (serial) {
+                        if (mounted && serial != _settledSerial) {
+                          setState(() => _settledSerial = serial);
+                        }
+                      },
+                    ),
+                    if (diceSettling)
+                      const SizedBox.shrink()
+                    else if (!gated && turn != null && turn.mustKeepRolling)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: Text(
+                          canInteract
+                              ? 'No score yet — keep rolling · ${turn.rollsLeft} rolls left'
+                              : '',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: MargeColors.cream.withValues(alpha: 0.7),
+                            fontSize: 13,
+                          ),
+                        ),
+                      )
+                    else if (!gated &&
+                        turn != null &&
+                        turn.hasRolled &&
+                        turn.canBank &&
+                        turn.rollsLeft > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: Text(
+                          canInteract ? 'Winning hand · bank it' : '',
+                          style: TextStyle(
+                            color: MargeColors.cream.withValues(alpha: 0.7),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    if (!gated &&
+                        !diceSettling &&
+                        turn != null &&
+                        turn.lastScore.isScoring)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          _scoreHint(turn.lastScore),
+                          style: const TextStyle(
+                            color: MargeColors.gold,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    const Spacer(),
+                    if (showStrip && handoff != null)
+                      HandoffStrip(
+                        handoff: handoff,
+                        hotseat: hotseat,
+                        skinTheme: skinTheme,
+                        onConfirm: () =>
+                            ref.read(matchProvider.notifier).confirmHandoff(),
+                      )
+                    else
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                        child: _TurnActions(
+                          canInteract: canInteract,
+                          turn: turn,
+                          bankPreview: bankPreviewGems(snap),
+                          diceSettling: diceSettling,
+                          sfx: fx,
+                          gemsTargetKey: _gemsTargetKey,
+                          onRoll: () => ref.read(matchProvider.notifier).roll(),
+                          onBank: () => ref.read(matchProvider.notifier).bank(),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            ConfettiOverlay(active: view.showConfetti),
+            if (view.unlockBanner != null)
+              Positioned(
+                top: 72,
+                left: 16,
+                right: 16,
+                child: Material(
+                  color: Colors.transparent,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: MargeColors.gold,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.35),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Text(
+                      view.unlockBanner!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: MargeColors.velvet,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -249,11 +461,11 @@ class MatchScreen extends ConsumerWidget {
       case ScoreKind.tripleOnesPotWin:
         return '🎯 POT WIN — triple ones!';
       case ScoreKind.tripleOnesPay:
-        return 'Triple ones — others pay 10¢';
+        return 'Triple ones — others pay 10 gems';
       case ScoreKind.threeOfAKind:
-        return 'Trips on ${s.faceValue} — others pay ${s.perOpponentCents}¢';
+        return 'Trips on ${s.faceValue} — others pay ${s.perOpponentCents} gems';
       case ScoreKind.straight:
-        return 'Straight — others pay 5¢';
+        return 'Straight — others pay 5 gems';
       case ScoreKind.none:
         return '';
     }
@@ -266,10 +478,20 @@ class _TurnActions extends StatelessWidget {
     required this.turn,
     required this.onRoll,
     required this.onBank,
+    required this.bankPreview,
+    required this.sfx,
+    required this.gemsTargetKey,
+    this.diceSettling = false,
   });
+
+  /// 3D dice still in the air: Bank enters only after they settle.
+  final bool diceSettling;
 
   final bool canInteract;
   final TurnState? turn;
+  final int bankPreview;
+  final SfxService sfx;
+  final GlobalKey gemsTargetKey;
   final VoidCallback onRoll;
   final VoidCallback onBank;
 
@@ -288,6 +510,21 @@ class _TurnActions extends StatelessWidget {
       );
     }
 
+    // A winning (bankable) hand: Bank is the only action on this beat.
+    if (t != null && t.canBank) {
+      if (diceSettling) {
+        return const SizedBox(height: BankButton.height);
+      }
+      return BankButton(
+        key: const ValueKey('bank-only'),
+        amountGems: bankPreview,
+        enabled: canInteract,
+        sfx: sfx,
+        particleTargetKey: gemsTargetKey,
+        onBank: onBank,
+      );
+    }
+
     final canRoll = canInteract && t != null && t.canRoll;
     final showBank =
         t != null &&
@@ -296,7 +533,7 @@ class _TurnActions extends StatelessWidget {
     final canBankNow = canInteract && showBank;
     final bankLabel =
         t != null && t.hasRolled && !t.lastScore.isScoring && t.mustFinish
-        ? 'BUST (2¢)'
+        ? 'BUST (2 gems)'
         : 'BANK';
     final rollLabel = t == null || !t.hasRolled
         ? 'ROLL'
@@ -408,8 +645,14 @@ class _TurnBanner extends StatelessWidget {
 }
 
 class _TopBar extends ConsumerWidget {
-  const _TopBar({required this.snap});
+  const _TopBar({
+    required this.snap,
+    required this.onGems,
+    required this.gemsKey,
+  });
   final MatchSnapshot snap;
+  final GlobalKey gemsKey;
+  final VoidCallback onGems;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -418,30 +661,41 @@ class _TopBar extends ConsumerWidget {
       child: Row(
         children: [
           IconButton(
-            tooltip: 'End match',
+            tooltip: 'Leave table',
             onPressed: () async {
-              final ok = await showDialog<bool>(
+              final choice = await showDialog<String>(
                 context: context,
                 builder: (ctx) => AlertDialog(
-                  title: const Text('End match?'),
-                  content: const Text('See final banks and crow a winner.'),
+                  title: const Text('Leave table?'),
+                  content: const Text(
+                    'Save this unfinished game for Resume on Home, '
+                    'or end it now and crow a winner.',
+                  ),
                   actions: [
                     TextButton(
-                      onPressed: () => Navigator.pop(ctx, false),
+                      onPressed: () => Navigator.pop(ctx, 'keep'),
                       child: const Text('Keep playing'),
                     ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, 'end'),
+                      child: const Text('End match'),
+                    ),
                     FilledButton(
-                      onPressed: () => Navigator.pop(ctx, true),
-                      child: const Text('End'),
+                      onPressed: () => Navigator.pop(ctx, 'leave'),
+                      child: const Text('Save & leave'),
                     ),
                   ],
                 ),
               );
-              if (ok == true) {
+              if (!context.mounted) return;
+              if (choice == 'leave') {
+                await ref.read(matchProvider.notifier).leaveUnfinished();
+                if (context.mounted) Navigator.of(context).pop();
+              } else if (choice == 'end') {
                 ref.read(matchProvider.notifier).endMatch();
               }
             },
-            icon: const Icon(Icons.close_rounded),
+            icon: const Icon(Icons.arrow_back_rounded),
           ),
           Expanded(
             child: Text(
@@ -453,7 +707,12 @@ class _TopBar extends ConsumerWidget {
               ),
             ),
           ),
-          const SizedBox(width: 48),
+          IconButton(
+            key: gemsKey,
+            tooltip: 'Table gems',
+            onPressed: onGems,
+            icon: const Icon(Icons.diamond_outlined),
+          ),
         ],
       ),
     );
@@ -480,16 +739,33 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
   Future<void> _onNaturalBreak() async {
     if (_breakHandled || !mounted) return;
     _breakHandled = true;
-    final ads = ref.read(adsServiceProvider);
-    // Frequency-gated interstitial only at match end — never mid-roll.
-    ads.notifyMatchCompleted();
-    await ads.maybeShowInterstitialAtBreak();
+    // Record the completed match only. No ad while results are on screen;
+    // the interstitial waits for the player's own tap (Continue or Quit).
+    ref.read(adsServiceProvider).notifyMatchCompleted();
   }
 
-  Future<void> _leaveToLobby() async {
-    // Second chance if the end-screen attempt was gated / failed to load.
-    final ads = ref.read(adsServiceProvider);
-    await ads.maybeShowInterstitialAtBreak();
+  /// Natural break after a user action. ≤1 interstitial per completed match
+  /// (InterstitialGate). Never mid-roll. Fail closed.
+  Future<void> _adAfterUserAction() async {
+    try {
+      await ref.read(adsServiceProvider).maybeShowInterstitialAtBreak();
+    } catch (_) {
+      // Ads must never block Continue / Quit.
+    }
+  }
+
+  Future<void> _rematch() async {
+    await _adAfterUserAction();
+    if (!mounted) return;
+    // One tap, same seats / ante, no ready-check. Stay on the table.
+    ref.read(matchProvider.notifier).rematch();
+  }
+
+  Future<void> _leaveQuiet() async {
+    // Quiet out — no confirm dialog. Interstitial only if the gate allows.
+    await _adAfterUserAction();
+    if (!mounted) return;
+    await ref.read(matchProvider.notifier).leaveUnfinished();
     if (!mounted) return;
     Navigator.of(context).popUntil((r) => r.isFirst);
   }
@@ -497,9 +773,11 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
   @override
   Widget build(BuildContext context) {
     final snapshot = widget.snapshot;
-    final ranked = [...snapshot.players]
-      ..sort((a, b) => b.bankCents.compareTo(a.bankCents));
-    final winner = ranked.first;
+    final ranked =
+        snapshot.players.where((p) => p.profile.participates).toList()
+          ..sort((a, b) => b.bankCents.compareTo(a.bankCents));
+    final waiting = snapshot.players.where((p) => p.profile.isWaiting).toList();
+    final winner = ranked.isEmpty ? snapshot.players.first : ranked.first;
 
     return Scaffold(
       body: Container(
@@ -526,7 +804,7 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
                 const SizedBox(height: 8),
                 Text(
                   '${winner.profile.avatarEmoji} ${winner.profile.name} '
-                  'wins with ${winner.bankCents}¢',
+                  'wins with ${gemCount(winner.bankCents)}',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     fontSize: 18,
@@ -536,24 +814,47 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
                 const SizedBox(height: 24),
                 Expanded(
                   child: ListView.separated(
-                    itemCount: ranked.length,
+                    itemCount: ranked.length + waiting.length,
                     separatorBuilder: (_, _) => const SizedBox(height: 8),
                     itemBuilder: (context, i) {
-                      final p = ranked[i];
-                      return PlayerChip(player: p, isActive: i == 0);
+                      if (i < ranked.length) {
+                        return PlayerChip(player: ranked[i], isActive: i == 0);
+                      }
+                      return PlayerChip(player: waiting[i - ranked.length]);
                     },
                   ),
                 ),
-                ElevatedButton(
-                  onPressed: () {
-                    ref.read(matchProvider.notifier).rematch();
-                  },
-                  child: const Text('REMATCH'),
+                Text(
+                  '${gemCount(winner.bankCents)} at the table · '
+                  'virtual gems (not real money)',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: MargeColors.cream.withValues(alpha: 0.7),
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Continue playing or quit?',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: MargeColors.cream.withValues(alpha: 0.85),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: _rematch,
+                  icon: const Icon(Icons.replay_rounded),
+                  label: const Text('Continue playing'),
                 ),
                 const SizedBox(height: 10),
+                const GetMoreGemsButton(),
+                const SizedBox(height: 10),
                 TextButton(
-                  onPressed: _leaveToLobby,
-                  child: const Text('Back to home'),
+                  onPressed: _leaveQuiet,
+                  child: const Text('Quit'),
                 ),
               ],
             ),

@@ -97,7 +97,8 @@ class CosmeticsLogic {
         state,
         CosmeticsActionResult(
           ok: false,
-          message: 'Need ${def.priceCents}¢ (you have ${state.walletCents}¢)',
+          message:
+              'Need ${def.priceCents} gems (you have ${state.walletCents} gems)',
         ),
       );
     }
@@ -164,7 +165,7 @@ class CosmeticsLogic {
   static (CosmeticsState, List<String>) onPotWin(CosmeticsState state) {
     var next = creditWallet(state, DiceSkinCatalog.potWinWalletBonus);
     final toasts = <String>[
-      '+${DiceSkinCatalog.potWinWalletBonus}¢ wallet bonus!',
+      '+${DiceSkinCatalog.potWinWalletBonus} gems wallet bonus!',
     ];
     final (afterUnlock, result) = unlock(
       next,
@@ -332,12 +333,12 @@ class CosmeticsNotifier extends Notifier<CosmeticsState> {
     return toasts;
   }
 
-  /// Grant virtual chips (¢) from a rewarded ad or test hook.
+  /// Grant gems ( gems) from a rewarded ad or test hook.
   /// Virtual currency only — never real money.
   Future<int> grantVirtualChips(int amount, {String? reason}) async {
     if (amount <= 0) return state.walletCents;
     final next = CosmeticsLogic.creditWallet(state, amount);
-    final toast = reason ?? '+$amount¢ virtual chips!';
+    final toast = reason ?? '+$amount gems gems!';
     state = next.copyWith(pendingToast: toast);
     await _persist();
     return state.walletCents;

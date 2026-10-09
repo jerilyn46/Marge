@@ -5,19 +5,29 @@ import '../../ads/ad_ids.dart';
 import '../../ads/ads_service.dart';
 import '../../cosmetics/dice_skin.dart';
 import '../../cosmetics/skins_service.dart';
+import '../../engine/gem_label.dart';
+import '../../services/coin_ledger.dart';
+import '../../services/gem_iap.dart';
+import '../../services/settings_service.dart';
 import '../theme/marge_theme.dart';
+import '../widgets/daily_drip_card.dart';
 import '../widgets/die_widget.dart';
 
+/// Virtual gems shop: daily drip, Play Billing packs, rewarded ads, skins.
+///
+/// Gems are virtual only — never real currency, never cash-out.
 class ShopScreen extends ConsumerWidget {
   const ShopScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cos = ref.watch(cosmeticsProvider);
+    final name = ref.watch(settingsProvider).playerName;
+    final bank = ref.watch(coinLedgerProvider).availableHumanGems(name);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Dice shop'),
+        title: const Text('Shop'),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 16),
@@ -33,7 +43,7 @@ class ShopScreen extends ConsumerWidget {
                   border: Border.all(color: MargeColors.gold),
                 ),
                 child: Text(
-                  'Wallet ${cos.walletCents}¢',
+                  gemCount(bank),
                   style: const TextStyle(
                     color: MargeColors.gold,
                     fontWeight: FontWeight.w900,
@@ -49,18 +59,263 @@ class ShopScreen extends ConsumerWidget {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [MargeColors.velvet, Color(0xFF2D1B69)],
+            colors: [MargeColors.velvet, Color(0xFF243528), MargeColors.felt],
           ),
         ),
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
           children: [
-            const _WatchAdForChipsCard(),
-            const SizedBox(height: 12),
+            Text(
+              'Play gems — not real money',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: MargeColors.cream.withValues(alpha: 0.85),
+                fontWeight: FontWeight.w800,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Virtual gems only, no real money',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: MargeColors.cream.withValues(alpha: 0.65),
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 14),
+            const DailyDripCard(),
+            const SizedBox(height: 14),
+            const _SectionTitle('Gem packs'),
+            const SizedBox(height: 4),
+            Text(
+              'Paid packs credit your gem bank. Separate from the free daily drip.',
+              style: TextStyle(
+                color: MargeColors.cream.withValues(alpha: 0.7),
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const _GemPackList(),
+            const SizedBox(height: 6),
+            if (kAdmobEnabled) const _RewardedGemsCard(),
+            const SizedBox(height: 18),
+            const _SectionTitle('Designer Collection'),
+            const SizedBox(height: 4),
+            Text(
+              'Dice cosmetics unlocked with virtual gems or play milestones. '
+              'Skin wallet: ${gemCount(cos.walletCents)}.',
+              style: TextStyle(
+                color: MargeColors.cream.withValues(alpha: 0.7),
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 10),
             for (var i = 0; i < DiceSkinCatalog.all.length; i++) ...[
               if (i > 0) const SizedBox(height: 12),
               _SkinTile(def: DiceSkinCatalog.all[i], cos: cos),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontWeight: FontWeight.w900,
+        fontSize: 17,
+        color: MargeColors.lamp,
+      ),
+    );
+  }
+}
+
+/// Only packs Play actually returned are shown. If none loaded, a short
+/// neutral note replaces disabled "Unavailable" buttons.
+class _GemPackList extends ConsumerWidget {
+  const _GemPackList();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final iap = ref.watch(gemIapProvider);
+    final live = [
+      for (final pack in GemPack.all)
+        if (iap.products.containsKey(pack.productId)) pack,
+    ];
+    if (live.isEmpty) {
+      if (iap.loading) {
+        return const Padding(
+          padding: EdgeInsets.symmetric(vertical: 12),
+          child: Center(
+            child: SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        );
+      }
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Text(
+            'Gem packs are not available right now. Please check back later.',
+            key: const ValueKey('gem-packs-unavailable'),
+            style: TextStyle(
+              color: MargeColors.cream.withValues(alpha: 0.8),
+              fontSize: 13,
+            ),
+          ),
+        ),
+      );
+    }
+    return Column(
+      children: [
+        for (final pack in live) ...[
+          _IapPackTile(pack: pack),
+          const SizedBox(height: 8),
+        ],
+      ],
+    );
+  }
+}
+
+class _IapPackTile extends ConsumerWidget {
+  const _IapPackTile({required this.pack});
+  final GemPack pack;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final iap = ref.watch(gemIapProvider);
+    final details = iap.products[pack.productId];
+    final busy = iap.purchasingId == pack.productId;
+    final price = details?.price;
+    final enabled = details != null && iap.purchasingId == null;
+
+    return Card(
+      child: ListTile(
+        leading: const Icon(Icons.diamond_outlined, color: MargeColors.gold),
+        title: Text(
+          '${pack.title} · ${gemCount(pack.gems)}',
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+        subtitle: Text(
+          '${pack.blurb} Virtual gems (not real money). No cash-out.',
+        ),
+        trailing: busy
+            ? const SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : FilledButton(
+                onPressed: enabled
+                    ? () async {
+                        final ok =
+                            await ref.read(gemIapProvider.notifier).buy(pack);
+                        if (!context.mounted) return;
+                        final err = ref.read(gemIapProvider).lastError;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              ok
+                                  ? 'Purchase started for ${gemCount(pack.gems)}…'
+                                  : (err ?? 'Purchase unavailable.'),
+                            ),
+                          ),
+                        );
+                      }
+                    : null,
+                child: Text(price ?? ''),
+              ),
+      ),
+    );
+  }
+}
+
+class _RewardedGemsCard extends ConsumerStatefulWidget {
+  const _RewardedGemsCard();
+
+  @override
+  ConsumerState<_RewardedGemsCard> createState() => _RewardedGemsCardState();
+}
+
+class _RewardedGemsCardState extends ConsumerState<_RewardedGemsCard> {
+  var _busy = false;
+
+  Future<void> _watch() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final ads = ref.read(adsServiceProvider);
+      final name = ref.read(settingsProvider).playerName;
+      final earned = await ads.showRewardedForVirtualChips(
+        onReward: (amount) async {
+          ref
+              .read(coinLedgerProvider.notifier)
+              .grantHumanPlayCoins(name, cents: amount);
+        },
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            earned
+                ? 'Earned ${gemCount(AdIds.rewardedChipGrant)} virtual gems. Not real money.'
+                : 'Ad unavailable — try again later.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final adsOn = kAdmobEnabled;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Watch for gems',
+              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'A short video for +${AdIds.rewardedChipGrant} gems in your '
+              'gem bank. Virtual gems only — not real money.',
+              style: TextStyle(
+                color: MargeColors.cream.withValues(alpha: 0.8),
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              onPressed: (_busy || !adsOn) ? null : _watch,
+              icon: _busy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.ondemand_video_rounded),
+              label: Text(
+                _busy ? 'Loading…' : 'Watch for +${AdIds.rewardedChipGrant}',
+              ),
+            ),
           ],
         ),
       ),
@@ -146,7 +401,7 @@ class _SkinTile extends ConsumerWidget {
                         ? (def.isFree ? 'Free · Owned' : 'Owned')
                         : (def.isFree
                               ? 'Free'
-                              : '${def.priceCents}¢ · ${def.unlockHint}'),
+                              : '${gemCount(def.priceCents)} · ${def.unlockHint}'),
                     style: TextStyle(
                       color: owned
                           ? MargeColors.sky
@@ -188,9 +443,9 @@ class _SkinTile extends ConsumerWidget {
                           child: const Text('Equip'),
                         ),
                       if (owned && equipped)
-                        OutlinedButton(
+                        const OutlinedButton(
                           onPressed: null,
-                          child: const Text('Equipped'),
+                          child: Text('Equipped'),
                         ),
                       if (!owned && !def.isFree)
                         ElevatedButton(
@@ -204,96 +459,20 @@ class _SkinTile extends ConsumerWidget {
                                       SnackBar(
                                         content: Text(
                                           r.message ??
-                                              (r.ok ? 'Bought!' : 'Failed'),
+                                              (r.ok ? 'Unlocked!' : 'Failed'),
                                         ),
                                       ),
                                     );
                                   }
                                 }
                               : null,
-                          child: Text('Buy ${def.priceCents}¢'),
+                          child: Text(
+                            'Spend ${gemCount(def.priceCents)}',
+                          ),
                         ),
                     ],
                   ),
                 ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _WatchAdForChipsCard extends ConsumerStatefulWidget {
-  const _WatchAdForChipsCard();
-
-  @override
-  ConsumerState<_WatchAdForChipsCard> createState() =>
-      _WatchAdForChipsCardState();
-}
-
-class _WatchAdForChipsCardState extends ConsumerState<_WatchAdForChipsCard> {
-  bool _busy = false;
-
-  Future<void> _watch() async {
-    if (!kAdmobEnabled || _busy) return;
-    setState(() => _busy = true);
-    final ads = ref.read(adsServiceProvider);
-    final earned = await ads.showRewardedForVirtualChips(
-      onReward: (amount) async {
-        await ref
-            .read(cosmeticsProvider.notifier)
-            .grantVirtualChips(
-              amount,
-              reason: '+$amount¢ virtual chips from ad!',
-            );
-      },
-    );
-    if (!mounted) return;
-    setState(() => _busy = false);
-    final msg = earned
-        ? 'Granted ${AdIds.rewardedChipGrant}¢ virtual chips!'
-        : 'Ad not available right now — try again later.';
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!kAdmobEnabled) return const SizedBox.shrink();
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Free virtual chips',
-              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Watch a short ad to earn ${AdIds.rewardedChipGrant}¢ virtual chips '
-              'for the dice shop. Not real money.',
-              style: TextStyle(
-                color: MargeColors.cream.withValues(alpha: 0.8),
-                fontSize: 13,
-              ),
-            ),
-            const SizedBox(height: 10),
-            FilledButton.icon(
-              onPressed: _busy ? null : _watch,
-              icon: _busy
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.ondemand_video_rounded),
-              label: Text(
-                _busy
-                    ? 'Loading…'
-                    : 'Watch ad for +${AdIds.rewardedChipGrant}¢',
               ),
             ),
           ],

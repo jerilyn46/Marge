@@ -1,13 +1,25 @@
-/// Compile-time AdMob kill switch. **Default OFF** for the Flip 7 hotfix.
+/// Compile-time AdMob gate. Defaults **OFF** so Flip 7 / sideload builds
+/// never cold-start GMA. Turn ads on for Play monetization with both:
 ///
-/// Dart never calls MobileAds / UMP / banner / interstitial / rewarded unless
-/// this is true. Native GMA auto-init is also stripped unless Gradle
-/// `-PADMOB_ENABLED=true` (see `AndroidManifest.xml`).
-///
-/// Re-enable both together:
 /// `--dart-define=ADMOB_ENABLED=true -PADMOB_ENABLED=true`
+///
+/// Unit / App IDs default to Google **test** samples. Inject real IDs only
+/// at build time (never commit them).
+///
+/// When false, no UMP / MobileAds / ad-load calls run. Native GMA auto-init
+/// is also stripped unless Gradle `-PADMOB_ENABLED=true`
+/// (see `AndroidManifest.xml`).
 const bool kAdmobEnabled = bool.fromEnvironment(
   'ADMOB_ENABLED',
+  defaultValue: false,
+);
+
+/// Explicit opt-in for a *release* build that still uses Google's sample
+/// unit IDs (Tester ads-on builds only). Without it, a release build with
+/// any missing/sample unit ID keeps ads OFF (fail closed) so production can
+/// never serve test ads by accident.
+const bool kAdmobAllowTestIds = bool.fromEnvironment(
+  'ADMOB_ALLOW_TEST_IDS',
   defaultValue: false,
 );
 
@@ -37,7 +49,7 @@ class AdIds {
       'ca-app-pub-3940256099942544/1033173712';
   static const String testRewarded = 'ca-app-pub-3940256099942544/5224354917';
 
-  /// Virtual chips granted after a successful rewarded ad (cosmetics wallet).
+  /// Virtual gems granted to the **main gem bank** after a successful rewarded ad.
   static const int rewardedChipGrant = 25;
 
   static String get appId {
@@ -58,6 +70,30 @@ class AdIds {
   static String get rewarded {
     const v = String.fromEnvironment(rewardedDefine, defaultValue: '');
     return v.isEmpty ? testRewarded : v;
+  }
+
+  /// Google's public sample publisher prefix (test IDs only).
+  static const String samplePublisherPrefix = 'ca-app-pub-3940256099942544';
+
+  static bool isSampleId(String id) => id.startsWith(samplePublisherPrefix);
+
+  /// Whether ads may start with these unit IDs. Debug/profile always may
+  /// (sample IDs). A release build needs every unit ID injected via
+  /// dart-define (non-sample) unless [allowTest] is set.
+  static bool idsReady({
+    required bool release,
+    bool allowTest = kAdmobAllowTestIds,
+    String? bannerId,
+    String? interstitialId,
+    String? rewardedId,
+  }) {
+    if (!release || allowTest) return true;
+    final ids = [
+      bannerId ?? banner,
+      interstitialId ?? interstitial,
+      rewardedId ?? rewarded,
+    ];
+    return ids.every((id) => id.isNotEmpty && !isSampleId(id));
   }
 
   /// True when all resolved IDs are still Google's public test samples.

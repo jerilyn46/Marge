@@ -71,6 +71,45 @@ class DieWidget extends StatelessWidget {
   }
 }
 
+/// One flat die face (no gesture, no animation). Used for every face of the
+/// 3D [DiceCube] with the equipped skin's art.
+class DieFace extends StatelessWidget {
+  const DieFace({
+    super.key,
+    required this.value,
+    required this.size,
+    this.theme,
+    this.radius,
+  });
+
+  final int value;
+  final double size;
+  final DiceSkinTheme? theme;
+  final double? radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = theme ?? DieWidget._fallback;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: t.face,
+        borderRadius: BorderRadius.circular(radius ?? size * 0.1),
+        border: Border.all(color: t.border, width: 1.5),
+      ),
+      child: CustomPaint(
+        painter: _DieFacePainter(
+          value: value,
+          pipColor: t.pip,
+          pattern: t.pattern,
+          patternColor: t.patternColor ?? t.pip.withValues(alpha: 0.2),
+        ),
+      ),
+    );
+  }
+}
+
 class _DieFacePainter extends CustomPainter {
   _DieFacePainter({
     required this.value,

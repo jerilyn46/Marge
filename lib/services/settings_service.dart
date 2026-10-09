@@ -8,6 +8,8 @@ class GameSettings {
     this.hapticsEnabled = true,
     this.seenRules = false,
     this.playerName = 'You',
+    this.hasUsername = false,
+    this.loaded = false,
   });
 
   final bool sfxEnabled;
@@ -15,16 +17,24 @@ class GameSettings {
   final bool seenRules;
   final String playerName;
 
+  /// True once the player has confirmed a username (prefs key written).
+  final bool hasUsername;
+  final bool loaded;
+
   GameSettings copyWith({
     bool? sfxEnabled,
     bool? hapticsEnabled,
     bool? seenRules,
     String? playerName,
+    bool? hasUsername,
+    bool? loaded,
   }) => GameSettings(
     sfxEnabled: sfxEnabled ?? this.sfxEnabled,
     hapticsEnabled: hapticsEnabled ?? this.hapticsEnabled,
     seenRules: seenRules ?? this.seenRules,
     playerName: playerName ?? this.playerName,
+    hasUsername: hasUsername ?? this.hasUsername,
+    loaded: loaded ?? this.loaded,
   );
 }
 
@@ -34,11 +44,25 @@ class SettingsNotifier extends Notifier<GameSettings> {
   static const _kRules = 'seen_rules';
   static const _kName = 'player_name';
 
+  /// Cold-start settings captured before [runApp] so the username gate
+  /// does not flash Home then jump.
+  static GameSettings? bootstrap;
+
   SharedPreferences? _prefs;
 
   @override
   GameSettings build() {
-    // Defaults first — prefs must not throw before the lobby frame.
+    final seeded = bootstrap;
+    if (seeded != null) {
+      Future.microtask(() async {
+        try {
+          _prefs ??= await SharedPreferences.getInstance();
+        } catch (e, st) {
+          debugPrint('SettingsNotifier: prefs attach failed: $e\n$st');
+        }
+      });
+      return seeded;
+    }
     Future.microtask(() async {
       try {
         await _load();
@@ -46,6 +70,7 @@ class SettingsNotifier extends Notifier<GameSettings> {
         debugPrint(
           'SettingsNotifier: prefs load failed (using defaults): $e\n$st',
         );
+        state = state.copyWith(loaded: true);
       }
     });
     return const GameSettings();
@@ -54,32 +79,52 @@ class SettingsNotifier extends Notifier<GameSettings> {
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
     _prefs = prefs;
-    state = GameSettings(
+    state = fromPrefs(prefs);
+  }
+
+  static GameSettings fromPrefs(SharedPreferences prefs) {
+    final hasName = prefs.containsKey(_kName);
+    final raw = prefs.getString(_kName)?.trim();
+    return GameSettings(
       sfxEnabled: prefs.getBool(_kSfx) ?? true,
       hapticsEnabled: prefs.getBool(_kHaptics) ?? true,
       seenRules: prefs.getBool(_kRules) ?? false,
-      playerName: prefs.getString(_kName) ?? 'You',
+      playerName: (raw != null && raw.isNotEmpty) ? raw : 'You',
+      hasUsername: hasName && raw != null && raw.isNotEmpty,
+      loaded: true,
     );
+  }
+
+  static Future<GameSettings> load({SharedPreferences? prefs}) async {
+    final store = prefs ?? await SharedPreferences.getInstance();
+    return fromPrefs(store);
   }
 
   Future<void> setSfx(bool v) async {
     state = state.copyWith(sfxEnabled: v);
-    await _prefs?.setBool(_kSfx, v);
+    await (_prefs ?? await SharedPreferences.getInstance()).setBool(_kSfx, v);
   }
 
   Future<void> setHaptics(bool v) async {
     state = state.copyWith(hapticsEnabled: v);
-    await _prefs?.setBool(_kHaptics, v);
+    await (_prefs ?? await SharedPreferences.getInstance()).setBool(
+      _kHaptics,
+      v,
+    );
   }
 
   Future<void> setSeenRules(bool v) async {
     state = state.copyWith(seenRules: v);
-    await _prefs?.setBool(_kRules, v);
+    await (_prefs ?? await SharedPreferences.getInstance()).setBool(_kRules, v);
   }
 
   Future<void> setPlayerName(String v) async {
-    state = state.copyWith(playerName: v);
-    await _prefs?.setString(_kName, v);
+    final trimmed = v.trim();
+    final name = trimmed.isEmpty ? 'You' : trimmed;
+    state = state.copyWith(playerName: name, hasUsername: true, loaded: true);
+    final prefs = _prefs ?? await SharedPreferences.getInstance();
+    _prefs = prefs;
+    await prefs.setString(_kName, name);
   }
 }
 

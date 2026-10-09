@@ -12,6 +12,10 @@ class StartupLog {
 
   static const fileName = 'marge_startup.log';
 
+  /// Rotate once the log reaches this size; one previous file is kept
+  /// (`marge_startup.log.1`). Bounded at roughly 2 × [maxBytes] on disk.
+  static const maxBytes = 64 * 1024;
+
   static Future<void> mark(String stage) async {
     final line = '${DateTime.now().toUtc().toIso8601String()} $stage';
     debugPrint('marge-startup: $line');
@@ -19,16 +23,30 @@ class StartupLog {
     try {
       final dir = await _filesDir();
       if (dir == null) return;
-      final file = File('${dir.path}/$fileName');
-      await file.writeAsString('$line\n', mode: FileMode.append, flush: true);
+      await appendCapped(File('${dir.path}/$fileName'), line);
     } catch (e) {
       debugPrint('marge-startup: write failed: $e');
     }
   }
 
+  /// Append [line], rotating first if [file] is at or over [limit] bytes.
+  @visibleForTesting
+  static Future<void> appendCapped(
+    File file,
+    String line, {
+    int limit = maxBytes,
+  }) async {
+    if (await file.exists() && await file.length() >= limit) {
+      final old = File('${file.path}.1');
+      if (await old.exists()) await old.delete();
+      await file.rename(old.path);
+    }
+    await file.writeAsString('$line\n', mode: FileMode.append, flush: true);
+  }
+
   static Future<Directory?> _filesDir() async {
     if (defaultTargetPlatform != TargetPlatform.android) return null;
-    const pkg = 'com.jerilyn.marge';
+    const pkg = 'com.jerilynroberts.marge';
     final candidates = <String>[
       '/data/user/0/$pkg/files',
       '/data/data/$pkg/files',

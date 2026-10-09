@@ -1,12 +1,19 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../cosmetics/skins_service.dart';
 import '../engine/engine.dart';
+import '../services/saved_games.dart';
+import '../services/table_gem_book.dart';
+import '../services/coin_ledger.dart';
+import '../services/friends_service.dart';
+import '../services/local_turn_alerts.dart';
 import '../services/settings_service.dart';
 import '../services/sfx_service.dart';
+import '../services/turn_notice.dart';
 
 class MatchViewState {
   const MatchViewState({
@@ -17,13 +24,36 @@ class MatchViewState {
 
     /// When true, pot-win celebration is playing; sticky strip waits.
     this.holdHandoffStrip = false,
+
+    /// In-app "{name}'s turn" banner. Local notification is separate.
+    this.turnNotice,
+
+    /// Pot-win reveal: the winning dice are on the table, the payout
+    /// banner/confetti wait until the roll has been seen.
+    this.revealingRoll = false,
+
+    /// Pot shown while [revealingRoll]: the value before the sweep and
+    /// re-ante, so the pot changes together with the banner, not before.
+    this.heldPotCents,
+
+    /// Bumped every time dice are thrown (human or bot) so the table can
+    /// play the 3D roll toward the already-decided faces.
+    this.rollSerial = 0,
   });
 
   final MatchSnapshot snapshot;
+  final int rollSerial;
   final bool showConfetti;
   final bool busyBot;
   final String? unlockBanner;
   final bool holdHandoffStrip;
+  final String? turnNotice;
+  final bool revealingRoll;
+  final int? heldPotCents;
+
+  /// Pot number the table should display right now.
+  int get displayPotCents =>
+      revealingRoll && heldPotCents != null ? heldPotCents! : snapshot.potCents;
 
   /// Sticky result strip is ready to show (gate active, celebration done).
   bool get showHandoffStrip =>
@@ -36,7 +66,14 @@ class MatchViewState {
     String? unlockBanner,
     bool clearUnlockBanner = false,
     bool? holdHandoffStrip,
+    String? turnNotice,
+    bool clearTurnNotice = false,
+    bool? revealingRoll,
+    int? heldPotCents,
+    bool clearHeldPot = false,
+    int? rollSerial,
   }) => MatchViewState(
+    rollSerial: rollSerial ?? this.rollSerial,
     snapshot: snapshot ?? this.snapshot,
     showConfetti: showConfetti ?? this.showConfetti,
     busyBot: busyBot ?? this.busyBot,
@@ -44,16 +81,45 @@ class MatchViewState {
         ? null
         : (unlockBanner ?? this.unlockBanner),
     holdHandoffStrip: holdHandoffStrip ?? this.holdHandoffStrip,
+    turnNotice: clearTurnNotice ? null : (turnNotice ?? this.turnNotice),
+    revealingRoll: revealingRoll ?? this.revealingRoll,
+    heldPotCents: clearHeldPot ? null : (heldPotCents ?? this.heldPotCents),
   );
 }
 
 class MatchNotifier extends Notifier<MatchViewState?> {
   MatchController? _controller;
   final SfxService _sfx = SfxService();
+  int _rollSerial = 0;
+
+  /// Identity of the dice currently thrown (seat, roll number, faces).
+  static String? _throwKey(MatchSnapshot s) {
+    final t = s.turn;
+    if (t == null || !t.hasRolled) return null;
+    return '${s.currentSeatIndex}:${t.rollNumber}:${t.dice.values.join()}';
+  }
+
+  final LocalTurnAlerts _alerts = LocalTurnAlerts();
   Timer? _botTimer;
+  String? _lastNoticeSeatId;
+  String? _savedId;
+  bool _releasedTable = false;
+
+  /// True while the Shop route is on top of this table. Bots wait and the
+  /// table is saved so a purchase (or a process kill during Play Billing)
+  /// cannot end the match or lose the pot behind the player's back.
+  bool _shopOpen = false;
+  bool get shopOpen => _shopOpen;
 
   /// Seat index of the local (device) player — always 0.
   static const int localSeat = 0;
+
+  /// How long the winning dice sit on the table before the pot-win banner.
+  static Duration potWinRevealDelay = const Duration(milliseconds: 1200);
+
+  /// Dice RNG source for new tables (tests inject a scripted one).
+  @visibleForTesting
+  static Random Function() rngFactory = Random.new;
 
   @override
   MatchViewState? build() {
@@ -61,45 +127,323 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     return null;
   }
 
-  void start({int botCount = 3, int otherHumanCount = 0, String? playerName}) {
+  void start({
+    int botCount = 3,
+    int otherHumanCount = 0,
+    int onlinePlayerCount = 0,
+    List<String> friendNames = const [],
+    String? playerName,
+    int carryPotGems = 0,
+  }) {
     _botTimer?.cancel();
-    final clamped = MatchConfig.clampLobby(botCount, otherHumanCount);
-    botCount = clamped.$1;
-    otherHumanCount = clamped.$2;
-    // Ensure at least one opponent (lobby UI should already enforce this).
+    _shopOpen = false;
+    _lastNoticeSeatId = null;
+    final chosen = [
+      for (final name in friendNames)
+        if (name.trim().isNotEmpty) name.trim(),
+    ];
+    final plan = MatchConfig.clampLobbyCounts(
+      botCount,
+      otherHumanCount,
+      onlinePlayerCount,
+      chosen.length,
+    );
+    botCount = plan.bots;
+    otherHumanCount = plan.others;
+    onlinePlayerCount = plan.online;
+    final seatedFriends = chosen.take(plan.friends).toList();
+    // Waiting chairs are not opponents. Do not invent a bot to fill them.
+    // Only the old bots/humans-only path gets a lone-bot fallback.
     if (botCount + otherHumanCount < 1) {
-      botCount = 1;
+      if (onlinePlayerCount == 0 && seatedFriends.isEmpty) {
+        botCount = 1;
+      } else {
+        return;
+      }
     }
+
+    _persistActive();
 
     final localName = playerName ?? 'You';
     final names = <String>[
       localName,
       for (var i = 0; i < otherHumanCount; i++) 'Player ${i + 2}',
     ];
+    final ledger = ref.read(coinLedgerProvider.notifier);
+    final live = ledger.prepare();
+    final available = live.availableHumanGems(localName);
+    final sit = PlayerCoinLedger.sitDownGems(available);
+    if (sit > 0) {
+      ledger.drawAvailable(localName, sit);
+    }
+    final book = TableGemBook();
+    book.seed(PlayerCoinLedger.localIdentity(localName), bot: false, gems: sit);
+    for (var i = 1; i < names.length; i++) {
+      book.seed(
+        names[i],
+        bot: false,
+        gems: live.openingCents(names[i], bot: false, fallback: 100),
+      );
+    }
+    for (var i = 0; i < botCount; i++) {
+      final name = BotRoster.nameAt(i);
+      book.seed(
+        name,
+        bot: true,
+        gems: live.openingCents(name, bot: true, fallback: 100),
+      );
+    }
+    _savedId = SavedGame.newId();
+    _releasedTable = false;
     _controller = MatchController(
       config: MatchConfig(
         botCount: botCount,
         otherHumanCount: otherHumanCount,
+        onlinePlayerCount: onlinePlayerCount,
+        friendNames: seatedFriends,
         localPlayerName: localName,
         humanNames: names,
       ),
-      rng: Random(),
+      rng: rngFactory(),
+      coins: book,
     );
-    _controller!.startMatch();
+    _controller!.startMatch(carryPotGems: carryPotGems);
     ref.read(cosmeticsProvider.notifier).beginMatch();
     _syncSettings();
-    state = MatchViewState(snapshot: _controller!.snapshot);
+    state = MatchViewState(
+      snapshot: _controller!.snapshot,
+      rollSerial: _rollSerial,
+    );
+    _announceTurn();
+    _persistActive();
     _scheduleBots();
   }
 
   void rematch() {
-    final cfg = _controller?.config;
+    final c = _controller;
+    final cfg = c?.config;
     final name = ref.read(settingsProvider).playerName;
+    // "Continue playing" keeps the table going: gems still in the pot when
+    // the match ended carry into the next game instead of vanishing.
+    final carry = c != null && c.snapshot.phase == MatchPhase.matchEnd
+        ? c.snapshot.potCents
+        : 0;
     start(
+      carryPotGems: carry,
       botCount: cfg?.botCount ?? 3,
       otherHumanCount: cfg?.otherHumanCount ?? 0,
+      onlinePlayerCount: cfg?.onlinePlayerCount ?? 0,
+      friendNames: cfg?.friendNames ?? const [],
       playerName: name,
     );
+  }
+
+  int? moveFromMainBank(int gems) {
+    final c = _controller;
+    if (c == null || gems <= 0) return null;
+    if (c.snapshot.phase == MatchPhase.matchEnd) return null;
+    final name = c.config.localPlayerName;
+    final ledger = ref.read(coinLedgerProvider.notifier);
+    if (ledger.drawAvailable(name, gems) == null) return null;
+    final next = c.grantLocalPlayCoins(gems);
+    if (next == null) {
+      ledger.grantHumanPlayCoins(name, cents: gems);
+      return null;
+    }
+    _publish();
+    return next;
+  }
+
+  /// Shop is opening on top of the table. Freeze bots and save the table.
+  void suspendForShop() {
+    final c = _controller;
+    if (c == null) return;
+    _shopOpen = true;
+    _botTimer?.cancel();
+    if (state != null) state = state!.copyWith(busyBot: false);
+    _persistActive();
+  }
+
+  /// Back from the Shop. The same controller (same pot, seat, and turn)
+  /// carries on; nothing is re-anted or rebuilt.
+  void resumeAfterShop() {
+    if (!_shopOpen) return;
+    _shopOpen = false;
+    if (_controller == null) return;
+    _publish();
+    _scheduleBots();
+  }
+
+  bool resume(String id) {
+    final store = ref.read(savedGamesProvider.notifier).store;
+    final game = store.byId(id);
+    if (game == null) return false;
+    if (_savedId != null && _savedId != id) {
+      _persistActive();
+    }
+    _botTimer?.cancel();
+    _lastNoticeSeatId = null;
+    _savedId = id;
+    _releasedTable = false;
+    final book = TableGemBook();
+    for (final player in game.table.players) {
+      if (!player.profile.participates) continue;
+      book.seed(
+        player.profile.name,
+        bot: player.profile.isBot,
+        gems: player.bankCents,
+      );
+    }
+    _controller = MatchController(
+      config: game.table.config,
+      rng: rngFactory(),
+      coins: book,
+    );
+    _controller!.restore(game.table);
+    _syncSettings();
+    state = MatchViewState(
+      snapshot: _controller!.snapshot,
+      rollSerial: _rollSerial,
+    );
+    _announceTurn();
+    _scheduleBots();
+    return true;
+  }
+
+  Future<void> leaveUnfinished() async {
+    _botTimer?.cancel();
+    final c = _controller;
+    if (c == null) {
+      state = null;
+      return;
+    }
+    if (c.snapshot.phase == MatchPhase.matchEnd) {
+      _releaseFinishedTable();
+    } else {
+      _persistActive();
+      final n = ref.read(savedGamesProvider.notifier);
+      await n.ensureReady();
+      await n.flush();
+    }
+    _controller = null;
+    _savedId = null;
+    state = null;
+  }
+
+  void persistUnfinished() {
+    _persistActive();
+    unawaited(() async {
+      final n = ref.read(savedGamesProvider.notifier);
+      await n.ensureReady();
+      await n.flush();
+    }());
+  }
+
+  void dropSaved(String id) {
+    final store = ref.read(savedGamesProvider.notifier).store;
+    final game = store.byId(id);
+    if (game == null) return;
+    final local = game.table.localPlayer;
+    if (local != null && local.bankCents > 0) {
+      final ledger = ref.read(coinLedgerProvider.notifier);
+      SavedGameStore.returnLocalGems(
+        ledger: ledger.book,
+        localName: local.profile.name,
+        tableGems: local.bankCents,
+        houseStakeOwed: MatchController.houseStakeOwed(
+          local,
+          game.table.config,
+        ),
+      );
+      ledger.publish();
+    }
+    ref.read(savedGamesProvider.notifier).remove(id);
+    if (_savedId == id) {
+      _botTimer?.cancel();
+      _controller = null;
+      _savedId = null;
+      state = null;
+    }
+  }
+
+  bool coverShortfall() {
+    final c = _controller;
+    final pending = c?.snapshot.pendingShortfall;
+    if (c == null || pending == null) return false;
+    final payer = c.snapshot.players[pending.payerSeatIndex];
+    final need = pending.dueGems - payer.bankCents;
+    final name = c.config.localPlayerName;
+    final ledger = ref.read(coinLedgerProvider.notifier);
+    if (need > 0) {
+      if (ledger.drawAvailable(name, need) == null) return false;
+      if (c.addTableGems(pending.payerSeatIndex, need) == null) {
+        ledger.grantHumanPlayCoins(name, cents: need);
+        return false;
+      }
+    }
+    final ok = c.coverShortfall();
+    _publish();
+    if (ok) _scheduleBots();
+    return ok;
+  }
+
+  void quitShortfall() {
+    final c = _controller;
+    if (c == null) return;
+    c.quitShortfall();
+    _publish();
+    _scheduleBots();
+  }
+
+  void _persistActive() {
+    final c = _controller;
+    final id = _savedId;
+    if (c == null || id == null) return;
+    if (c.snapshot.phase == MatchPhase.matchEnd ||
+        c.snapshot.phase == MatchPhase.setup) {
+      _releaseFinishedTable();
+      return;
+    }
+    ref
+        .read(savedGamesProvider.notifier)
+        .upsert(
+          SavedGame(
+            id: id,
+            savedAt: DateTime.now().toUtc(),
+            table: c.capture(),
+          ),
+        );
+  }
+
+  void _releaseFinishedTable() {
+    if (_releasedTable) return;
+    final c = _controller;
+    if (c == null) {
+      _releasedTable = true;
+      return;
+    }
+    PlayerState? local;
+    for (final p in c.snapshot.players) {
+      if (p.profile.id == 'human_0') {
+        local = p;
+        break;
+      }
+    }
+    if (local != null && local.bankCents > 0) {
+      final ledger = ref.read(coinLedgerProvider.notifier);
+      SavedGameStore.returnLocalGems(
+        ledger: ledger.book,
+        localName: c.config.localPlayerName,
+        tableGems: local.bankCents,
+        houseStakeOwed: MatchController.houseStakeOwed(local, c.config),
+      );
+      ledger.publish();
+    }
+    final id = _savedId;
+    if (id != null) {
+      ref.read(savedGamesProvider.notifier).remove(id);
+    }
+    _releasedTable = true;
   }
 
   void _syncSettings() {
@@ -112,6 +456,8 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     bool confetti = false,
     String? unlockBanner,
     bool? holdHandoffStrip,
+    bool revealingRoll = false,
+    int? heldPotCents,
   }) {
     final c = _controller;
     if (c == null) return;
@@ -121,7 +467,41 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       busyBot: state?.busyBot ?? false,
       unlockBanner: unlockBanner ?? state?.unlockBanner,
       holdHandoffStrip: holdHandoffStrip ?? false,
+      turnNotice: state?.turnNotice,
+      revealingRoll: revealingRoll,
+      heldPotCents: revealingRoll ? heldPotCents : null,
+      rollSerial: _rollSerial,
     );
+    _announceTurn();
+    _persistActive();
+  }
+
+  /// Local "{name}'s turn" for You or a friend in the group. Bots never notify.
+  void _announceTurn() {
+    final c = _controller;
+    final current = state;
+    if (c == null || current == null) return;
+    if (c.snapshot.phase != MatchPhase.playing) return;
+    final seat = c.snapshot.currentPlayer;
+    if (!seat.profile.isHuman) {
+      if (current.turnNotice != null) {
+        state = current.copyWith(clearTurnNotice: true);
+      }
+      return;
+    }
+    if (seat.profile.id == _lastNoticeSeatId) return;
+    final friends = ref.read(friendsProvider).names;
+    final localName = ref.read(settingsProvider).playerName;
+    final msg = TurnNotice.forSeat(
+      seatName: seat.profile.name,
+      kind: seat.profile.kind,
+      localName: localName,
+      friendNames: friends,
+    );
+    if (msg == null) return;
+    _lastNoticeSeatId = seat.profile.id;
+    state = current.copyWith(turnNotice: msg);
+    unawaited(_alerts.show(msg));
   }
 
   void clearUnlockBanner() {
@@ -157,12 +537,17 @@ class MatchNotifier extends Notifier<MatchViewState?> {
   Future<void> roll() async {
     final c = _controller;
     if (c == null) return;
-    if (c.snapshot.phase == MatchPhase.awaitingHandoff) return;
+    if (c.snapshot.phase == MatchPhase.awaitingHandoff ||
+        c.snapshot.phase == MatchPhase.awaitingShortfall) {
+      return;
+    }
     if (c.snapshot.currentPlayer.profile.isBot) return;
     final seat = c.snapshot.currentSeatIndex;
     _syncSettings();
     await _sfx.roll();
+    final potBefore = c.snapshot.potCents;
     c.roll();
+    _rollSerial++;
     final afterTurn = c.snapshot.turn;
     // Miss with rolls left: same player, still playing. Do not bust or hand off.
     if (afterTurn != null &&
@@ -173,6 +558,8 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     }
     final payout = c.snapshot.lastPayout;
     if (payout?.kind == ScoreKind.tripleOnesPotWin) {
+      // Show the dice first, then the pot-win notification.
+      await _revealPotWin(potBefore);
       await _sfx.potWin();
       await _applyLocalCosmetics(seat, payout);
       // Winner keeps the seat on a fresh set. Confetti only — no handoff.
@@ -207,17 +594,28 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       await _sfx.bust();
       await _applyLocalCosmetics(seat, payout);
     }
-    if (c.snapshot.phase == MatchPhase.awaitingHandoff) {
+    if (c.snapshot.phase == MatchPhase.awaitingHandoff ||
+        c.snapshot.phase == MatchPhase.awaitingShortfall) {
       // Gate: human must tap Continue / Next player.
       return;
     }
     _scheduleBots();
   }
 
+  /// Publish the table with the winning dice visible and the payout held,
+  /// then wait so the roll registers before the banner/confetti.
+  Future<void> _revealPotWin(int potBefore) async {
+    _publish(revealingRoll: true, heldPotCents: potBefore);
+    await Future<void>.delayed(potWinRevealDelay);
+  }
+
   Future<void> bank() async {
     final c = _controller;
     if (c == null) return;
-    if (c.snapshot.phase == MatchPhase.awaitingHandoff) return;
+    if (c.snapshot.phase == MatchPhase.awaitingHandoff ||
+        c.snapshot.phase == MatchPhase.awaitingShortfall) {
+      return;
+    }
     if (c.snapshot.currentPlayer.profile.isBot) return;
     final seat = c.snapshot.currentSeatIndex;
     final t = c.snapshot.turn;
@@ -249,7 +647,8 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     }
     _publish();
     await _applyLocalCosmetics(seat, payout);
-    if (c.snapshot.phase == MatchPhase.awaitingHandoff) {
+    if (c.snapshot.phase == MatchPhase.awaitingHandoff ||
+        c.snapshot.phase == MatchPhase.awaitingShortfall) {
       return;
     }
     _scheduleBots();
@@ -277,8 +676,14 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     final c = _controller;
     if (c == null) return;
     if (c.snapshot.phase == MatchPhase.matchEnd) return;
+    // Bots wait while the player is in the Shop.
+    if (_shopOpen) {
+      if (state != null) state = state!.copyWith(busyBot: false);
+      return;
+    }
     // Bots must not act while the handoff strip is up.
-    if (c.snapshot.phase == MatchPhase.awaitingHandoff) {
+    if (c.snapshot.phase == MatchPhase.awaitingHandoff ||
+        c.snapshot.phase == MatchPhase.awaitingShortfall) {
       if (state != null) state = state!.copyWith(busyBot: false);
       return;
     }
@@ -288,15 +693,39 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     }
     if (state != null) state = state!.copyWith(busyBot: true);
     _botTimer = Timer(const Duration(milliseconds: 700), () async {
-      if (_controller == null) return;
-      if (_controller!.snapshot.phase == MatchPhase.awaitingHandoff) {
+      if (_controller == null || _shopOpen) return;
+      if (_controller!.snapshot.phase == MatchPhase.awaitingHandoff ||
+          _controller!.snapshot.phase == MatchPhase.awaitingShortfall) {
         if (state != null) state = state!.copyWith(busyBot: false);
         return;
       }
       _syncSettings();
       final before = _controller!.snapshot.lastPayout;
+      final potBefore = _controller!.snapshot.potCents;
+      final throwBefore = _throwKey(_controller!.snapshot);
       _controller!.tickBot();
       final after = _controller!.snapshot.lastPayout;
+      final throwAfter = _throwKey(_controller!.snapshot);
+      if ((throwAfter != null && throwAfter != throwBefore) ||
+          (after != null &&
+              after != before &&
+              after.kind == ScoreKind.tripleOnesPotWin)) {
+        _rollSerial++;
+      }
+      if (after != null &&
+          after != before &&
+          after.kind == ScoreKind.tripleOnesPotWin) {
+        // Bot pot win: same beat as a human — dice first, then the banner.
+        await _revealPotWin(potBefore);
+        if (_controller == null) return;
+        await _sfx.potWin();
+        _publish(confetti: true);
+        Future<void>.delayed(const Duration(seconds: 2), () {
+          if (state != null) state = state!.copyWith(showConfetti: false);
+        });
+        _scheduleBots();
+        return;
+      }
       if (after != null &&
           after != before &&
           after.celebratory &&
@@ -321,7 +750,8 @@ class MatchNotifier extends Notifier<MatchViewState?> {
         await _sfx.roll();
       }
       _publish();
-      if (_controller!.snapshot.phase == MatchPhase.awaitingHandoff) {
+      if (_controller!.snapshot.phase == MatchPhase.awaitingHandoff ||
+          _controller!.snapshot.phase == MatchPhase.awaitingShortfall) {
         if (state != null) state = state!.copyWith(busyBot: false);
         return;
       }

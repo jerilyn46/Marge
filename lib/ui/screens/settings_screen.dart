@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../ads/ads_service.dart';
 import '../../services/settings_service.dart';
+import '../legal_links.dart';
 import '../theme/marge_theme.dart';
+import 'terms_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -52,14 +54,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 16),
           SwitchListTile(
             title: const Text('Sound effects'),
-            subtitle: const Text('Console stubs / future audio pack'),
+            subtitle: const Text('Dice and table sounds'),
             value: s.sfxEnabled,
             activeThumbColor: MargeColors.gold,
             onChanged: (v) => n.setSfx(v),
           ),
           SwitchListTile(
             title: const Text('Haptics'),
-            subtitle: const Text('No-op on Linux / web — fine on phones'),
+            subtitle: const Text('Vibrate on rolls and wins'),
             value: s.hapticsEnabled,
             activeThumbColor: MargeColors.gold,
             onChanged: (v) => n.setHaptics(v),
@@ -99,9 +101,38 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               }
             },
           ),
+          ListTile(
+            leading: const Icon(Icons.policy_outlined),
+            title: const Text('Privacy policy'),
+            subtitle: const Text('jerilyn46.github.io/Marge/privacy-policy'),
+            trailing: const Icon(Icons.open_in_new_rounded, size: 18),
+            onTap: () => LegalLinks.open(
+              context,
+              LegalLinks.privacyPolicyUri,
+              fallback: LegalLinks.privacyPolicyUrl,
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.gavel_rounded),
+            title: const Text('Terms of Use'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const TermsScreen()),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.mail_outline_rounded),
+            title: const Text('Contact support'),
+            subtitle: const Text(LegalLinks.supportEmail),
+            onTap: () => LegalLinks.open(
+              context,
+              LegalLinks.supportMailUri,
+              fallback: LegalLinks.supportEmail,
+            ),
+          ),
           const SizedBox(height: 24),
           Text(
-            'Marge Dice Game · com.jerilyn.marge\nVirtual chips only — no real money.',
+            'Marge Dice Game · com.jerilynroberts.marge\nVirtual gems only — no real money.',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: MargeColors.cream.withValues(alpha: 0.55),

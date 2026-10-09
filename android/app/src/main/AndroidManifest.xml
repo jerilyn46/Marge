@@ -1,8 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Play Billing (in_app_purchase). Harmless when unused. -->
+    <uses-permission android:name="com.android.vending.BILLING"/>
     <application
-        android:label="marge"
+        android:label="Marge"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
@@ -34,15 +37,22 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-        <!-- Flip 7 ads-off hotfix.
-             play-services-ads registers MobileAdsInitProvider, which calls
-             MobileAds.initialize from a ContentProvider before Flutter.
-             That path still crashed v0.1.3 after Dart deferred UMP/GMA.
-             Remove APPLICATION_ID and the provider so native GMA never starts.
-             See docs/ads.md. -->
+        <!-- Daily free-gems reminder (flutter_local_notifications zonedSchedule).
+             Not exported; no extra permission. Nothing runs at app start. -->
+        <receiver
+            android:exported="false"
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
+        <!-- Ads-on path (fail closed when off):
+             Default build.gradle leaves ADMOB_ENABLED unset → tools:node=remove
+             so MobileAdsInitProvider cannot cold-start GMA (Flip 7).
+             PADMOB_ENABLED=true merges APPLICATION_ID (test ID by default).
+             Pair with dart-define ADMOB_ENABLED=true. See docs/ads.md. -->
+        <!-- Default: strip APPLICATION_ID (Flip 7). Ads stay fail closed until a
+             Play ads flavor / overlay adds a real App ID. Provider stays removed. -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
             tools:node="remove" />
+        <!-- Always strip ContentProvider auto-init; Dart bootstraps after first frame. -->
         <provider
             android:name="com.google.android.gms.ads.MobileAdsInitProvider"
             android:authorities="${applicationId}.mobileadsinitprovider"
@@ -65,6 +75,15 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Settings: open the privacy policy (https) and email support (mailto). -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO"/>
+            <data android:scheme="mailto"/>
         </intent>
     </queries>
 </manifest>

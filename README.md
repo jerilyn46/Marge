@@ -2,24 +2,24 @@
 
 A colorful casual dice table game for Android (and web). Configurable seats (bots + local hotseat), ante into a shared pot, Yahtzee-style keep-and-reroll, and a dramatic **triple ones on the first roll** pot sweep.
 
-**Package:** `com.jerilyn.marge`  
+**Package:** `com.jerilynroberts.marge`  
 **Repo:** https://github.com/jerilyn46/Marge
 
 > Virtual chips only. No real-money gambling.
 
 ## Rules
 
-- **2–8 seats.** Lobby: choose **0–4 bots** and **0–4 other hotseat humans** (at least 1 opponent; you + up to 7 others). Default: **3 bots, 0 other humans**.
-- **Start bank:** 100¢ each.
-- **Round ante:** each seated player pays **10¢** into the pot.
+- **2–8 seats.** Lobby: **you**, then **0–4 other hotseat humans**, then **0–4 online seats**, then **0–4 bots** filling leftover seats only (at least 1 playable opponent). Default: **3 bots, 0 other humans, 0 online**. There is no live matchmaking; chosen online seats stay **Waiting for player** and are never converted into bots.
+- **Start bank:** each identity keeps its saved gems (100 gems if new). Humans and friends persist forever. Bots reset to 100 gems every Monday 00:00 America/Denver.
+- **Round ante:** each playing seat pays **10 gems** into the pot. Waiting online chairs do not ante.
 - **Turn:** 3 dice, up to **3 rolls**. Keep any subset between rolls. Bank early once you have a scoring hand.
 - **Scoring priority**
   1. Three 1s on the **first** roll of the turn → win the **entire pot**; new round with ante.
-  2. Three 1s on roll 2/3 → each other player pays you **10¢**.
-  3. Other three-of-a-kind → each other pays **face value** ¢.
-  4. Straight `{1,2,3}` / `{2,3,4}` / `{3,4,5}` / `{4,5,6}` → each other pays **5¢**.
-  5. No score after 3 rolls → put **2¢** in the pot.
-- **Soft bankrupt:** once per match the House tops you up **50¢**.
+  2. Three 1s on roll 2/3 → each other player pays you **10 gems**.
+  3. Other three-of-a-kind → each other pays **face value** in gems.
+  4. Straight `{1,2,3}` / `{2,3,4}` / `{3,4,5}` / `{4,5,6}` → each other pays **5 gems**.
+  5. No score after 3 rolls → put **2 gems** in the pot.
+- **Soft bankrupt:** once per match the House fronts you **50 gems**; it is repaid to the House when the table cashes out to your gem bank.
 - Endless rounds. **End match** shows final banks and a winner.
 
 Bots: **Spike** (aggressive), **Mira** (cautious), **Zig** (chaotic).
@@ -87,7 +87,7 @@ lib/
     player.dart
     bot_ai.dart
     match_controller.dart
-  services/        Settings + SFX/haptics stubs
+  services/        Settings, coin ledger, friends, local turn notices
   ads/             AdMob test IDs, UMP consent, banner/interstitial/rewarded
   ui/
     theme/         Material 3 casual palette

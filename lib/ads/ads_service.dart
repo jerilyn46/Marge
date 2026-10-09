@@ -12,13 +12,19 @@ import 'interstitial_gate.dart';
 ///
 /// [kAdmobEnabled] defaults to false (`--dart-define=ADMOB_ENABLED=true` to
 /// turn ads back on). When false, no UMP / MobileAds / ad-load calls run.
+///
+/// Release builds also need real unit IDs from dart-define (see
+/// [AdIds.idsReady]); otherwise ads stay off rather than serve test ads.
 bool get adsPlatformSupported =>
     kAdmobEnabled &&
     !kIsWeb &&
     (defaultTargetPlatform == TargetPlatform.android ||
-        defaultTargetPlatform == TargetPlatform.iOS);
+        defaultTargetPlatform == TargetPlatform.iOS) &&
+    AdIds.idsReady(release: kReleaseMode);
 
 /// Bootstraps UMP consent + Mobile Ads SDK, and owns interstitial / rewarded.
+///
+/// Fail closed: consent / SDK errors leave ads off. Never mid-roll.
 class AdsService {
   AdsService();
 
@@ -62,15 +68,9 @@ class AdsService {
         try {
           await _gatherConsentThenInit();
         } catch (e, st) {
-          debugPrint('AdsService: bootstrap failed: $e\n$st');
-          try {
-            _consentReady = true;
-            await _ensureMobileAdsInitialized();
-          } catch (e2, st2) {
-            debugPrint(
-              'AdsService: fail-open MobileAds init failed: $e2\n$st2',
-            );
-          }
+          // Fail closed: SDK / consent errors must not force ads on.
+          debugPrint('AdsService: bootstrap failed (fail closed): $e\n$st');
+          _consentReady = false;
         } finally {
           if (!done.isCompleted) done.complete();
         }
@@ -146,10 +146,8 @@ class AdsService {
         );
       }
     } catch (e) {
-      debugPrint('AdsService: consent finish failed: $e');
-      // Fail open for test builds so Google test IDs still load outside EEA.
-      _consentReady = true;
-      await _ensureMobileAdsInitialized();
+      debugPrint('AdsService: consent finish failed (fail closed): $e');
+      _consentReady = false;
     }
   }
 
