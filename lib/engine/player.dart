@@ -76,7 +76,7 @@ class PlayerState {
   );
 
   /// Chair label. Waiting friends and online chairs show no coin total
-  /// until they sit as an active player — not a saved bank, not 100¢.
+  /// until they sit as an active player — not a saved bank, not 100 gems.
   String get coinTotalLabel {
     if (profile.isWaiting) return 'Waiting';
     if (eliminated) return 'OUT';

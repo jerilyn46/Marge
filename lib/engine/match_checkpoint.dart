@@ -6,7 +6,7 @@ import 'match_controller.dart';
 import 'player.dart';
 import 'turn_state.dart';
 
-/// Enough of a live table to resume later without re-ante or a fresh 100¢.
+/// Enough of a live table to resume later without re-ante or a fresh 100 gems.
 ///
 /// Each checkpoint is one table: its pot, seats, and those players' totals.
 /// It does not share a pot or seated banks with any other unfinished game.

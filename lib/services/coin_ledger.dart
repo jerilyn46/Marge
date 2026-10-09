@@ -42,7 +42,7 @@ class LobbyCoinSeat {
 /// * hotseat `Player 2`, `Player 3`, …
 /// * each bot name (`Spike`, `Mira`, …)
 ///
-/// Human balances persist forever. Bot balances reset to 100¢ once each
+/// Human balances persist forever. Bot balances reset to 100 gems once each
 /// Monday 00:00 America/Denver. Waiting online chairs are never stored.
 class PlayerCoinLedger implements SeatCoinBook {
   PlayerCoinLedger({
@@ -91,7 +91,7 @@ class PlayerCoinLedger implements SeatCoinBook {
   /// Fired after a memory write so the lobby can rebuild. Persistence is separate.
   void Function()? onChanged;
 
-  /// Cold-start ledger captured before [runApp] so the lobby does not flash 100¢.
+  /// Cold-start ledger captured before [runApp] so the lobby does not flash 100 gems.
   static PlayerCoinLedger? bootstrap;
 
   bool get hasHistory => balances.isNotEmpty;
@@ -215,7 +215,7 @@ class PlayerCoinLedger implements SeatCoinBook {
     return available < startBank ? available : startBank;
   }
 
-  /// Drop every bot bank back to 100¢ if this Denver week has not been reset.
+  /// Drop every bot bank back to 100 gems if this Denver week has not been reset.
   ///
   /// Humans are never touched. Returns true when a reset was applied (and
   /// stored) so callers can refresh UI. Calling again the same week is a no-op.
@@ -379,7 +379,7 @@ class PlayerCoinLedger implements SeatCoinBook {
           emoji: '👋',
           waiting: true,
           bot: false,
-          // Absent until they sit. No saved balance, no 100¢ placeholder.
+          // Absent until they sit. No saved balance, no 100 gems placeholder.
           coins: null,
         ),
       );

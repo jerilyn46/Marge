@@ -949,7 +949,7 @@ class MatchController {
     p = p.copyWith(bankCents: 0);
     if (p.usedHouseStake && paid == 0) {
       p = p.copyWith(eliminated: true);
-      _log.add('${p.profile.name} is out of chips.');
+      _log.add('${p.profile.name} is out of gems.');
     } else if (p.usedHouseStake && p.bankCents == 0 && paid < amount) {
       // Still broke after paying remainder — soft eliminate next ante.
       if (p.bankCents == 0) {
