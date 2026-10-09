@@ -86,4 +86,50 @@ void main() {
     match.start(botCount: 2, playerName: 'You');
     expect(container.read(matchProvider)!.snapshot.potCents, 30);
   });
+
+  test('buying gems mid-match: bank credited, table and pot untouched', () {
+    final match = container.read(matchProvider.notifier);
+    final ledger = container.read(coinLedgerProvider.notifier);
+    match.start(botCount: 2, playerName: 'You');
+
+    int bank() => container.read(coinLedgerProvider).availableHumanGems('You');
+    int table() => container
+        .read(matchProvider)!
+        .snapshot
+        .players
+        .firstWhere((p) => p.profile.id == 'human_0')
+        .bankCents;
+    int pot() => container.read(matchProvider)!.snapshot.potCents;
+    int seatsTotal() => container
+        .read(matchProvider)!
+        .snapshot
+        .players
+        .fold(0, (sum, p) => sum + p.bankCents);
+
+    final bank0 = bank();
+    final table0 = table();
+    final pot0 = pot();
+    final seats0 = seatsTotal();
+    // Sat down with 100 of 200; ante 10 went to the pot.
+    expect(bank0, 100);
+    expect(table0, 90);
+    expect(pot0, 30);
+
+    match.suspendForShop();
+    // Same credit path GemIapNotifier uses for a completed pack purchase.
+    expect(ledger.grantHumanPlayCoins('You', cents: 500), bank0 + 500);
+    match.resumeAfterShop();
+
+    expect(bank(), bank0 + 500, reason: 'purchase lands in the gem bank');
+    expect(table(), table0, reason: 'table gems unchanged by the store');
+    expect(pot(), pot0, reason: 'pot unchanged by the store');
+    expect(seatsTotal(), seats0);
+
+    // Moving purchased gems onto the table conserves the total.
+    expect(match.moveFromMainBank(100), table0 + 100);
+    expect(bank(), bank0 + 400);
+    expect(table(), table0 + 100);
+    expect(pot(), pot0);
+    expect(bank() + seatsTotal() + pot(), bank0 + 500 + seats0 + pot0);
+  });
 }
