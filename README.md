@@ -19,7 +19,7 @@ A colorful casual dice table game for Android (and web). Configurable seats (bot
   3. Other three-of-a-kind → each other pays **face value** ¢.
   4. Straight `{1,2,3}` / `{2,3,4}` / `{3,4,5}` / `{4,5,6}` → each other pays **5¢**.
   5. No score after 3 rolls → put **2¢** in the pot.
-- **Soft bankrupt:** once per match the House tops you up **50¢**.
+- **Soft bankrupt:** once per match the House fronts you **50 gems**; it is repaid to the House when the table cashes out to your gem bank.
 - Endless rounds. **End match** shows final banks and a winner.
 
 Bots: **Spike** (aggressive), **Mira** (cautious), **Zig** (chaotic).

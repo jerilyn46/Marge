@@ -311,6 +311,10 @@ class MatchNotifier extends Notifier<MatchViewState?> {
         ledger: ledger.book,
         localName: local.profile.name,
         tableGems: local.bankCents,
+        houseStakeOwed: MatchController.houseStakeOwed(
+          local,
+          game.table.config,
+        ),
       );
       ledger.publish();
     }
@@ -392,6 +396,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
         ledger: ledger.book,
         localName: c.config.localPlayerName,
         tableGems: local.bankCents,
+        houseStakeOwed: MatchController.houseStakeOwed(local, c.config),
       );
       ledger.publish();
     }

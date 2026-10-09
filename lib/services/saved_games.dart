@@ -163,15 +163,25 @@ class SavedGameStore {
 
   /// Put a finished or dropped table's local gems back in the main bank.
   /// Other tables are not touched. Uses the explicit bank, not an implicit 100.
+  ///
+  /// [houseStakeOwed] is the once-per-match House stake this seat received
+  /// at the table. It was minted by the House to keep the player in the
+  /// game, so it is paid back to the House before table gems return to the
+  /// persistent gem bank. Only the excess (if any) comes home. If the table
+  /// holds less than the stake, nothing returns and the House absorbs the
+  /// shortfall — the stake never becomes permanent bank gems.
   static int returnLocalGems({
     required PlayerCoinLedger ledger,
     required String localName,
     required int tableGems,
+    int houseStakeOwed = 0,
   }) {
-    if (tableGems <= 0) return ledger.availableHumanGems(localName);
+    final owed = houseStakeOwed > 0 ? houseStakeOwed : 0;
+    final net = tableGems - owed;
+    if (net <= 0) return ledger.availableHumanGems(localName);
     final name = PlayerCoinLedger.localIdentity(localName);
     final current = ledger.savedCents(name, bot: false) ?? 0;
-    final next = current + tableGems;
+    final next = current + net;
     ledger.write(name, bot: false, cents: next);
     return next;
   }

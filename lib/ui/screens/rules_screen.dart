@@ -65,7 +65,8 @@ class RulesScreen extends ConsumerWidget {
             emoji: '🏠',
             title: 'House stake',
             body:
-                'Soft bankrupt: once per match the House tops you up 50 gems. '
+                'Soft bankrupt: once per match the House fronts you 50 gems. '
+                'The House takes its 50 back when you leave the table with gems. '
                 'After that, running dry can knock you out. Endless rounds until you End match.',
           ),
           _RuleCard(

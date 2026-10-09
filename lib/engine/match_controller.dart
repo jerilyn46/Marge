@@ -906,6 +906,15 @@ class MatchController {
     _remember(index);
   }
 
+  /// Gems the House fronted this seat at this table (once per match).
+  /// The House stake is created by the House, not taken from the pot or
+  /// another player, so it is repaid when the table cashes out to the gem
+  /// bank (see SavedGameStore.returnLocalGems).
+  static int houseStakeOwed(PlayerState p, MatchConfig config) =>
+      p.usedHouseStake && config.houseStakeCents > 0
+      ? config.houseStakeCents
+      : 0;
+
   /// Soft take: apply house stake once if needed; never go negative.
   int _takeFromBank(int index, int amount, {required bool soft}) {
     if (amount <= 0) return 0;
