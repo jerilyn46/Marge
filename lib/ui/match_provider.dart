@@ -69,6 +69,12 @@ class MatchNotifier extends Notifier<MatchViewState?> {
   String? _savedId;
   bool _releasedTable = false;
 
+  /// True while the Shop route is on top of this table. Bots wait and the
+  /// table is saved so a purchase (or a process kill during Play Billing)
+  /// cannot end the match or lose the pot behind the player's back.
+  bool _shopOpen = false;
+  bool get shopOpen => _shopOpen;
+
   /// Seat index of the local (device) player — always 0.
   static const int localSeat = 0;
 
@@ -84,8 +90,10 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     int onlinePlayerCount = 0,
     List<String> friendNames = const [],
     String? playerName,
+    int carryPotGems = 0,
   }) {
     _botTimer?.cancel();
+    _shopOpen = false;
     _lastNoticeSeatId = null;
     final chosen = [
       for (final name in friendNames)
@@ -156,7 +164,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       rng: Random(),
       coins: book,
     );
-    _controller!.startMatch();
+    _controller!.startMatch(carryPotGems: carryPotGems);
     ref.read(cosmeticsProvider.notifier).beginMatch();
     _syncSettings();
     state = MatchViewState(snapshot: _controller!.snapshot);
@@ -166,9 +174,16 @@ class MatchNotifier extends Notifier<MatchViewState?> {
   }
 
   void rematch() {
-    final cfg = _controller?.config;
+    final c = _controller;
+    final cfg = c?.config;
     final name = ref.read(settingsProvider).playerName;
+    // "Continue playing" keeps the table going: gems still in the pot when
+    // the match ended carry into the next game instead of vanishing.
+    final carry = c != null && c.snapshot.phase == MatchPhase.matchEnd
+        ? c.snapshot.potCents
+        : 0;
     start(
+      carryPotGems: carry,
       botCount: cfg?.botCount ?? 3,
       otherHumanCount: cfg?.otherHumanCount ?? 0,
       onlinePlayerCount: cfg?.onlinePlayerCount ?? 0,
@@ -191,6 +206,26 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     }
     _publish();
     return next;
+  }
+
+  /// Shop is opening on top of the table. Freeze bots and save the table.
+  void suspendForShop() {
+    final c = _controller;
+    if (c == null) return;
+    _shopOpen = true;
+    _botTimer?.cancel();
+    if (state != null) state = state!.copyWith(busyBot: false);
+    _persistActive();
+  }
+
+  /// Back from the Shop. The same controller (same pot, seat, and turn)
+  /// carries on; nothing is re-anted or rebuilt.
+  void resumeAfterShop() {
+    if (!_shopOpen) return;
+    _shopOpen = false;
+    if (_controller == null) return;
+    _publish();
+    _scheduleBots();
   }
 
   bool resume(String id) {
@@ -569,6 +604,11 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     final c = _controller;
     if (c == null) return;
     if (c.snapshot.phase == MatchPhase.matchEnd) return;
+    // Bots wait while the player is in the Shop.
+    if (_shopOpen) {
+      if (state != null) state = state!.copyWith(busyBot: false);
+      return;
+    }
     // Bots must not act while the handoff strip is up.
     if (c.snapshot.phase == MatchPhase.awaitingHandoff ||
         c.snapshot.phase == MatchPhase.awaitingShortfall) {
@@ -581,7 +621,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     }
     if (state != null) state = state!.copyWith(busyBot: true);
     _botTimer = Timer(const Duration(milliseconds: 700), () async {
-      if (_controller == null) return;
+      if (_controller == null || _shopOpen) return;
       if (_controller!.snapshot.phase == MatchPhase.awaitingHandoff ||
           _controller!.snapshot.phase == MatchPhase.awaitingShortfall) {
         if (state != null) state = state!.copyWith(busyBot: false);

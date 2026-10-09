@@ -306,9 +306,11 @@ class MatchController {
     handoff: _handoff,
   );
 
-  void startMatch() {
+  /// [carryPotGems] seeds the pot with gems left in the previous table's pot
+  /// ("Continue playing"), so they are not destroyed between games.
+  void startMatch({int carryPotGems = 0}) {
     _players = _buildSeats();
-    _pot = 0;
+    _pot = carryPotGems > 0 ? carryPotGems : 0;
     _round = 0;
     _seat = 0;
     _turn = null;
@@ -327,6 +329,7 @@ class MatchController {
       'Match started — ${_players.length} seats$waitingBit, '
       '${config.startBankCents} gems banks.',
     );
+    if (_pot > 0) _log.add('Pot carried over: ${gemCount(_pot)}.');
     _beginRound();
   }
 
