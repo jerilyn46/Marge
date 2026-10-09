@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
-import 'denver_time.dart';
 
 /// One local "free gems are ready" reminder, on the existing daily-drip clock.
 ///
@@ -15,8 +14,9 @@ import 'denver_time.dart';
 /// - Never asks for notification permission. If the user has not already
 ///   allowed notifications (e.g. from the turn alert), nothing is scheduled.
 /// - A single fixed notification id, so there is at most one pending reminder.
-/// - Fires at 9:00 America/Denver on the day the drip unlocks, not at
-///   midnight, to avoid a middle-of-the-night ping.
+/// - Fires exactly 24 h after the last claim
+///   ([PlayerCoinLedger.dailyGemsReminderUtc]). The Denver-midnight drip has
+///   always unlocked by then, so it never fires early.
 class DailyGemsReminder {
   DailyGemsReminder({FlutterLocalNotificationsPlugin? plugin})
     : _plugin = plugin ?? FlutterLocalNotificationsPlugin();
@@ -24,27 +24,15 @@ class DailyGemsReminder {
   static const notificationId = 7101;
   static const channelId = 'marge_daily_gems';
   static const channelName = 'Daily free gems';
-  static const reminderHourDenver = 9;
 
   final FlutterLocalNotificationsPlugin _plugin;
   bool _ready = false;
 
-  /// Reminder instant for a drip that unlocks at [readyUtc] (Denver midnight).
-  static DateTime reminderAtUtc(DateTime readyUtc) {
-    final wall = DenverTime.wallClock(readyUtc.toUtc());
-    return DenverTime.localToUtc(
-      wall.year,
-      wall.month,
-      wall.day,
-      reminderHourDenver,
-    );
-  }
-
-  /// Schedule for [readyUtc] if notifications are already permitted.
-  Future<void> scheduleIfPermitted(DateTime readyUtc, {DateTime? utcNow}) async {
+  /// Schedule for [atUtc] if notifications are already permitted.
+  Future<void> scheduleIfPermitted(DateTime atUtc, {DateTime? utcNow}) async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
     try {
-      final at = reminderAtUtc(readyUtc);
+      final at = atUtc.toUtc();
       final now = (utcNow ?? DateTime.now().toUtc()).toUtc();
       if (!at.isAfter(now)) return;
       await _ensureReady();

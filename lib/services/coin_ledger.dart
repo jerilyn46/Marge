@@ -49,6 +49,7 @@ class PlayerCoinLedger implements SeatCoinBook {
     Map<String, int>? balances,
     this.lastBotResetAt,
     this.lastDailyDripDay,
+    this.lastDailyDripAtUtc,
     this.loaded = false,
     SharedPreferences? prefs,
     this.onChanged,
@@ -68,6 +69,7 @@ class PlayerCoinLedger implements SeatCoinBook {
   static const _kBalances = 'balances';
   static const _kLastBotResetAt = 'lastBotResetAt';
   static const _kLastDailyDripDay = 'lastDailyDripDay';
+  static const _kLastDailyDripAt = 'lastDailyDripAt';
 
   /// Storage key for a playing identity. Humans and bots never share a key.
   static String storageKey(String name, {required bool bot}) {
@@ -82,6 +84,10 @@ class PlayerCoinLedger implements SeatCoinBook {
 
   /// Denver civil date `YYYY-MM-DD` when the local human last claimed the drip.
   String? lastDailyDripDay;
+
+  /// Exact instant of the last daily-drip claim (UTC). Drives the
+  /// "free gems ready" reminder 24 h later. Null for pre-existing data.
+  DateTime? lastDailyDripAtUtc;
 
   final bool loaded;
 
@@ -169,6 +175,20 @@ class PlayerCoinLedger implements SeatCoinBook {
     return nextDenverMidnightUtc(now);
   }
 
+  /// When the "free gems ready" reminder should fire: exactly 24 h after the
+  /// last claim. Null if the drip is claimable now or the claim time is
+  /// unknown. 24 h after a claim is always at/after the next Denver midnight,
+  /// so the reminder can never announce gems that are not ready yet.
+  DateTime? dailyGemsReminderUtc({DateTime? utcNow}) {
+    final now = (utcNow ?? DateTime.now().toUtc()).toUtc();
+    if (canClaimDailyDrip(utcNow: now)) return null;
+    final at = lastDailyDripAtUtc;
+    if (at == null) return null;
+    final fire = at.toUtc().add(const Duration(hours: 24));
+    final unlock = nextDenverMidnightUtc(now);
+    return fire.isBefore(unlock) ? unlock : fire;
+  }
+
   /// Next America/Denver midnight after [utcNow], as a UTC instant.
   static DateTime nextDenverMidnightUtc(DateTime utcNow) {
     final wall = DenverTime.wallClock(utcNow.toUtc());
@@ -185,6 +205,7 @@ class PlayerCoinLedger implements SeatCoinBook {
     final next = grantHumanPlayCoins(name, cents: dailyDripGems);
     if (next == null) return null;
     lastDailyDripDay = denverDayKey(now);
+    lastDailyDripAtUtc = now;
     _persistNow();
     onChanged?.call();
     return dailyDripGems;
@@ -240,6 +261,7 @@ class PlayerCoinLedger implements SeatCoinBook {
     balances: balances,
     lastBotResetAt: lastBotResetAt,
     lastDailyDripDay: lastDailyDripDay,
+    lastDailyDripAtUtc: lastDailyDripAtUtc,
     loaded: loaded,
     prefs: _prefs,
   );
@@ -251,6 +273,8 @@ class PlayerCoinLedger implements SeatCoinBook {
     if (lastBotResetAt != null)
       _kLastBotResetAt: lastBotResetAt!.toUtc().toIso8601String(),
     if (lastDailyDripDay != null) _kLastDailyDripDay: lastDailyDripDay,
+    if (lastDailyDripAtUtc != null)
+      _kLastDailyDripAt: lastDailyDripAtUtc!.toUtc().toIso8601String(),
   });
 
   static PlayerCoinLedger decode(
@@ -288,10 +312,16 @@ class PlayerCoinLedger implements SeatCoinBook {
       String? dripDay;
       final dripRaw = decoded[_kLastDailyDripDay];
       if (dripRaw is String && dripRaw.isNotEmpty) dripDay = dripRaw;
+      DateTime? dripAt;
+      final dripAtRaw = decoded[_kLastDailyDripAt];
+      if (dripAtRaw is String && dripAtRaw.isNotEmpty) {
+        dripAt = DateTime.tryParse(dripAtRaw)?.toUtc();
+      }
       return PlayerCoinLedger(
         balances: balances,
         lastBotResetAt: last,
         lastDailyDripDay: dripDay,
+        lastDailyDripAtUtc: dripAt,
         loaded: loaded,
         prefs: prefs,
       );

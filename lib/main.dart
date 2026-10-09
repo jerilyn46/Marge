@@ -125,10 +125,10 @@ class _MargeAppState extends ConsumerState<MargeApp>
     }
     ref.read(matchProvider.notifier).persistUnfinished();
     if (state == AppLifecycleState.paused) {
-      // Backgrounded with today's drip already claimed: one reminder for when
-      // the existing daily-drip clock rolls over (only if already permitted).
-      final next = ref.read(coinLedgerProvider).nextDailyDripUtc();
-      if (next != null) unawaited(_gemsReminder.scheduleIfPermitted(next));
+      // Backgrounded with today's drip already claimed: one reminder exactly
+      // 24 h after the claim (only if notifications are already permitted).
+      final at = ref.read(coinLedgerProvider).dailyGemsReminderUtc();
+      if (at != null) unawaited(_gemsReminder.scheduleIfPermitted(at));
     }
   }
 

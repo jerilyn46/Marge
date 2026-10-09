@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:marge/services/coin_ledger.dart';
-import 'package:marge/services/daily_gems_reminder.dart';
 import 'package:marge/services/settings_service.dart';
 import 'package:marge/ui/widgets/daily_gems_ready_prompt.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -37,11 +36,50 @@ void main() {
       );
     });
 
-    test('reminder fires 9:00 Denver on the unlock day, not at midnight', () {
+    test('reminder fires exactly 24 h after the claim', () {
+      final ledger = PlayerCoinLedger();
+      final claim = DateTime.utc(2026, 10, 8, 18, 7); // 12:07 MDT
+      ledger.claimDailyDrip('You', utcNow: claim);
       expect(
-        DailyGemsReminder.reminderAtUtc(DateTime.utc(2026, 10, 9, 6)),
-        DateTime.utc(2026, 10, 9, 15),
+        ledger.dailyGemsReminderUtc(utcNow: claim),
+        claim.add(const Duration(hours: 24)),
       );
+      // Never before the drip unlocks (Denver midnight).
+      expect(
+        ledger
+            .dailyGemsReminderUtc(utcNow: claim)!
+            .isBefore(ledger.nextDailyDripUtc(utcNow: claim)!),
+        isFalse,
+      );
+    });
+
+    test('late-night claim: 24 h later is after unlock, also across DST', () {
+      final ledger = PlayerCoinLedger();
+      // 23:50 MDT Oct 31 → fall back Nov 1; 24 h later is still Nov 1/2 wall.
+      final claim = DateTime.utc(2026, 11, 1, 5, 50);
+      ledger.claimDailyDrip('You', utcNow: claim);
+      final fire = ledger.dailyGemsReminderUtc(utcNow: claim)!;
+      expect(fire, claim.add(const Duration(hours: 24)));
+      expect(ledger.canClaimDailyDrip(utcNow: fire), isTrue);
+    });
+
+    test('no reminder while claimable, or when the claim time is unknown', () {
+      final ledger = PlayerCoinLedger();
+      final now = DateTime.utc(2026, 10, 8, 18);
+      expect(ledger.dailyGemsReminderUtc(utcNow: now), isNull);
+      // Legacy data: day stamp only, no instant → do not guess.
+      final legacy = PlayerCoinLedger(
+        lastDailyDripDay: PlayerCoinLedger.denverDayKey(now),
+      );
+      expect(legacy.dailyGemsReminderUtc(utcNow: now), isNull);
+    });
+
+    test('claim instant survives encode/decode', () {
+      final ledger = PlayerCoinLedger();
+      final claim = DateTime.utc(2026, 10, 8, 18, 7);
+      ledger.claimDailyDrip('You', utcNow: claim);
+      final back = PlayerCoinLedger.decode(ledger.encode());
+      expect(back.lastDailyDripAtUtc, claim);
     });
   });
 
