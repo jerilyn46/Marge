@@ -18,9 +18,14 @@ if (keystorePropertiesFile.exists()) {
 // swap in AndroidManifest.ads-on.xml (APPLICATION_ID + ${admobAppId}).
 val admobEnabled = (project.findProperty("ADMOB_ENABLED") as String?)
     ?.equals("true", ignoreCase = true) == true
-val admobAppId = (project.findProperty("ADMOB_APP_ID") as String?)
+val admobSampleAppId = "ca-app-pub-3940256099942544~3347511713"
+val admobInjectedAppId = (project.findProperty("ADMOB_APP_ID") as String?)
     ?.takeIf { it.isNotBlank() }
-    ?: "ca-app-pub-3940256099942544~3347511713"
+// Debug ads-on builds may use Google's sample App ID. Release ads-on builds
+// must inject a real one (-PADMOB_APP_ID) — checked below, fail closed.
+val admobAppId = admobInjectedAppId ?: admobSampleAppId
+val admobAllowTestIds = (project.findProperty("ADMOB_ALLOW_TEST_IDS") as String?)
+    ?.equals("true", ignoreCase = true) == true
 
 android {
     namespace = "com.jerilynroberts.marge"
@@ -95,6 +100,16 @@ gradle.taskGraph.whenReady {
         throw GradleException(
             "Release build needs android/key.properties (upload key). " +
                 "Refusing to fall back to the debug keystore.",
+        )
+    }
+    // Ads-on release: never ship Google's sample App ID by accident.
+    val sampleAppId = admobInjectedAppId == null ||
+        admobInjectedAppId.startsWith("ca-app-pub-3940256099942544")
+    if (wantsRelease && admobEnabled && sampleAppId && !admobAllowTestIds) {
+        throw GradleException(
+            "Ads-on release needs -PADMOB_APP_ID (real App ID, injected at " +
+                "build time). Pass -PADMOB_ALLOW_TEST_IDS=true only for Tester " +
+                "builds that intentionally use Google sample IDs.",
         )
     }
 }
