@@ -264,6 +264,7 @@ class MatchScreen extends ConsumerWidget {
                                   canInteract &&
                                   !showingPotWinFaces &&
                                   turn != null &&
+                                  !turn.canBank &&
                                   turn.rollNumber < 3,
                               theme: skinTheme,
                               onTap: () => ref
@@ -315,9 +316,7 @@ class MatchScreen extends ConsumerWidget {
                       Padding(
                         padding: const EdgeInsets.only(top: 10),
                         child: Text(
-                          canInteract
-                              ? 'Tap dice to keep · roll again or bank'
-                              : '',
+                          canInteract ? 'Winning hand · bank it' : '',
                           style: TextStyle(
                             color: MargeColors.cream.withValues(alpha: 0.7),
                             fontSize: 13,
@@ -440,6 +439,18 @@ class _TurnActions extends StatelessWidget {
         child: ElevatedButton(
           onPressed: canInteract ? onRoll : null,
           child: Text('KEEP ROLLING · ${t.rollsLeft} LEFT'),
+        ),
+      );
+    }
+
+    // A winning (bankable) hand: Bank is the only action on this beat.
+    if (t != null && t.canBank) {
+      return SizedBox(
+        width: double.infinity,
+        child: FilledButton(
+          key: const ValueKey('bank-only'),
+          onPressed: canInteract ? onBank : null,
+          child: const Text('BANK'),
         ),
       );
     }
