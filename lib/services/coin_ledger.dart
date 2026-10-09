@@ -51,10 +51,9 @@ class PlayerCoinLedger implements SeatCoinBook {
     this.lastDailyDripDay,
     this.lastDailyDripAtUtc,
     this.loaded = false,
-    SharedPreferences? prefs,
+    this._prefs,
     this.onChanged,
-  }) : balances = Map<String, int>.from(balances ?? {}),
-       _prefs = prefs;
+  }) : balances = Map<String, int>.from(balances ?? {});
 
   static const startingCents = 100;
 
@@ -91,7 +90,7 @@ class PlayerCoinLedger implements SeatCoinBook {
 
   final bool loaded;
 
-  SharedPreferences? _prefs;
+  final SharedPreferences? _prefs;
   Future<void> _saveChain = Future<void>.value();
 
   /// Fired after a memory write so the lobby can rebuild. Persistence is separate.

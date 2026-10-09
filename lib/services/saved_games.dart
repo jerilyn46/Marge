@@ -58,9 +58,8 @@ class SavedGameStore {
   SavedGameStore({
     List<SavedGame> games = const [],
     this.loaded = false,
-    SharedPreferences? prefs,
-  }) : games = List<SavedGame>.from(games),
-       _prefs = prefs;
+    this._prefs,
+  }) : games = List<SavedGame>.from(games);
 
   static const prefsKey = 'saved_games_v1';
 
@@ -122,8 +121,7 @@ class SavedGameStore {
       final list = decoded['games'];
       final games = <SavedGame>[
         if (list is List)
-          for (final item in list)
-            if (SavedGame.fromJson(item) case final game?) game,
+          for (final item in list) ?SavedGame.fromJson(item),
       ]..sort((a, b) => b.savedAt.compareTo(a.savedAt));
       return SavedGameStore(games: games, loaded: loaded, prefs: prefs);
     } catch (_) {
@@ -284,7 +282,6 @@ class SavedGamesNotifier extends Notifier<List<SavedGame>> {
     }
   }
 }
-
 
 final savedGamesProvider =
     NotifierProvider<SavedGamesNotifier, List<SavedGame>>(

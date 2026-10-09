@@ -98,6 +98,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     if (t == null || !t.hasRolled) return null;
     return '${s.currentSeatIndex}:${t.rollNumber}:${t.dice.values.join()}';
   }
+
   final LocalTurnAlerts _alerts = LocalTurnAlerts();
   Timer? _botTimer;
   String? _lastNoticeSeatId;
@@ -537,8 +538,9 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     final c = _controller;
     if (c == null) return;
     if (c.snapshot.phase == MatchPhase.awaitingHandoff ||
-        c.snapshot.phase == MatchPhase.awaitingShortfall)
+        c.snapshot.phase == MatchPhase.awaitingShortfall) {
       return;
+    }
     if (c.snapshot.currentPlayer.profile.isBot) return;
     final seat = c.snapshot.currentSeatIndex;
     _syncSettings();
@@ -611,8 +613,9 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     final c = _controller;
     if (c == null) return;
     if (c.snapshot.phase == MatchPhase.awaitingHandoff ||
-        c.snapshot.phase == MatchPhase.awaitingShortfall)
+        c.snapshot.phase == MatchPhase.awaitingShortfall) {
       return;
+    }
     if (c.snapshot.currentPlayer.profile.isBot) return;
     final seat = c.snapshot.currentSeatIndex;
     final t = c.snapshot.turn;

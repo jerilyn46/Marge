@@ -537,8 +537,9 @@ class MatchController {
   /// Human / external: toggle keep on a die (only after first roll).
   void toggleKeep(int index) {
     if (_phase == MatchPhase.awaitingHandoff ||
-        _phase == MatchPhase.awaitingShortfall)
+        _phase == MatchPhase.awaitingShortfall) {
       return;
+    }
     final t = _turn;
     if (t == null || !t.hasRolled || t.rollNumber >= 3) return;
     if (_players[_seat].profile.isBot) return;
@@ -547,8 +548,9 @@ class MatchController {
 
   void setKeeps(List<bool> flags) {
     if (_phase == MatchPhase.awaitingHandoff ||
-        _phase == MatchPhase.awaitingShortfall)
+        _phase == MatchPhase.awaitingShortfall) {
       return;
+    }
     final t = _turn;
     if (t == null || !t.hasRolled) return;
     var dice = t.dice;
@@ -562,8 +564,9 @@ class MatchController {
   void roll() {
     if (!_plays(_players[_seat])) return;
     if (_phase == MatchPhase.awaitingHandoff ||
-        _phase == MatchPhase.awaitingShortfall)
+        _phase == MatchPhase.awaitingShortfall) {
       return;
+    }
     final t = _turn;
     if (t == null) return;
     if (t.rollNumber >= 3) return;
@@ -615,8 +618,9 @@ class MatchController {
   /// Refuses to end the turn early on a non-scoring hand while rolls remain.
   void bank() {
     if (_phase == MatchPhase.awaitingHandoff ||
-        _phase == MatchPhase.awaitingShortfall)
+        _phase == MatchPhase.awaitingShortfall) {
       return;
+    }
     final t = _turn;
     if (t == null || !t.hasRolled) return;
     // Refuse to end the turn on a miss while rolls remain. Banking a

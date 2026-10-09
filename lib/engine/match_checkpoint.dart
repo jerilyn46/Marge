@@ -115,8 +115,7 @@ class MatchCheckpoint {
     final playersRaw = raw['players'];
     if (phase == null || config == null || playersRaw is! List) return null;
     final players = <PlayerState>[
-      for (final item in playersRaw)
-        if (_playerFromJson(item) case final p?) p,
+      for (final item in playersRaw) ?_playerFromJson(item),
     ];
     if (players.isEmpty) return null;
     final pot = _asInt(raw['potCents']) ?? 0;
