@@ -95,8 +95,13 @@ void main() {
       tester,
       MatchViewState(snapshot: snap, revealingRoll: true, heldPotCents: won),
     );
-    // During the reveal nothing flies.
+    // During the reveal nothing flies and the gem bank shows its pre-win
+    // value, though the engine has already credited the pot.
     expect(find.byType(PotWinFlight), findsNothing);
+    final after = snap.players[0].bankCents;
+    String count() =>
+        tester.widget<Text>(find.byKey(const ValueKey('gem-bank-count'))).data!;
+    expect(count(), '${after - won}');
 
     driven.push(MatchViewState(snapshot: snap));
     await tester.pump(); // listener → post-frame launch
@@ -130,6 +135,11 @@ void main() {
       lessThan((seat - bank).distance * 0.25),
     );
 
+    expect(count(), '${after - won}'); // first gem not in yet
+    await tester.pump(const Duration(milliseconds: 100));
+    final mid = int.parse(count());
+    expect(mid, greaterThan(after - won)); // ticking as gems land
+
     await tester.pump(
       PotWinFlight.durationFor(
         PotWinFlight.spritesFor(won, snap.config.anteCents),
@@ -138,6 +148,7 @@ void main() {
     );
     await tester.pump();
     expect(find.byType(PotWinFlight), findsNothing);
+    expect(count(), '$after');
   });
 
   testWidgets('Reduce Motion: a pot win flies nothing', (tester) async {
@@ -151,6 +162,10 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(find.byType(PotWinFlight), findsNothing);
+    expect(
+      tester.widget<Text>(find.byKey(const ValueKey('gem-bank-count'))).data,
+      '${snap.players[0].bankCents}',
+    );
   });
 
   test('sprites: one per ante unit, 4..12', () {

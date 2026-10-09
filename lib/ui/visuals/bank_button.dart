@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/sfx_service.dart';
 import '../theme/marge_theme.dart';
+import 'gem_bank_readout.dart' show gemShares;
 import 'pot_of_gems.dart' show GemArt;
 
 /// The only action after a winning roll (DESIGNER_SPEC §2).
@@ -22,6 +23,8 @@ class BankButton extends StatefulWidget {
     this.enabled = true,
     this.sfx,
     this.particleTargetKey,
+    this.onBurstStart,
+    this.onParticleLanded,
   });
 
   final int amountGems;
@@ -29,6 +32,13 @@ class BankButton extends StatefulWidget {
   final bool enabled;
   final SfxService? sfx;
   final GlobalKey? particleTargetKey;
+
+  /// The burst has left the button: [amountGems] are on their way.
+  final VoidCallback? onBurstStart;
+
+  /// A particle reached the gem bank readout carrying this many gems (the
+  /// shares add up to [amountGems]) so the count ticks up as they arrive.
+  final ValueChanged<int>? onParticleLanded;
 
   static const height = 64.0;
   static const enterDelay = Duration(milliseconds: 150);
@@ -156,17 +166,21 @@ class _BankButtonState extends State<BankButton> with TickerProviderStateMixin {
     final to = targetBox != null && targetBox.hasSize
         ? targetBox.localToGlobal(targetBox.size.center(Offset.zero))
         : Offset(MediaQuery.sizeOf(context).width / 2, 24);
+    final shares = gemShares(widget.amountGems, BankButton.particleCount);
+    final landed = widget.onParticleLanded;
     late final OverlayEntry entry;
     entry = OverlayEntry(
       builder: (_) => GemBurst(
         from: from,
         to: to,
+        onLanded: landed == null ? null : (i) => landed(shares[i]),
         onDone: () {
           entry.remove();
         },
       ),
     );
     overlay.insert(entry);
+    widget.onBurstStart?.call();
     // Bank lands as the gems arrive; the turn then resets per the rule.
     _burst.forward().whenComplete(() {
       if (mounted) widget.onBank();
@@ -316,11 +330,15 @@ class GemBurst extends StatefulWidget {
     required this.from,
     required this.to,
     required this.onDone,
+    this.onLanded,
   });
 
   final Offset from;
   final Offset to;
   final VoidCallback onDone;
+
+  /// Particle [i] reached [to].
+  final ValueChanged<int>? onLanded;
 
   @override
   State<GemBurst> createState() => _GemBurstState();
@@ -331,7 +349,30 @@ class _GemBurstState extends State<GemBurst>
   late final AnimationController _c = AnimationController(
     vsync: this,
     duration: BankButton.burstDuration,
-  )..forward().whenComplete(widget.onDone);
+  )..addListener(_tick);
+  var _landed = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _c.forward().whenComplete(() {
+      _tick();
+      widget.onDone();
+    });
+  }
+
+  /// Particles land in stagger order: particle i at i·30 ms + 500 ms.
+  void _tick() {
+    final ms = _c.value * BankButton.burstDuration.inMilliseconds;
+    while (_landed < BankButton.particleCount &&
+        (_c.isCompleted ||
+            ms >=
+                _landed * BankButton.particleStaggerMs +
+                    BankButton.particleFlightMs)) {
+      final i = _landed++;
+      widget.onLanded?.call(i);
+    }
+  }
 
   @override
   void dispose() {

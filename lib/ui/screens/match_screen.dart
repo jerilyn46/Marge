@@ -12,6 +12,7 @@ import '../match_provider.dart';
 import '../theme/marge_theme.dart';
 import '../visuals/bank_button.dart';
 import '../visuals/dice_3d.dart';
+import '../visuals/gem_bank_readout.dart';
 import '../visuals/pot_of_gems.dart';
 import '../visuals/pot_win_flight.dart';
 import '../widgets/confetti_overlay.dart';
@@ -99,6 +100,24 @@ Future<void> _openTableGemsSheet(BuildContext context, WidgetRef ref) async {
   );
 }
 
+/// Whose table gems the top-bar readout shows: the seat taking its turn when
+/// that is a person at this device, otherwise this device's player.
+/// -1 when no person is seated (no number to show).
+@visibleForTesting
+int gemBankOwnerSeat(MatchSnapshot snap) {
+  final players = snap.players;
+  if (snap.currentSeatIndex >= 0 &&
+      snap.currentSeatIndex < players.length &&
+      players[snap.currentSeatIndex].profile.isHuman) {
+    return snap.currentSeatIndex;
+  }
+  final local = players.indexWhere(
+    (p) => p.profile.isHuman && p.profile.name == snap.config.localPlayerName,
+  );
+  if (local >= 0) return local;
+  return players.indexWhere((p) => p.profile.isHuman);
+}
+
 /// What a bank of the current winning hand pays: the per-opponent amount
 /// from every seated opponent, capped by what each can cover (table gems
 /// plus a still-unused House stake), mirroring the engine's soft take.
@@ -129,6 +148,11 @@ class MatchScreen extends ConsumerStatefulWidget {
 class _MatchScreenState extends ConsumerState<MatchScreen> {
   /// Where Bank's gem particles fly: the table-gems readout in the top bar.
   final GlobalKey _gemsTargetKey = GlobalKey(debugLabel: 'gems-target');
+
+  /// The gem bank readout, so flights can tick it up as gems land.
+  final GlobalKey<GemBankReadoutState> _readoutKey = GlobalKey(
+    debugLabel: 'gem-bank-readout',
+  );
 
   /// Last roll whose 3D dice have settled. Input stays locked (and the
   /// win/near-miss readout and Bank wait) until it matches the view.
@@ -173,7 +197,10 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
     if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) return;
     final overlay = Overlay.maybeOf(context);
     final potBox = _potKey.currentContext?.findRenderObject() as RenderBox?;
-    if (overlay == null || potBox == null || !potBox.hasSize) return;
+    if (overlay == null || potBox == null || !potBox.hasSize) {
+      _readoutKey.currentState?.cancel();
+      return;
+    }
     final s = potBox.size.width / PotOfGems.canvas.width;
     final from = potBox.localToGlobal(PotOfGems.landingCenter * s);
     final seatIndex = payout.seatIndex ?? snap.currentSeatIndex;
@@ -182,11 +209,14 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
             ? _centerOf(_seatKeys[seatIndex])
             : null) ??
         from + const Offset(0, 90);
-    final winnerIsHuman =
-        seatIndex >= 0 &&
-        seatIndex < snap.players.length &&
-        snap.players[seatIndex].profile.isHuman;
-    final bank = winnerIsHuman ? _centerOf(_gemsTargetKey) : null;
+    final toReadout = seatIndex == gemBankOwnerSeat(snap);
+    final bank = toReadout ? _centerOf(_gemsTargetKey) : null;
+    if (bank == null) _readoutKey.currentState?.cancel();
+    final sprites = PotWinFlight.spritesFor(
+      payout.amountCents,
+      snap.config.anteCents,
+    );
+    final shares = gemShares(payout.amountCents, sprites);
     final settings = ref.read(settingsProvider);
     final fx = SfxService(
       sfxEnabled: settings.sfxEnabled,
@@ -199,11 +229,9 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
         from: from,
         seat: seat,
         bank: bank,
-        gems: PotWinFlight.spritesFor(
-          payout.amountCents,
-          snap.config.anteCents,
-        ),
+        gems: sprites,
         sfx: fx,
+        onGemBanked: (i) => _readoutKey.currentState?.land(shares[i]),
         onDone: () {
           _flights.remove(entry);
           if (entry.mounted) entry.remove();
@@ -230,6 +258,14 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
         return;
       }
       final snap = next.snapshot;
+      if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) return;
+      if (payout.seatIndex == gemBankOwnerSeat(snap)) {
+        // Hold the readout at its pre-win value; the flight ticks it up.
+        _readoutKey.currentState?.beginIncoming(
+          payout.amountCents,
+          credited: true,
+        );
+      }
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _launchPotWinFlight(snap, payout),
       );
@@ -334,6 +370,13 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
                     _TopBar(
                       snap: snap,
                       gemsKey: _gemsTargetKey,
+                      readoutKey: _readoutKey,
+                      heldWinGems:
+                          view.revealingRoll &&
+                              snap.lastPayout?.kind ==
+                                  ScoreKind.tripleOnesPotWin
+                          ? snap.lastPayout!.amountCents
+                          : 0,
                       onGems: () => _openTableGemsSheet(context, ref),
                     ),
                     Padding(
@@ -512,6 +555,10 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
                           diceSettling: diceSettling,
                           sfx: fx,
                           gemsTargetKey: _gemsTargetKey,
+                          onBurstStart: (gems) =>
+                              _readoutKey.currentState?.beginIncoming(gems),
+                          onParticleLanded: (gems) =>
+                              _readoutKey.currentState?.land(gems),
                           onRoll: () => ref.read(matchProvider.notifier).roll(),
                           onBank: () => ref.read(matchProvider.notifier).bank(),
                         ),
@@ -587,8 +634,13 @@ class _TurnActions extends StatelessWidget {
     required this.bankPreview,
     required this.sfx,
     required this.gemsTargetKey,
+    this.onBurstStart,
+    this.onParticleLanded,
     this.diceSettling = false,
   });
+
+  final ValueChanged<int>? onBurstStart;
+  final ValueChanged<int>? onParticleLanded;
 
   /// 3D dice still in the air: Bank enters only after they settle.
   final bool diceSettling;
@@ -627,6 +679,10 @@ class _TurnActions extends StatelessWidget {
         enabled: canInteract,
         sfx: sfx,
         particleTargetKey: gemsTargetKey,
+        onBurstStart: onBurstStart == null
+            ? null
+            : () => onBurstStart!(bankPreview),
+        onParticleLanded: onParticleLanded,
         onBank: onBank,
       );
     }
@@ -755,9 +811,15 @@ class _TopBar extends ConsumerWidget {
     required this.snap,
     required this.onGems,
     required this.gemsKey,
+    required this.readoutKey,
+    this.heldWinGems = 0,
   });
   final MatchSnapshot snap;
   final GlobalKey gemsKey;
+  final GlobalKey<GemBankReadoutState> readoutKey;
+
+  /// A pot win still being revealed: show the bank as it was before it.
+  final int heldWinGems;
   final VoidCallback onGems;
 
   @override
@@ -813,12 +875,23 @@ class _TopBar extends ConsumerWidget {
               ),
             ),
           ),
-          IconButton(
-            key: gemsKey,
-            tooltip: 'Table gems',
-            onPressed: onGems,
-            icon: const Icon(Icons.diamond_outlined),
+          Builder(
+            builder: (context) {
+              final owner = gemBankOwnerSeat(snap);
+              final seat = owner >= 0 ? snap.players[owner] : null;
+              final held = seat != null && snap.lastPayout?.seatIndex == owner
+                  ? heldWinGems
+                  : 0;
+              return GemBankReadout(
+                key: readoutKey,
+                gems: seat == null ? null : seat.bankCents - held,
+                ownerId: seat?.profile.id ?? '',
+                targetKey: gemsKey,
+                onTap: onGems,
+              );
+            },
           ),
+          const SizedBox(width: 4),
         ],
       ),
     );
