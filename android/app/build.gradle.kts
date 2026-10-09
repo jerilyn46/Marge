@@ -73,15 +73,29 @@ android {
 
     buildTypes {
         release {
-            // Prefer upload keystore when key.properties exists; else debug for local sideload.
-            signingConfig = if (keystorePropertiesFile.exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
-            }
+            // Always the upload key. No debug-keystore fallback: a release
+            // build without android/key.properties fails (see check below).
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             isShrinkResources = false
         }
+    }
+}
+
+// Release builds must be upload-key signed. Fail fast instead of silently
+// producing a debug-signed APK/AAB when key.properties is missing.
+gradle.taskGraph.whenReady {
+    val releaseTaskPrefixes = listOf("assemble", "bundle", "package", "sign")
+    val wantsRelease = allTasks.any { task ->
+        task.project == project &&
+            task.name.contains("Release") &&
+            releaseTaskPrefixes.any { task.name.startsWith(it) }
+    }
+    if (wantsRelease && !keystorePropertiesFile.exists()) {
+        throw GradleException(
+            "Release build needs android/key.properties (upload key). " +
+                "Refusing to fall back to the debug keystore.",
+        )
     }
 }
 
