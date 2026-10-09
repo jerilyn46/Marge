@@ -31,6 +31,23 @@ ads = yes; no user interaction/sharing. Target audience: 18+.
 
 ## Terms of Use effective date
 `assets/legal/terms-of-use.md` is Legal's final text with a `{{EFFECTIVE_DATE}}`
-token. Pass the date at build time, e.g.
-`--dart-define=TERMS_EFFECTIVE_DATE="October 12, 2026"`. Without it the app
-omits the "Effective date" line rather than show a placeholder.
+token (line 3), filled at runtime from the dart-define `TERMS_EFFECTIVE_DATE`.
+
+**Release builds fail without it.** Section 9 refers to "the effective date
+above", so `android/app/build.gradle.kts` stops any release
+`assemble`/`bundle`/`package`/`sign` task unless the dart-define is set and
+non-empty. One flag satisfies both the app and the guard:
+
+```
+flutter build appbundle --release \
+  --dart-define=TERMS_EFFECTIVE_DATE="October 12, 2026"
+```
+
+(Add the usual ads flags from `docs/ads.md` when building ads-on.) Flutter
+passes dart-defines to Gradle as `-Pdart-defines=<base64 list>`; the guard
+decodes that list. A bare `-PTERMS_EFFECTIVE_DATE` is deliberately **not**
+accepted, because it would pass Gradle but never reach the app. Use the same
+date Legal approved; it is shown verbatim on the Terms screen.
+
+Debug, profile and `flutter test` builds may omit it; the Terms screen then
+leaves out the "Effective date" line rather than show a placeholder.

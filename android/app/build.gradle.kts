@@ -6,6 +6,7 @@ plugins {
 
 import java.util.Properties
 import java.io.FileInputStream
+import java.util.Base64
 
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
@@ -26,6 +27,27 @@ val admobInjectedAppId = (project.findProperty("ADMOB_APP_ID") as String?)
 val admobAppId = admobInjectedAppId ?: admobSampleAppId
 val admobAllowTestIds = (project.findProperty("ADMOB_ALLOW_TEST_IDS") as String?)
     ?.equals("true", ignoreCase = true) == true
+
+// Terms of Use effective date (fail closed for release). The Dart side reads
+// String.fromEnvironment('TERMS_EFFECTIVE_DATE'), so the one mechanism that
+// fills the app AND satisfies this check is the dart-define:
+//   flutter build appbundle --release --dart-define=TERMS_EFFECTIVE_DATE=...
+// Flutter hands dart-defines to Gradle as -Pdart-defines=<base64,base64,...>.
+// A bare -PTERMS_EFFECTIVE_DATE would not reach the app, so it is not accepted.
+fun dartDefine(name: String): String? {
+    val raw = project.findProperty("dart-defines") as String? ?: return null
+    return raw.split(",")
+        .mapNotNull { encoded ->
+            try {
+                String(Base64.getDecoder().decode(encoded.trim()), Charsets.UTF_8)
+            } catch (e: IllegalArgumentException) {
+                null
+            }
+        }
+        .firstOrNull { it.startsWith("$name=") }
+        ?.substringAfter("=")
+}
+val termsEffectiveDate = dartDefine("TERMS_EFFECTIVE_DATE")?.trim()?.takeIf { it.isNotEmpty() }
 
 android {
     namespace = "com.jerilynroberts.marge"
@@ -95,6 +117,14 @@ gradle.taskGraph.whenReady {
         task.project == project &&
             task.name.contains("Release") &&
             releaseTaskPrefixes.any { task.name.startsWith(it) }
+    }
+    // Terms §9 refers to "the effective date above": release must carry it.
+    if (wantsRelease && termsEffectiveDate == null) {
+        throw GradleException(
+            "Release build needs the Terms of Use effective date: pass " +
+                "--dart-define=TERMS_EFFECTIVE_DATE=\"<Month D, YYYY>\" to " +
+                "flutter build (see docs/store/README.md).",
+        )
     }
     if (wantsRelease && !keystorePropertiesFile.exists()) {
         throw GradleException(
