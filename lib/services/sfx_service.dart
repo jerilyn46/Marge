@@ -1,13 +1,32 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-/// Lightweight SFX / haptics stubs — no asset pack required.
-/// Calls are safe no-ops when audio is unavailable (CI / linux headless).
+/// Sound cues named in the Designer spec. No audio assets have been
+/// delivered yet, so every cue is a no-op hook ([SfxService.play]); wire a
+/// player here once the files exist. Do not invent audio.
+enum SfxCue {
+  gemTink,
+  tierSwell,
+}
+
+/// Lightweight SFX / haptics. Sound hooks are gated by [sfxEnabled];
+/// haptics are gated by [hapticsEnabled] on their own.
+/// Calls are safe no-ops when audio/haptics are unavailable (CI, linux).
 class SfxService {
   SfxService({this.sfxEnabled = true, this.hapticsEnabled = true});
 
   bool sfxEnabled;
   bool hapticsEnabled;
+
+  /// Optional observer for tests (cue name each time a hook would play).
+  @visibleForTesting
+  void Function(SfxCue cue)? debugOnCue;
+
+  /// Sound hook: no-op until assets exist.
+  void play(SfxCue cue) {
+    if (!sfxEnabled) return;
+    debugOnCue?.call(cue);
+  }
 
   Future<void> roll() async {
     if (!sfxEnabled) return;
@@ -31,6 +50,26 @@ class SfxService {
     if (!sfxEnabled) return;
     debugPrint('[sfx] bust');
     await _haptic(HapticFeedback.selectionClick);
+  }
+
+  // --- Pot of gems ---------------------------------------------------------
+
+  /// One gem landed in the bowl (sound only; the spec caps ~8 per drop).
+  void gemLanded() => play(SfxCue.gemTink);
+
+  /// A drop group started: one light tap for the whole group.
+  void potDropStarted() => _hapticFire(HapticFeedback.lightImpact);
+
+  /// The pot reached a new fill tier.
+  void potTierUp() {
+    play(SfxCue.tierSwell);
+    _hapticFire(HapticFeedback.mediumImpact);
+  }
+
+  /// Fire-and-forget haptic for animation beats (never blocks a frame).
+  void _hapticFire(Future<void> Function() fn) {
+    if (!hapticsEnabled) return;
+    _haptic(fn);
   }
 
   Future<void> _haptic(Future<void> Function() fn) async {

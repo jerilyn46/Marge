@@ -71,6 +71,9 @@ flutter:
   assets:
     - assets/branding/
     - assets/legal/
+    - assets/visuals/bowl/
+    - assets/visuals/gems/
+    - assets/visuals/sparkle/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

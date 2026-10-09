@@ -10,7 +10,7 @@ import 'package:marge/services/settings_service.dart';
 import 'package:marge/ui/match_provider.dart';
 import 'package:marge/ui/screens/match_screen.dart';
 import 'package:marge/ui/theme/marge_theme.dart';
-import 'package:marge/ui/widgets/pot_meter.dart';
+import 'package:marge/ui/visuals/pot_of_gems.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _Scripted implements Random {
@@ -72,7 +72,7 @@ void main() {
     );
     await tester.pump();
 
-    int shownPot() => tester.widget<PotMeter>(find.byType(PotMeter)).potCents;
+    int shownPot() => tester.widget<PotOfGems>(find.byType(PotOfGems)).potGems;
     expect(shownPot(), potBefore);
 
     expect(find.text('ROLL'), findsOneWidget);

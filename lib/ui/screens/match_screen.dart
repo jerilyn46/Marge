@@ -6,8 +6,11 @@ import '../../cosmetics/skins_service.dart';
 import '../../engine/engine.dart';
 import '../../engine/gem_label.dart';
 import '../../services/coin_ledger.dart';
+import '../../services/settings_service.dart';
+import '../../services/sfx_service.dart';
 import '../match_provider.dart';
 import '../theme/marge_theme.dart';
+import '../visuals/pot_of_gems.dart';
 import '../widgets/confetti_overlay.dart';
 import '../widgets/daily_drip_card.dart';
 import '../widgets/die_widget.dart';
@@ -17,7 +20,6 @@ import '../widgets/handoff_strip.dart';
 import '../widgets/payout_banner.dart';
 import '../widgets/play_coin_pack_button.dart';
 import '../widgets/player_chip.dart';
-import '../widgets/pot_meter.dart';
 
 void _moveIntoGame(BuildContext context, WidgetRef ref, int gems) {
   final next = ref.read(matchProvider.notifier).moveFromMainBank(gems);
@@ -144,6 +146,14 @@ class MatchScreen extends ConsumerWidget {
         !shortfallGate &&
         !view.revealingRoll;
     final hotseat = HandoffState.isHotseatCta(snap.config);
+    final settings = ref.watch(settingsProvider);
+    final fx = SfxService(
+      sfxEnabled: settings.sfxEnabled,
+      hapticsEnabled: settings.hapticsEnabled,
+    );
+    // Bowl takes ~15 % of the screen height so Roll never leaves the screen.
+    final potWidth =
+        (MediaQuery.sizeOf(context).height * 0.15).clamp(90.0, 150.0) * 1.6;
 
     // Locked faces during handoff (prefer frozen handoff values).
     // A first-roll triple-ones sweep resets the turn immediately; keep the
@@ -190,7 +200,13 @@ class MatchScreen extends ConsumerWidget {
                     ),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: PotMeter(potCents: view.displayPotCents),
+                      child: PotOfGems(
+                        potGems: view.displayPotCents,
+                        anteGems: snap.config.anteCents,
+                        seats: snap.players.length,
+                        width: potWidth,
+                        sfx: fx,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     if (view.turnNotice != null) ...[
