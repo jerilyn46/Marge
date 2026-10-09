@@ -663,23 +663,31 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
   Future<void> _onNaturalBreak() async {
     if (_breakHandled || !mounted) return;
     _breakHandled = true;
-    // Natural match-end break only — never mid-roll / never over Roll/Keep.
-    // ≤1 interstitial per completed match (InterstitialGate). Fail closed.
-    final ads = ref.read(adsServiceProvider);
-    ads.notifyMatchCompleted();
-    await ads.maybeShowInterstitialAtBreak();
+    // Record the completed match only. No ad while results are on screen;
+    // the interstitial waits for the player's own tap (Continue or Quit).
+    ref.read(adsServiceProvider).notifyMatchCompleted();
+  }
+
+  /// Natural break after a user action. ≤1 interstitial per completed match
+  /// (InterstitialGate). Never mid-roll. Fail closed.
+  Future<void> _adAfterUserAction() async {
+    try {
+      await ref.read(adsServiceProvider).maybeShowInterstitialAtBreak();
+    } catch (_) {
+      // Ads must never block Continue / Quit.
+    }
   }
 
   Future<void> _rematch() async {
+    await _adAfterUserAction();
+    if (!mounted) return;
     // One tap, same seats / ante, no ready-check. Stay on the table.
     ref.read(matchProvider.notifier).rematch();
   }
 
   Future<void> _leaveQuiet() async {
-    // Quiet out — no confirm dialog. Interstitial only if gate still allows
-    // (already shown at match-end → blocked).
-    final ads = ref.read(adsServiceProvider);
-    await ads.maybeShowInterstitialAtBreak();
+    // Quiet out — no confirm dialog. Interstitial only if the gate allows.
+    await _adAfterUserAction();
     if (!mounted) return;
     await ref.read(matchProvider.notifier).leaveUnfinished();
     if (!mounted) return;
