@@ -7,6 +7,8 @@ import 'package:flutter/services.dart';
 enum SfxCue {
   gemTink,
   tierSwell,
+  bankChime,
+  gemChimeCascade,
 }
 
 /// Lightweight SFX / haptics. Sound hooks are gated by [sfxEnabled];
@@ -63,6 +65,20 @@ class SfxService {
   /// The pot reached a new fill tier.
   void potTierUp() {
     play(SfxCue.tierSwell);
+    _hapticFire(HapticFeedback.mediumImpact);
+  }
+
+  // --- Bank button ---------------------------------------------------------
+
+  /// Bank button entered: light tap + short bright chime.
+  void bankEntered() {
+    play(SfxCue.bankChime);
+    _hapticFire(HapticFeedback.lightImpact);
+  }
+
+  /// Bank tapped: medium tap + glassy chime cascade with the particles.
+  void bankTapped() {
+    play(SfxCue.gemChimeCascade);
     _hapticFire(HapticFeedback.mediumImpact);
   }
 

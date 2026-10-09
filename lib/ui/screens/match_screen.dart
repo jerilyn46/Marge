@@ -10,6 +10,7 @@ import '../../services/settings_service.dart';
 import '../../services/sfx_service.dart';
 import '../match_provider.dart';
 import '../theme/marge_theme.dart';
+import '../visuals/bank_button.dart';
 import '../visuals/pot_of_gems.dart';
 import '../widgets/confetti_overlay.dart';
 import '../widgets/daily_drip_card.dart';
@@ -97,11 +98,39 @@ Future<void> _openTableGemsSheet(BuildContext context, WidgetRef ref) async {
   );
 }
 
-class MatchScreen extends ConsumerWidget {
+/// What a bank of the current winning hand pays: the per-opponent amount
+/// from every seated opponent, capped by what each can cover (table gems
+/// plus a still-unused House stake), mirroring the engine's soft take.
+@visibleForTesting
+int bankPreviewGems(MatchSnapshot snap) {
+  final t = snap.turn;
+  if (t == null || !t.lastScore.isScoring) return 0;
+  final each = t.lastScore.perOpponentCents;
+  var total = 0;
+  for (var i = 0; i < snap.players.length; i++) {
+    if (i == snap.currentSeatIndex) continue;
+    final p = snap.players[i];
+    if (!p.profile.participates || p.eliminated) continue;
+    final cover =
+        p.bankCents + (p.usedHouseStake ? 0 : snap.config.houseStakeCents);
+    total += each < cover ? each : cover;
+  }
+  return total;
+}
+
+class MatchScreen extends ConsumerStatefulWidget {
   const MatchScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MatchScreen> createState() => _MatchScreenState();
+}
+
+class _MatchScreenState extends ConsumerState<MatchScreen> {
+  /// Where Bank's gem particles fly: the table-gems readout in the top bar.
+  final GlobalKey _gemsTargetKey = GlobalKey(debugLabel: 'gems-target');
+
+  @override
+  Widget build(BuildContext context) {
     final view = ref.watch(matchProvider);
     final skinTheme = ref.watch(cosmeticsProvider).equippedTheme;
     ref.listen(matchProvider, (prev, next) {
@@ -196,6 +225,7 @@ class MatchScreen extends ConsumerWidget {
                   children: [
                     _TopBar(
                       snap: snap,
+                      gemsKey: _gemsTargetKey,
                       onGems: () => _openTableGemsSheet(context, ref),
                     ),
                     Padding(
@@ -365,6 +395,9 @@ class MatchScreen extends ConsumerWidget {
                         child: _TurnActions(
                           canInteract: canInteract,
                           turn: turn,
+                          bankPreview: bankPreviewGems(snap),
+                          sfx: fx,
+                          gemsTargetKey: _gemsTargetKey,
                           onRoll: () => ref.read(matchProvider.notifier).roll(),
                           onBank: () => ref.read(matchProvider.notifier).bank(),
                         ),
@@ -437,10 +470,16 @@ class _TurnActions extends StatelessWidget {
     required this.turn,
     required this.onRoll,
     required this.onBank,
+    required this.bankPreview,
+    required this.sfx,
+    required this.gemsTargetKey,
   });
 
   final bool canInteract;
   final TurnState? turn;
+  final int bankPreview;
+  final SfxService sfx;
+  final GlobalKey gemsTargetKey;
   final VoidCallback onRoll;
   final VoidCallback onBank;
 
@@ -461,13 +500,13 @@ class _TurnActions extends StatelessWidget {
 
     // A winning (bankable) hand: Bank is the only action on this beat.
     if (t != null && t.canBank) {
-      return SizedBox(
-        width: double.infinity,
-        child: FilledButton(
-          key: const ValueKey('bank-only'),
-          onPressed: canInteract ? onBank : null,
-          child: const Text('BANK'),
-        ),
+      return BankButton(
+        key: const ValueKey('bank-only'),
+        amountGems: bankPreview,
+        enabled: canInteract,
+        sfx: sfx,
+        particleTargetKey: gemsTargetKey,
+        onBank: onBank,
       );
     }
 
@@ -591,8 +630,13 @@ class _TurnBanner extends StatelessWidget {
 }
 
 class _TopBar extends ConsumerWidget {
-  const _TopBar({required this.snap, required this.onGems});
+  const _TopBar({
+    required this.snap,
+    required this.onGems,
+    required this.gemsKey,
+  });
   final MatchSnapshot snap;
+  final GlobalKey gemsKey;
   final VoidCallback onGems;
 
   @override
@@ -649,6 +693,7 @@ class _TopBar extends ConsumerWidget {
             ),
           ),
           IconButton(
+            key: gemsKey,
             tooltip: 'Table gems',
             onPressed: onGems,
             icon: const Icon(Icons.diamond_outlined),

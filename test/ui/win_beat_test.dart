@@ -62,7 +62,10 @@ void main() {
 
     await _pump(tester, MatchViewState(snapshot: snap));
     expect(find.byKey(const ValueKey('bank-only')), findsOneWidget);
-    expect(find.text('BANK'), findsOneWidget);
+    expect(find.text('Bank'), findsOneWidget);
+    // Amount under the label: two opponents? one bot here → 1 × trips pay.
+    expect(find.text('+${bankPreviewGems(snap)} gems'), findsOneWidget);
+    expect(bankPreviewGems(snap), snap.turn!.lastScore.perOpponentCents);
     expect(find.textContaining('ROLL AGAIN'), findsNothing);
     expect(find.text('ROLL'), findsNothing);
   });
