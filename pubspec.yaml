@@ -44,6 +44,7 @@ dependencies:
   # Already pulled in by flutter_local_notifications; used for the daily
   # free-gems reminder (UTC only, no tz database load).
   timezone: ^0.10.1
+  url_launcher: ^6.3.3
 
 dev_dependencies:
   flutter_test:
@@ -69,6 +70,7 @@ flutter:
 
   assets:
     - assets/branding/
+    - assets/legal/
 
   # To add assets to your application, add an assets section, like this:
   # assets:
