@@ -12,6 +12,7 @@ import '../../services/settings_service.dart';
 import '../../startup_log.dart';
 import '../match_provider.dart';
 import '../theme/marge_theme.dart';
+import '../widgets/daily_gems_ready_prompt.dart';
 import '../widgets/felt_hero_backdrop.dart';
 import '../widgets/gem_bank_sheet.dart';
 import '../widgets/get_more_gems_button.dart';
@@ -52,152 +53,163 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final ante = const MatchConfig().anteCents;
     final needsGems = gemBank < ante;
 
-    return Scaffold(
-      body: FeltHeroBackdrop(
-        child: SafeArea(
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: Row(
-                  children: [
-                    _FriendsPeek(
-                      seatedCount: seated.length,
-                      totalCount: friends.friends.length,
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const FriendsScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                    const Spacer(),
-                    _GemJewelTray(
-                      gems: gemBank,
-                      onTap: () => showGemBankSheet(context, ref),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+    return DailyGemsReadyPrompt(
+      child: Scaffold(
+        body: FeltHeroBackdrop(
+          child: SafeArea(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: Row(
                     children: [
-                      const SizedBox(height: 24),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const DieWidgetMini(value: 5),
-                          const SizedBox(width: 12),
-                          const DieWidgetMini(value: 3),
-                          const SizedBox(width: 12),
-                          const DieWidgetMini(value: 6),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Marge',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                              fontWeight: FontWeight.w900,
-                              color: MargeColors.lamp,
-                              letterSpacing: 2,
-                              shadows: [
-                                Shadow(
-                                  color: Colors.black.withValues(alpha: 0.45),
-                                  blurRadius: 12,
-                                  offset: const Offset(0, 3),
-                                ),
-                              ],
-                            ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'An evening table with friends',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              color: MargeColors.cream.withValues(alpha: 0.9),
-                              fontWeight: FontWeight.w600,
-                            ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Chase the pot. Bank the trips.',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: MargeColors.cream.withValues(alpha: 0.72),
-                            ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Virtual gems only — no real money.',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: MargeColors.cream.withValues(alpha: 0.58),
-                              fontWeight: FontWeight.w600,
-                            ),
-                      ),
-                      const SizedBox(height: 28),
-                      _PlayPill(
-                        onPressed: () {
+                      _FriendsPeek(
+                        seatedCount: seated.length,
+                        totalCount: friends.friends.length,
+                        onTap: () {
                           Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (_) => const SetupScreen(),
+                              builder: (_) => const FriendsScreen(),
                             ),
                           );
                         },
                       ),
-                      if (savedGames.isNotEmpty) ...[
-                        const SizedBox(height: 18),
-                        _ResumeSection(
-                          games: savedGames,
-                          onResume: (id) {
-                            final ok =
-                                ref.read(matchProvider.notifier).resume(id);
-                            if (!ok || !context.mounted) return;
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => const MatchScreen(),
-                              ),
-                            );
-                          },
-                          onDrop: (id) =>
-                              ref.read(matchProvider.notifier).dropSaved(id),
-                        ),
-                      ],
-                      const SizedBox(height: 22),
-                      _SecondaryRow(
-                        onShop: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const ShopScreen(),
-                            ),
-                          );
-                        },
-                        onMore: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const MoreScreen(),
-                            ),
-                          );
-                        },
+                      const Spacer(),
+                      _GemJewelTray(
+                        gems: gemBank,
+                        onTap: () => showGemBankSheet(context, ref),
                       ),
-                      if (needsGems) ...[
-                        const SizedBox(height: 14),
-                        const GetMoreGemsButton(),
-                      ],
-                      const SizedBox(height: 18),
-                      // Reserved lobby strip — AdMob banner when enabled, else house art.
-                      const ReservedBannerStrip(),
-                      const SizedBox(height: 12),
                     ],
                   ),
                 ),
-              ),
-            ],
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const SizedBox(height: 24),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const DieWidgetMini(value: 5),
+                            const SizedBox(width: 12),
+                            const DieWidgetMini(value: 3),
+                            const SizedBox(width: 12),
+                            const DieWidgetMini(value: 6),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Marge',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.displaySmall
+                              ?.copyWith(
+                                fontWeight: FontWeight.w900,
+                                color: MargeColors.lamp,
+                                letterSpacing: 2,
+                                shadows: [
+                                  Shadow(
+                                    color: Colors.black.withValues(alpha: 0.45),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                ],
+                              ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'An evening table with friends',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                color: MargeColors.cream.withValues(alpha: 0.9),
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Chase the pot. Bank the trips.',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: MargeColors.cream.withValues(
+                                  alpha: 0.72,
+                                ),
+                              ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Virtual gems only — no real money.',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: MargeColors.cream.withValues(
+                                  alpha: 0.58,
+                                ),
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                        const SizedBox(height: 28),
+                        _PlayPill(
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const SetupScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        if (savedGames.isNotEmpty) ...[
+                          const SizedBox(height: 18),
+                          _ResumeSection(
+                            games: savedGames,
+                            onResume: (id) {
+                              final ok = ref
+                                  .read(matchProvider.notifier)
+                                  .resume(id);
+                              if (!ok || !context.mounted) return;
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => const MatchScreen(),
+                                ),
+                              );
+                            },
+                            onDrop: (id) =>
+                                ref.read(matchProvider.notifier).dropSaved(id),
+                          ),
+                        ],
+                        const SizedBox(height: 22),
+                        _SecondaryRow(
+                          onShop: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const ShopScreen(),
+                              ),
+                            );
+                          },
+                          onMore: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const MoreScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        if (needsGems) ...[
+                          const SizedBox(height: 14),
+                          const GetMoreGemsButton(),
+                        ],
+                        const SizedBox(height: 18),
+                        // Reserved lobby strip — AdMob banner when enabled, else house art.
+                        const ReservedBannerStrip(),
+                        const SizedBox(height: 12),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -291,9 +303,7 @@ class _GemJewelTray extends StatelessWidget {
           decoration: BoxDecoration(
             color: MargeColors.velvet.withValues(alpha: 0.55),
             borderRadius: BorderRadius.circular(22),
-            border: Border.all(
-              color: MargeColors.gold.withValues(alpha: 0.65),
-            ),
+            border: Border.all(color: MargeColors.gold.withValues(alpha: 0.65)),
             boxShadow: [
               BoxShadow(
                 color: MargeColors.lamp.withValues(alpha: 0.12),
@@ -338,8 +348,8 @@ class _FriendsPeek extends StatelessWidget {
     final label = totalCount == 0
         ? 'Friends'
         : seatedCount > 0
-            ? 'Friends · $seatedCount seated'
-            : 'Friends · $totalCount';
+        ? 'Friends · $seatedCount seated'
+        : 'Friends · $totalCount';
     return TextButton.icon(
       onPressed: onTap,
       icon: const Icon(Icons.people_alt_rounded, color: MargeColors.cream),
@@ -404,10 +414,8 @@ class _ResumeSection extends StatelessWidget {
       children: [
         Text(
           'Continue',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w900,
-                color: MargeColors.lamp,
-              ),
+          style: Theme.of(context).textTheme.titleMedium
+              ?.copyWith(fontWeight: FontWeight.w900, color: MargeColors.lamp),
         ),
         const SizedBox(height: 8),
         for (final game in shown) ...[

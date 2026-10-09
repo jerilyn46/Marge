@@ -41,6 +41,9 @@ dependencies:
   google_mobile_ads: ^9.1.0
   flutter_local_notifications: ^19.4.0
   in_app_purchase: ^3.3.0
+  # Already pulled in by flutter_local_notifications; used for the daily
+  # free-gems reminder (UTC only, no tz database load).
+  timezone: ^0.10.1
 
 dev_dependencies:
   flutter_test:

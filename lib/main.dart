@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'ads/ad_ids.dart';
 import 'ads/ads_service.dart';
 import 'services/coin_ledger.dart';
+import 'services/daily_gems_reminder.dart';
 import 'services/friends_service.dart';
 import 'services/saved_games.dart';
 import 'services/settings_service.dart';
@@ -86,6 +87,7 @@ class MargeApp extends ConsumerStatefulWidget {
 
 class _MargeAppState extends ConsumerState<MargeApp>
     with WidgetsBindingObserver {
+  final DailyGemsReminder _gemsReminder = DailyGemsReminder();
   @override
   void initState() {
     super.initState();
@@ -103,9 +105,18 @@ class _MargeAppState extends ConsumerState<MargeApp>
     if (state == AppLifecycleState.resumed) {
       // Refresh resume list after background / process pause.
       unawaited(ref.read(savedGamesProvider.notifier).reload());
+      // Foreground: never let the gems reminder pop over a roll. Home shows
+      // the in-app prompt instead.
+      unawaited(_gemsReminder.cancel());
       return;
     }
     ref.read(matchProvider.notifier).persistUnfinished();
+    if (state == AppLifecycleState.paused) {
+      // Backgrounded with today's drip already claimed: one reminder for when
+      // the existing daily-drip clock rolls over (only if already permitted).
+      final next = ref.read(coinLedgerProvider).nextDailyDripUtc();
+      if (next != null) unawaited(_gemsReminder.scheduleIfPermitted(next));
+    }
   }
 
   @override

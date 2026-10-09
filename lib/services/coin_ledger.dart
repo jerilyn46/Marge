@@ -161,6 +161,21 @@ class PlayerCoinLedger implements SeatCoinBook {
     return lastDailyDripDay != day;
   }
 
+  /// When the next daily drip unlocks, on the existing Denver-day clock
+  /// (no second timer). Null when the drip can already be claimed.
+  DateTime? nextDailyDripUtc({DateTime? utcNow}) {
+    final now = (utcNow ?? DateTime.now().toUtc()).toUtc();
+    if (canClaimDailyDrip(utcNow: now)) return null;
+    return nextDenverMidnightUtc(now);
+  }
+
+  /// Next America/Denver midnight after [utcNow], as a UTC instant.
+  static DateTime nextDenverMidnightUtc(DateTime utcNow) {
+    final wall = DenverTime.wallClock(utcNow.toUtc());
+    final tomorrow = DateTime.utc(wall.year, wall.month, wall.day + 1);
+    return DenverTime.localToUtc(tomorrow.year, tomorrow.month, tomorrow.day);
+  }
+
   /// Soft bankrupt / daily free drip. One claim per Denver day.
   ///
   /// Returns gems granted, or null if already claimed / refused.
