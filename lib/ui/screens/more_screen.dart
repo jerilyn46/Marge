@@ -72,7 +72,7 @@ class MoreScreen extends ConsumerWidget {
                         context: context,
                         applicationName: 'Marge',
                         applicationLegalese:
-                            'Playful table chips only. Not a cash game.',
+                            'Playful table gems only. Not a cash game.',
                       );
                     },
                   ),
