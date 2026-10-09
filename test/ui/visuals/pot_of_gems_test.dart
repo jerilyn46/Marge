@@ -96,10 +96,7 @@ void main() {
       await precacheAssets(tester, GemArt.potAssets);
       await tester.pumpWidget(feltHost(pot(tier * 20)));
       await tester.pump();
-      expect(
-        PotOfGems.tierFor(tier * 20, 10, 2),
-        tier,
-      );
+      expect(PotOfGems.tierFor(tier * 20, 10, 2), tier);
       await expectLater(
         find.byKey(const ValueKey('pot')),
         matchesGoldenFile('goldens/pot_tier_$tier.png'),

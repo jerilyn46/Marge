@@ -35,9 +35,14 @@ class MatchViewState {
     /// Pot shown while [revealingRoll]: the value before the sweep and
     /// re-ante, so the pot changes together with the banner, not before.
     this.heldPotCents,
+
+    /// Bumped every time dice are thrown (human or bot) so the table can
+    /// play the 3D roll toward the already-decided faces.
+    this.rollSerial = 0,
   });
 
   final MatchSnapshot snapshot;
+  final int rollSerial;
   final bool showConfetti;
   final bool busyBot;
   final String? unlockBanner;
@@ -66,7 +71,9 @@ class MatchViewState {
     bool? revealingRoll,
     int? heldPotCents,
     bool clearHeldPot = false,
+    int? rollSerial,
   }) => MatchViewState(
+    rollSerial: rollSerial ?? this.rollSerial,
     snapshot: snapshot ?? this.snapshot,
     showConfetti: showConfetti ?? this.showConfetti,
     busyBot: busyBot ?? this.busyBot,
@@ -83,6 +90,14 @@ class MatchViewState {
 class MatchNotifier extends Notifier<MatchViewState?> {
   MatchController? _controller;
   final SfxService _sfx = SfxService();
+  int _rollSerial = 0;
+
+  /// Identity of the dice currently thrown (seat, roll number, faces).
+  static String? _throwKey(MatchSnapshot s) {
+    final t = s.turn;
+    if (t == null || !t.hasRolled) return null;
+    return '${s.currentSeatIndex}:${t.rollNumber}:${t.dice.values.join()}';
+  }
   final LocalTurnAlerts _alerts = LocalTurnAlerts();
   Timer? _botTimer;
   String? _lastNoticeSeatId;
@@ -194,7 +209,10 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     _controller!.startMatch(carryPotGems: carryPotGems);
     ref.read(cosmeticsProvider.notifier).beginMatch();
     _syncSettings();
-    state = MatchViewState(snapshot: _controller!.snapshot);
+    state = MatchViewState(
+      snapshot: _controller!.snapshot,
+      rollSerial: _rollSerial,
+    );
     _announceTurn();
     _persistActive();
     _scheduleBots();
@@ -282,7 +300,10 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     );
     _controller!.restore(game.table);
     _syncSettings();
-    state = MatchViewState(snapshot: _controller!.snapshot);
+    state = MatchViewState(
+      snapshot: _controller!.snapshot,
+      rollSerial: _rollSerial,
+    );
     _announceTurn();
     _scheduleBots();
     return true;
@@ -448,6 +469,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       turnNotice: state?.turnNotice,
       revealingRoll: revealingRoll,
       heldPotCents: revealingRoll ? heldPotCents : null,
+      rollSerial: _rollSerial,
     );
     _announceTurn();
     _persistActive();
@@ -523,6 +545,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     await _sfx.roll();
     final potBefore = c.snapshot.potCents;
     c.roll();
+    _rollSerial++;
     final afterTurn = c.snapshot.turn;
     // Miss with rolls left: same player, still playing. Do not bust or hand off.
     if (afterTurn != null &&
@@ -676,8 +699,16 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       _syncSettings();
       final before = _controller!.snapshot.lastPayout;
       final potBefore = _controller!.snapshot.potCents;
+      final throwBefore = _throwKey(_controller!.snapshot);
       _controller!.tickBot();
       final after = _controller!.snapshot.lastPayout;
+      final throwAfter = _throwKey(_controller!.snapshot);
+      if ((throwAfter != null && throwAfter != throwBefore) ||
+          (after != null &&
+              after != before &&
+              after.kind == ScoreKind.tripleOnesPotWin)) {
+        _rollSerial++;
+      }
       if (after != null &&
           after != before &&
           after.kind == ScoreKind.tripleOnesPotWin) {

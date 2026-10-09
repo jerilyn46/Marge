@@ -25,10 +25,12 @@ void main() {
   testWidgets('enter: 0.85 → 1.05 → 1.0 after a 150 ms beat', (tester) async {
     double scale() => tester
         .widget<Transform>(
-          find.descendant(
-            of: find.byType(BankButton),
-            matching: find.byType(Transform),
-          ).first,
+          find
+              .descendant(
+                of: find.byType(BankButton),
+                matching: find.byType(Transform),
+              )
+              .first,
         )
         .transform
         .storage[0]; // x scale
@@ -79,7 +81,10 @@ void main() {
   testWidgets('Reduce Motion: static, no loops, banks at once', (tester) async {
     var banks = 0;
     await tester.pumpWidget(
-      host(BankButton(amountGems: 10, onBank: () => banks++), reduceMotion: true),
+      host(
+        BankButton(amountGems: 10, onBank: () => banks++),
+        reduceMotion: true,
+      ),
     );
     await tester.pump();
     expect(tester.hasRunningAnimations, isFalse);
@@ -93,7 +98,9 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await precacheAssets(tester, GemArt.potAssets);
     await tester.pumpWidget(
-      host(BankButton(key: const ValueKey('bank'), amountGems: 340, onBank: () {})),
+      host(
+        BankButton(key: const ValueKey('bank'), amountGems: 340, onBank: () {}),
+      ),
     );
     // Past the enter (500 ms), one frame to start the idle loops, then a
     // fixed idle phase: sheen 300 ms into its 600 ms sweep (mid-button),

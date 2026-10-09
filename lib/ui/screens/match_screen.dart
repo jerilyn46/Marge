@@ -11,10 +11,10 @@ import '../../services/sfx_service.dart';
 import '../match_provider.dart';
 import '../theme/marge_theme.dart';
 import '../visuals/bank_button.dart';
+import '../visuals/dice_3d.dart';
 import '../visuals/pot_of_gems.dart';
 import '../widgets/confetti_overlay.dart';
 import '../widgets/daily_drip_card.dart';
-import '../widgets/die_widget.dart';
 import '../widgets/get_more_gems_button.dart';
 import '../widgets/gem_shortfall_dialog.dart';
 import '../widgets/handoff_strip.dart';
@@ -129,6 +129,10 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
   /// Where Bank's gem particles fly: the table-gems readout in the top bar.
   final GlobalKey _gemsTargetKey = GlobalKey(debugLabel: 'gems-target');
 
+  /// Last roll whose 3D dice have settled. Input stays locked (and the
+  /// win/near-miss readout and Bank wait) until it matches the view.
+  int? _settledSerial;
+
   @override
   Widget build(BuildContext context) {
     final view = ref.watch(matchProvider);
@@ -169,11 +173,14 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
     // Local human can roll only while the table is live — not during handoff
     // or a shortfall choice. Gem tools live in a sheet so they never crowd
     // Roll off a phone screen.
+    _settledSerial ??= view.rollSerial;
+    final diceSettling = view.rollSerial != _settledSerial;
     final canInteract = isHumanTurn &&
         !view.busyBot &&
         !gated &&
         !shortfallGate &&
-        !view.revealingRoll;
+        !view.revealingRoll &&
+        !diceSettling;
     final hotseat = HandoffState.isHotseatCta(snap.config);
     final settings = ref.watch(settingsProvider);
     final fx = SfxService(
@@ -281,7 +288,8 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
                     ),
                     if (snap.lastPayout != null &&
                         !showStrip &&
-                        !view.revealingRoll) ...[
+                        !view.revealingRoll &&
+                        !diceSettling) ...[
                       const SizedBox(height: 10),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -295,52 +303,48 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
                       gated: gated,
                     ),
                     const SizedBox(height: 16),
-                    if (lockedFaces != null)
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          for (var i = 0; i < 3; i++) ...[
-                            if (i > 0) const SizedBox(width: 12),
-                            DieWidget(
-                              value: lockedFaces[i],
-                              kept: gated || showingPotWinFaces
+                    DiceTray(
+                      values: lockedFaces ?? const [1, 1, 1],
+                      dim: lockedFaces == null,
+                      rollSerial: view.rollSerial,
+                      // Gold outline = kept (held through handoff and the
+                      // pot-win display too). Kept dice never tumble.
+                      kept: [
+                        for (var i = 0; i < 3; i++)
+                          lockedFaces != null &&
+                              (gated || showingPotWinFaces
                                   ? true
-                                  : (turn?.dice.dice[i].kept ?? false),
-                              enabled:
-                                  canInteract &&
-                                  !showingPotWinFaces &&
-                                  turn != null &&
-                                  !turn.canBank &&
-                                  turn.rollNumber < 3,
-                              theme: skinTheme,
-                              onTap: () => ref
-                                  .read(matchProvider.notifier)
-                                  .toggleKeep(i),
-                            ),
-                          ],
-                        ],
-                      )
-                    else
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: List.generate(
-                          3,
-                          (i) => Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 6),
-                            child: Opacity(
-                              opacity: 0.35,
-                              child: DieWidget(
-                                value: 1,
-                                kept: false,
-                                enabled: false,
-                                size: 64,
-                                theme: skinTheme,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    if (!gated && turn != null && turn.mustKeepRolling)
+                                  : (turn?.dice.dice[i].kept ?? false)),
+                      ],
+                      animate: [
+                        for (var i = 0; i < 3; i++)
+                          !(turn != null &&
+                              turn.hasRolled &&
+                              turn.dice.dice[i].kept),
+                      ],
+                      enabled: [
+                        for (var i = 0; i < 3; i++)
+                          lockedFaces != null &&
+                              canInteract &&
+                              !showingPotWinFaces &&
+                              turn != null &&
+                              !turn.canBank &&
+                              turn.rollNumber < 3,
+                      ],
+                      onTap: (i) =>
+                          ref.read(matchProvider.notifier).toggleKeep(i),
+                      size: 64,
+                      theme: skinTheme,
+                      sfx: fx,
+                      onSettled: (serial) {
+                        if (mounted && serial != _settledSerial) {
+                          setState(() => _settledSerial = serial);
+                        }
+                      },
+                    ),
+                    if (diceSettling)
+                      const SizedBox.shrink()
+                    else if (!gated && turn != null && turn.mustKeepRolling)
                       Padding(
                         padding: const EdgeInsets.only(top: 10),
                         child: Text(
@@ -369,7 +373,10 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
                           ),
                         ),
                       ),
-                    if (!gated && turn != null && turn.lastScore.isScoring)
+                    if (!gated &&
+                        !diceSettling &&
+                        turn != null &&
+                        turn.lastScore.isScoring)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: Text(
@@ -396,6 +403,7 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
                           canInteract: canInteract,
                           turn: turn,
                           bankPreview: bankPreviewGems(snap),
+                          diceSettling: diceSettling,
                           sfx: fx,
                           gemsTargetKey: _gemsTargetKey,
                           onRoll: () => ref.read(matchProvider.notifier).roll(),
@@ -473,7 +481,11 @@ class _TurnActions extends StatelessWidget {
     required this.bankPreview,
     required this.sfx,
     required this.gemsTargetKey,
+    this.diceSettling = false,
   });
+
+  /// 3D dice still in the air: Bank enters only after they settle.
+  final bool diceSettling;
 
   final bool canInteract;
   final TurnState? turn;
@@ -500,6 +512,9 @@ class _TurnActions extends StatelessWidget {
 
     // A winning (bankable) hand: Bank is the only action on this beat.
     if (t != null && t.canBank) {
+      if (diceSettling) {
+        return const SizedBox(height: BankButton.height);
+      }
       return BankButton(
         key: const ValueKey('bank-only'),
         amountGems: bankPreview,

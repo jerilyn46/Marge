@@ -8,7 +8,7 @@ import 'package:marge/engine/match_controller.dart';
 import 'package:marge/ui/match_provider.dart';
 import 'package:marge/ui/screens/match_screen.dart';
 import 'package:marge/ui/theme/marge_theme.dart';
-import 'package:marge/ui/widgets/die_widget.dart';
+import 'package:marge/ui/visuals/dice_3d.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _Scripted implements Random {
@@ -86,7 +86,7 @@ void main() {
 
     // Beat 1: dice on the table, banner held.
     await _pump(tester, MatchViewState(snapshot: snap, revealingRoll: true));
-    final dice = tester.widgetList<DieWidget>(find.byType(DieWidget)).toList();
+    final dice = tester.widgetList<DiceCube>(find.byType(DiceCube)).toList();
     expect(dice.map((d) => d.value).take(3), [1, 1, 1]);
     expect(find.textContaining('sweeps the pot'), findsNothing);
 
@@ -95,7 +95,7 @@ void main() {
     await _pump(tester, MatchViewState(snapshot: snap));
     expect(find.textContaining('sweeps the pot'), findsOneWidget);
     final dice2 =
-        tester.widgetList<DieWidget>(find.byType(DieWidget)).toList();
+        tester.widgetList<DiceCube>(find.byType(DiceCube)).toList();
     expect(dice2.map((d) => d.value).take(3), [1, 1, 1]);
   });
 }

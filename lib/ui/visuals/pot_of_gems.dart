@@ -128,15 +128,15 @@ class _PotOfGemsState extends State<PotOfGems>
   int _dropSerial = 0;
   int _fromTier = 0;
 
-  bool get _reduceMotion => MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+  bool get _reduceMotion =>
+      MediaQuery.maybeDisableAnimationsOf(context) ?? false;
 
-  int _tierOf(int pot) =>
-      PotOfGems.tierFor(pot, widget.anteGems, widget.seats);
+  int _tierOf(int pot) => PotOfGems.tierFor(pot, widget.anteGems, widget.seats);
 
   @override
-  void didUpdateWidget(PotOfGems old) {
-    super.didUpdateWidget(old);
-    if (widget.potGems == old.potGems) return;
+  void didUpdateWidget(PotOfGems oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.potGems == oldWidget.potGems) return;
     final from = _shown;
     final to = widget.potGems;
     final tierBefore = _tierOf(from);
@@ -158,21 +158,18 @@ class _PotOfGemsState extends State<PotOfGems>
     final rnd = math.Random(7919 * _dropSerial + to);
     if (to > from) {
       final n = PotOfGems.gemsForDelta(to - from, widget.anteGems);
-      _flyers = [
-        for (var i = 0; i < n; i++) _newFlyer(rnd, i, falling: true),
-      ];
+      _flyers = [for (var i = 0; i < n; i++) _newFlyer(rnd, i, falling: true)];
       _mode = _Mode.drop;
       _c.duration = Duration(
-        milliseconds: PotOfGems.fallMs +
+        milliseconds:
+            PotOfGems.fallMs +
             PotOfGems.staggerMs * (n - 1) +
             PotOfGems.sparkleMs,
       );
       widget.sfx?.potDropStarted();
     } else {
       final n = (2 + 2 * tierBefore).clamp(2, PotOfGems.maxGemsPerDrop);
-      _flyers = [
-        for (var i = 0; i < n; i++) _newFlyer(rnd, i, falling: false),
-      ];
+      _flyers = [for (var i = 0; i < n; i++) _newFlyer(rnd, i, falling: false)];
       _mode = _Mode.drain;
       _c.duration = const Duration(milliseconds: PotOfGems.drainMs);
     }
@@ -184,7 +181,8 @@ class _PotOfGemsState extends State<PotOfGems>
     // Uniform point in the landing ellipse.
     final a = rnd.nextDouble() * 2 * math.pi;
     final r = math.sqrt(rnd.nextDouble());
-    final land = PotOfGems.landingCenter +
+    final land =
+        PotOfGems.landingCenter +
         Offset(
           math.cos(a) * r * PotOfGems.landingRx,
           math.sin(a) * r * PotOfGems.landingRy,
@@ -192,7 +190,9 @@ class _PotOfGemsState extends State<PotOfGems>
     final sky = Offset(land.dx + (rnd.nextDouble() - 0.5) * 60, -28);
     return _Flyer(
       start: falling ? sky : land,
-      end: falling ? land : Offset(land.dx + (rnd.nextDouble() - 0.5) * 40, -40),
+      end: falling
+          ? land
+          : Offset(land.dx + (rnd.nextDouble() - 0.5) * 40, -40),
       color: rnd.nextInt(GemArt.colors.length),
       spin: (rnd.nextDouble() - 0.5) * math.pi,
       delayMs: falling ? i * PotOfGems.staggerMs : i * 20,
@@ -286,8 +286,7 @@ class _PotOfGemsState extends State<PotOfGems>
           pos = f.end - Offset(0, 4 * math.sin(q * math.pi));
           scaleY = 1 - 0.2 * q; // settle into the pile squash
         }
-        final sinceLand =
-            _elapsedMs - f.delayMs - PotOfGems.fallMs.toDouble();
+        final sinceLand = _elapsedMs - f.delayMs - PotOfGems.fallMs.toDouble();
         if (sinceLand >= 0 && sinceLand < PotOfGems.sparkleMs) {
           final frame = (sinceLand ~/ 80);
           sparkles.add(

@@ -9,6 +9,8 @@ enum SfxCue {
   tierSwell,
   bankChime,
   gemChimeCascade,
+  cupRattle,
+  dieClack,
 }
 
 /// Lightweight SFX / haptics. Sound hooks are gated by [sfxEnabled];
@@ -31,26 +33,22 @@ class SfxService {
   }
 
   Future<void> roll() async {
-    if (!sfxEnabled) return;
-    debugPrint('[sfx] roll');
+    if (sfxEnabled) debugPrint('[sfx] roll');
     await _haptic(HapticFeedback.lightImpact);
   }
 
   Future<void> bank() async {
-    if (!sfxEnabled) return;
-    debugPrint('[sfx] bank');
+    if (sfxEnabled) debugPrint('[sfx] bank');
     await _haptic(HapticFeedback.mediumImpact);
   }
 
   Future<void> potWin() async {
-    if (!sfxEnabled) return;
-    debugPrint('[sfx] pot-win stinger');
+    if (sfxEnabled) debugPrint('[sfx] pot-win stinger');
     await _haptic(HapticFeedback.heavyImpact);
   }
 
   Future<void> bust() async {
-    if (!sfxEnabled) return;
-    debugPrint('[sfx] bust');
+    if (sfxEnabled) debugPrint('[sfx] bust');
     await _haptic(HapticFeedback.selectionClick);
   }
 
@@ -80,6 +78,18 @@ class SfxService {
   void bankTapped() {
     play(SfxCue.gemChimeCascade);
     _hapticFire(HapticFeedback.mediumImpact);
+  }
+
+  // --- 3D dice -------------------------------------------------------------
+
+  /// Throw start: soft cup rattle hook. The throw's lightImpact comes from
+  /// [roll] (fired by the match when the roll is made), so no second tap.
+  void diceThrown() => play(SfxCue.cupRattle);
+
+  /// One die landed: felt clack hook + selectionClick (max 3 per roll).
+  void dieLanded() {
+    play(SfxCue.dieClack);
+    _hapticFire(HapticFeedback.selectionClick);
   }
 
   /// Fire-and-forget haptic for animation beats (never blocks a frame).

@@ -3,14 +3,14 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:marge/engine/hand_evaluator.dart';
 import 'package:marge/services/coin_ledger.dart';
 import 'package:marge/services/saved_games.dart';
 import 'package:marge/services/settings_service.dart';
 import 'package:marge/ui/match_provider.dart';
 import 'package:marge/ui/screens/match_screen.dart';
 import 'package:marge/ui/theme/marge_theme.dart';
-import 'package:marge/ui/visuals/pot_of_gems.dart';
+import 'package:marge/ui/visuals/bank_button.dart';
+import 'package:marge/ui/visuals/dice_3d.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _Scripted implements Random {
@@ -25,11 +25,12 @@ class _Scripted implements Random {
   bool nextBool() => false;
 }
 
-/// Tester (B): first-roll triple ones — dice first, then banner + pot change.
+/// 3D dice: result decided before the animation; Roll/Bank, die taps and
+/// the win readout stay locked until the dice settle.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('pot display holds during the reveal, updates after', (
+  testWidgets('winning roll: Bank enters only after the dice settle', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({});
@@ -48,7 +49,7 @@ void main() {
       hapticsEnabled: false,
     );
     SavedGameStore.bootstrap = SavedGameStore(loaded: true, prefs: prefs);
-    MatchNotifier.rngFactory = () => _Scripted([0, 0, 0]);
+    MatchNotifier.rngFactory = () => _Scripted([3, 3, 3]);
     addTearDown(() {
       MatchNotifier.rngFactory = Random.new;
       PlayerCoinLedger.bootstrap = null;
@@ -58,9 +59,9 @@ void main() {
 
     final container = ProviderContainer();
     addTearDown(container.dispose);
-    container.read(matchProvider.notifier).start(botCount: 1, playerName: 'You');
-    final potBefore = container.read(matchProvider)!.snapshot.potCents;
-    expect(potBefore, 20);
+    container
+        .read(matchProvider.notifier)
+        .start(botCount: 1, playerName: 'You');
 
     await tester.binding.setSurfaceSize(const Size(400, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -72,45 +73,33 @@ void main() {
     );
     await tester.pump();
 
-    int shownPot() => tester.widget<PotOfGems>(find.byType(PotOfGems)).potGems;
-    expect(shownPot(), potBefore);
-
     expect(find.text('ROLL'), findsOneWidget);
-    // Same entry point the ROLL button uses.
     final rolling = container.read(matchProvider.notifier).roll();
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(); // first frame with the thrown dice
+    final view = container.read(matchProvider)!;
+    // Engine result already known (three 4s, bankable) before any motion.
+    expect(view.snapshot.turn!.dice.values, [4, 4, 4]);
+    expect(view.snapshot.turn!.canBank, isTrue);
+    expect(
+      tester.widgetList<DiceCube>(find.byType(DiceCube)).map((c) => c.value),
+      [4, 4, 4],
+    );
 
-    final mid = container.read(matchProvider)!;
-    expect(mid.snapshot.lastPayout?.kind, ScoreKind.tripleOnesPotWin);
-    expect(mid.revealingRoll, isTrue);
-    // Engine already swept + re-anted (rule unchanged)...
-    expect(mid.snapshot.potCents, 20);
-    // ...but the table still shows the pre-sweep pot, and no banner yet.
-    expect(shownPot(), potBefore);
-    expect(find.textContaining('sweeps the pot'), findsNothing);
+    await tester.pump(const Duration(milliseconds: 500)); // mid-tumble
+    expect(tester.state<DiceTrayState>(find.byType(DiceTray)).settling, isTrue);
+    expect(find.byType(BankButton), findsNothing);
+    expect(find.text('ROLL'), findsNothing);
+    expect(find.textContaining('Trips on'), findsNothing); // readout waits
 
-    // Pause still running just before the end.
-    await tester.pump(const Duration(milliseconds: 800));
-    expect(container.read(matchProvider)!.revealingRoll, isTrue);
-    expect(shownPot(), potBefore);
-
-    // After the 1.2 s pause: banner and pot change land together.
-    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 700)); // settled
     await tester.pump();
-    final after = container.read(matchProvider)!;
-    expect(after.revealingRoll, isFalse);
-    expect(shownPot(), after.snapshot.potCents);
-    // The 3D dice (~1 s, started on the frame after the throw in fake time)
-    // have settled inside the 1.2 s pause; the readout follows the settle.
-    await tester.pump(const Duration(milliseconds: 50));
-    expect(find.textContaining('sweeps the pot'), findsOneWidget);
+    expect(find.byType(BankButton), findsOneWidget);
+    expect(find.textContaining('Trips on'), findsOneWidget);
 
-    await tester.pump(const Duration(seconds: 3));
     await rolling;
-    // Let the unlock toast / confetti timers finish.
-    await tester.pump(const Duration(seconds: 5));
-    await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 1));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 5));
   });
 }

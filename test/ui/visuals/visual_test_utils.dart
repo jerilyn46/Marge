@@ -13,7 +13,9 @@ Future<void> precacheAssets(WidgetTester tester, List<String> assets) async {
     }
   });
   // Let the image streams deliver to their listeners, then paint.
-  await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+  await tester.runAsync(
+    () => Future<void>.delayed(const Duration(milliseconds: 50)),
+  );
   await tester.pump();
   await tester.pump();
 }

@@ -41,8 +41,7 @@ class BankButton extends StatefulWidget {
   static const particleStaggerMs = 30;
 
   static Duration get burstDuration => Duration(
-    milliseconds:
-        particleFlightMs + particleStaggerMs * (particleCount - 1),
+    milliseconds: particleFlightMs + particleStaggerMs * (particleCount - 1),
   );
 
   @override
@@ -76,11 +75,17 @@ class _BankButtonState extends State<BankButton> with TickerProviderStateMixin {
   static final _enterScale = TweenSequence<double>([
     TweenSequenceItem(tween: ConstantTween(0.85), weight: 150),
     TweenSequenceItem(
-      tween: Tween(begin: 0.85, end: 1.05).chain(CurveTween(curve: Curves.easeOut)),
+      tween: Tween(
+        begin: 0.85,
+        end: 1.05,
+      ).chain(CurveTween(curve: Curves.easeOut)),
       weight: 230,
     ),
     TweenSequenceItem(
-      tween: Tween(begin: 1.05, end: 1.0).chain(CurveTween(curve: Curves.easeOutBack)),
+      tween: Tween(
+        begin: 1.05,
+        end: 1.0,
+      ).chain(CurveTween(curve: Curves.easeOutBack)),
       weight: 120,
     ),
   ]);
@@ -223,13 +228,22 @@ class _BankButtonState extends State<BankButton> with TickerProviderStateMixin {
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: active
-                  ? const [Color(0xFFFFE08A), Color(0xFFF2B632), Color(0xFFC98A12)]
-                  : const [Color(0xFFBFAE84), Color(0xFF9C8A5E), Color(0xFF7A6A44)],
+                  ? const [
+                      Color(0xFFFFE08A),
+                      Color(0xFFF2B632),
+                      Color(0xFFC98A12),
+                    ]
+                  : const [
+                      Color(0xFFBFAE84),
+                      Color(0xFF9C8A5E),
+                      Color(0xFF7A6A44),
+                    ],
             ),
             border: Border.all(color: const Color(0xFF8A5A0E), width: 2),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFFFFD36A).withValues(alpha: active ? 0.45 : 0),
+                color: const Color(0xFFFFD36A)
+                    .withValues(alpha: active ? 0.45 : 0),
                 blurRadius: 18,
                 spreadRadius: 1,
               ),
@@ -334,9 +348,10 @@ class _GemBurstState extends State<GemBurst>
           final ms = _c.value * BankButton.burstDuration.inMilliseconds;
           final kids = <Widget>[];
           for (var i = 0; i < BankButton.particleCount; i++) {
-            final t = ((ms - i * BankButton.particleStaggerMs) /
-                    BankButton.particleFlightMs)
-                .clamp(0.0, 1.0);
+            final t =
+                ((ms - i * BankButton.particleStaggerMs) /
+                        BankButton.particleFlightMs)
+                    .clamp(0.0, 1.0);
             if (t <= 0 || t >= 1) continue;
             // Quadratic bezier with a sideways bulge that fans the gems out.
             final spread = (i - (BankButton.particleCount - 1) / 2) * 22.0;
@@ -346,7 +361,8 @@ class _GemBurstState extends State<GemBurst>
                   (widget.from.dy - widget.to.dy).abs() * 0.35,
             );
             final q = Curves.easeInOut.transform(t);
-            final p = widget.from * ((1 - q) * (1 - q)) +
+            final p =
+                widget.from * ((1 - q) * (1 - q)) +
                 mid * (2 * (1 - q) * q) +
                 widget.to * (q * q);
             final size = 22.0 * (1 - 0.35 * q);
