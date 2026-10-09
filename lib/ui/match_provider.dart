@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../cosmetics/skins_service.dart';
@@ -30,6 +31,10 @@ class MatchViewState {
     /// Pot-win reveal: the winning dice are on the table, the payout
     /// banner/confetti wait until the roll has been seen.
     this.revealingRoll = false,
+
+    /// Pot shown while [revealingRoll]: the value before the sweep and
+    /// re-ante, so the pot changes together with the banner, not before.
+    this.heldPotCents,
   });
 
   final MatchSnapshot snapshot;
@@ -39,6 +44,11 @@ class MatchViewState {
   final bool holdHandoffStrip;
   final String? turnNotice;
   final bool revealingRoll;
+  final int? heldPotCents;
+
+  /// Pot number the table should display right now.
+  int get displayPotCents =>
+      revealingRoll && heldPotCents != null ? heldPotCents! : snapshot.potCents;
 
   /// Sticky result strip is ready to show (gate active, celebration done).
   bool get showHandoffStrip =>
@@ -54,6 +64,8 @@ class MatchViewState {
     String? turnNotice,
     bool clearTurnNotice = false,
     bool? revealingRoll,
+    int? heldPotCents,
+    bool clearHeldPot = false,
   }) => MatchViewState(
     snapshot: snapshot ?? this.snapshot,
     showConfetti: showConfetti ?? this.showConfetti,
@@ -64,6 +76,7 @@ class MatchViewState {
     holdHandoffStrip: holdHandoffStrip ?? this.holdHandoffStrip,
     turnNotice: clearTurnNotice ? null : (turnNotice ?? this.turnNotice),
     revealingRoll: revealingRoll ?? this.revealingRoll,
+    heldPotCents: clearHeldPot ? null : (heldPotCents ?? this.heldPotCents),
   );
 }
 
@@ -87,6 +100,10 @@ class MatchNotifier extends Notifier<MatchViewState?> {
 
   /// How long the winning dice sit on the table before the pot-win banner.
   static Duration potWinRevealDelay = const Duration(milliseconds: 1200);
+
+  /// Dice RNG source for new tables (tests inject a scripted one).
+  @visibleForTesting
+  static Random Function() rngFactory = Random.new;
 
   @override
   MatchViewState? build() {
@@ -171,7 +188,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
         localPlayerName: localName,
         humanNames: names,
       ),
-      rng: Random(),
+      rng: rngFactory(),
       coins: book,
     );
     _controller!.startMatch(carryPotGems: carryPotGems);
@@ -260,7 +277,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     }
     _controller = MatchController(
       config: game.table.config,
-      rng: Random(),
+      rng: rngFactory(),
       coins: book,
     );
     _controller!.restore(game.table);
@@ -418,6 +435,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     String? unlockBanner,
     bool? holdHandoffStrip,
     bool revealingRoll = false,
+    int? heldPotCents,
   }) {
     final c = _controller;
     if (c == null) return;
@@ -429,6 +447,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       holdHandoffStrip: holdHandoffStrip ?? false,
       turnNotice: state?.turnNotice,
       revealingRoll: revealingRoll,
+      heldPotCents: revealingRoll ? heldPotCents : null,
     );
     _announceTurn();
     _persistActive();
@@ -502,6 +521,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     final seat = c.snapshot.currentSeatIndex;
     _syncSettings();
     await _sfx.roll();
+    final potBefore = c.snapshot.potCents;
     c.roll();
     final afterTurn = c.snapshot.turn;
     // Miss with rolls left: same player, still playing. Do not bust or hand off.
@@ -514,7 +534,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     final payout = c.snapshot.lastPayout;
     if (payout?.kind == ScoreKind.tripleOnesPotWin) {
       // Show the dice first, then the pot-win notification.
-      await _revealPotWin();
+      await _revealPotWin(potBefore);
       await _sfx.potWin();
       await _applyLocalCosmetics(seat, payout);
       // Winner keeps the seat on a fresh set. Confetti only — no handoff.
@@ -559,8 +579,8 @@ class MatchNotifier extends Notifier<MatchViewState?> {
 
   /// Publish the table with the winning dice visible and the payout held,
   /// then wait so the roll registers before the banner/confetti.
-  Future<void> _revealPotWin() async {
-    _publish(revealingRoll: true);
+  Future<void> _revealPotWin(int potBefore) async {
+    _publish(revealingRoll: true, heldPotCents: potBefore);
     await Future<void>.delayed(potWinRevealDelay);
   }
 
@@ -655,13 +675,14 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       }
       _syncSettings();
       final before = _controller!.snapshot.lastPayout;
+      final potBefore = _controller!.snapshot.potCents;
       _controller!.tickBot();
       final after = _controller!.snapshot.lastPayout;
       if (after != null &&
           after != before &&
           after.kind == ScoreKind.tripleOnesPotWin) {
         // Bot pot win: same beat as a human — dice first, then the banner.
-        await _revealPotWin();
+        await _revealPotWin(potBefore);
         if (_controller == null) return;
         await _sfx.potWin();
         _publish(confetti: true);

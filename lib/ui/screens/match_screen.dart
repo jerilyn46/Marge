@@ -190,7 +190,7 @@ class MatchScreen extends ConsumerWidget {
                     ),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: PotMeter(potCents: snap.potCents),
+                      child: PotMeter(potCents: view.displayPotCents),
                     ),
                     const SizedBox(height: 12),
                     if (view.turnNotice != null) ...[
