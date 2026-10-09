@@ -148,13 +148,17 @@ class _Tumble {
       offX = r.nextDouble() * 2 * math.pi,
       offY = r.nextDouble() * 2 * math.pi,
       zSpin = (r.nextDouble() - 0.5) * math.pi,
-      drift = (r.nextDouble() * 2 - 1) * 8;
+      drift = (r.nextDouble() * 2 - 1) * 8,
+      flicker = [for (var k = 0; k < 8; k++) 1 + r.nextInt(6)];
   final int turnsX;
   final int turnsY;
   final double offX;
   final double offY;
   final double zSpin;
   final double drift; // ±8 dp
+
+  /// Lite path: faces flashed during the tumble (seeded, then the result).
+  final List<int> flicker;
 }
 
 /// The three dice on the table. Animates only when [rollSerial] changes:
@@ -166,6 +170,13 @@ class _Tumble {
 /// drift), 650–800 land on the result with one bounce (1.0→0.94→1.0,
 /// +4 dp), 800–900 settle. [onSettled] fires when the roll has settled so
 /// the screen can keep input locked until then. Reduce Motion: 200 ms fade/scale.
+///
+/// [lite] (Settings → Simple dice; for low-end phones): the same timeline,
+/// sounds and haptics, but each moving die is ONE flat face (no 6-face cube,
+/// no perspective): it spins in-plane 2–3 turns while flashing seeded faces,
+/// then snaps to the result and bounces. Settled dice look the same as the
+/// full path. Chosen over a pre-rendered sprite sheet because no per-skin
+/// sheets exist and this needs no art. Reduce Motion still wins.
 class DiceTray extends StatefulWidget {
   const DiceTray({
     super.key,
@@ -180,7 +191,11 @@ class DiceTray extends StatefulWidget {
     this.sfx,
     this.dim = false,
     this.onSettled,
+    this.lite = false,
   });
+
+  /// Lighter 2D tumble for low-end devices (see class docs).
+  final bool lite;
 
   final List<int> values;
   final List<bool> kept;
@@ -304,6 +319,7 @@ class DiceTrayState extends State<DiceTray>
     var rx = DiceCube.restRx, ry = DiceCube.restRy, rz = 0.0;
     var dy = 0.0, dx = 0.0, scale = 1.0, shadow = 1.0, opacity = 1.0;
     final moving = _c.isAnimating && i < _moving.length && _moving[i];
+    if (moving && !_reduce && widget.lite) return _liteDie(i, value);
     if (moving && _reduce) {
       final t = (_ms / DiceTray.reduceMotionMs).clamp(0.0, 1.0);
       opacity = t;
@@ -402,6 +418,93 @@ class DiceTrayState extends State<DiceTray>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Lite tumble: one flat face, in-plane spin, seeded face flashes.
+  Widget _liteDie(int i, int value) {
+    final s = widget.size;
+    final t = _localMs(i);
+    final tb = _tumbles[i];
+    final spin = 2 * math.pi * tb.turnsX + tb.zSpin;
+    var face = value;
+    var angle = 0.0, dy = 0.0, dx = 0.0, scale = 1.0, shadow = 1.0;
+    if (t < DiceTray.liftEnd) {
+      final q = Curves.easeOut.transform((t / DiceTray.liftEnd).clamp(0, 1));
+      scale = 1 + 0.08 * q;
+      dy = -12 * q;
+      shadow = 1 - 0.4 * q;
+      angle = spin;
+      face = tb.flicker[0];
+    } else if (t < DiceTray.tumbleEnd) {
+      final q =
+          (t - DiceTray.liftEnd) / (DiceTray.tumbleEnd - DiceTray.liftEnd);
+      angle = spin * (1 - Curves.easeOutCubic.transform(q));
+      scale = 1.08 - 0.08 * q;
+      dy = -12 * (1 - q);
+      dx = tb.drift * math.sin(q * math.pi);
+      shadow = 0.6 + 0.2 * q;
+      face =
+          tb.flicker[(q * tb.flicker.length).floor().clamp(
+            0,
+            tb.flicker.length - 1,
+          )];
+    } else if (t < DiceTray.landEnd) {
+      final q =
+          (t - DiceTray.tumbleEnd) / (DiceTray.landEnd - DiceTray.tumbleEnd);
+      final b = math.sin(q * math.pi);
+      scale = 1 - 0.06 * b;
+      dy = 4 * b;
+      shadow = 0.8 + 0.1 * q;
+    } else {
+      shadow =
+          0.9 +
+          0.1 *
+              ((t - DiceTray.landEnd) / (DiceTray.dieMs - DiceTray.landEnd))
+                  .clamp(0.0, 1.0);
+    }
+    return SizedBox(
+      key: ValueKey('die-$i'),
+      width: s + 20,
+      height: s + 44,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          Positioned(
+            bottom: 0,
+            child: Transform.translate(
+              offset: Offset(dx, 0),
+              child: Container(
+                width: s * 0.95 * shadow,
+                height: s * 0.22 * shadow,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.all(
+                    Radius.elliptical(s * 0.5, s * 0.11),
+                  ),
+                  color: Colors.black.withValues(alpha: 0.32 * shadow),
+                ),
+              ),
+            ),
+          ),
+          Transform.translate(
+            offset: Offset(dx, dy - 6),
+            child: Transform.rotate(
+              angle: angle,
+              child: Transform.scale(
+                scale: scale,
+                child: DieFace(
+                  key: ValueKey('lite-face-$i'),
+                  value: face,
+                  size: s,
+                  theme: widget.theme,
+                  radius: s * 0.08,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

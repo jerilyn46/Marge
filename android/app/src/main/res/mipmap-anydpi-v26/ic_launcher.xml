@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive launcher icon (API 26+). Art: play-listing-assets/v2-pr18
+     (432x432 xxxhdpi foreground/background, downscaled per density).
+     No monochrome layer: none was provided. Older devices keep the legacy
+     mipmap-*/ic_launcher.png. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@mipmap/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+</adaptive-icon>
