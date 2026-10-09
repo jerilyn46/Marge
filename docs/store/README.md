@@ -28,3 +28,9 @@ Not "Everyone". The rating comes from the IARC questionnaire in Play Console
 (App content > Content rating). Answer truthfully: simulated gambling = yes
 (virtual gems staked on dice outcomes, no cash value); in-app purchases = yes;
 ads = yes; no user interaction/sharing. Target audience: 18+.
+
+## Terms of Use effective date
+`assets/legal/terms-of-use.md` is Legal's final text with a `{{EFFECTIVE_DATE}}`
+token. Pass the date at build time, e.g.
+`--dart-define=TERMS_EFFECTIVE_DATE="October 12, 2026"`. Without it the app
+omits the "Effective date" line rather than show a placeholder.

@@ -3,16 +3,40 @@ import 'package:flutter/services.dart';
 
 import '../theme/marge_theme.dart';
 
-/// In-app Terms of Use. Content is Legal's draft, shipped verbatim as the
-/// asset `assets/legal/terms-of-use.md` (copied from
-/// marge-growth/terms-of-use-draft.md). Do not edit the wording here.
+/// Effective date for the Terms, injected at build time:
+/// `--dart-define=TERMS_EFFECTIVE_DATE="October 12, 2026"`.
+const String kTermsEffectiveDate = String.fromEnvironment(
+  'TERMS_EFFECTIVE_DATE',
+);
+
+/// In-app Terms of Use. Content is Legal's final text, shipped byte for byte
+/// as the asset `assets/legal/terms-of-use.md` (copied from
+/// marge-growth/terms-of-use.md). Do not edit the wording here.
+///
+/// The asset keeps its `{{EFFECTIVE_DATE}}` token; it is filled at runtime
+/// from [kTermsEffectiveDate]. Fail closed: with no define, the whole
+/// "Effective date" line is left out, so a raw placeholder is never shown.
 class TermsScreen extends StatelessWidget {
-  const TermsScreen({super.key, this.bundle});
+  const TermsScreen({super.key, this.bundle, this.effectiveDate});
 
   /// Test hook; defaults to [rootBundle].
   final AssetBundle? bundle;
 
+  /// Test hook; defaults to [kTermsEffectiveDate].
+  final String? effectiveDate;
+
   static const assetPath = 'assets/legal/terms-of-use.md';
+  static const effectiveDateToken = '{{EFFECTIVE_DATE}}';
+
+  /// Fill the date token, or drop its line when no date was provided.
+  static String render(String raw, {required String effectiveDate}) {
+    final date = effectiveDate.trim();
+    if (date.isNotEmpty) return raw.replaceAll(effectiveDateToken, date);
+    return raw
+        .split('\n')
+        .where((line) => !line.contains(effectiveDateToken))
+        .join('\n');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,10 +48,14 @@ class TermsScreen extends StatelessWidget {
           if (snap.hasError) {
             return const Center(child: Text('Terms could not be loaded.'));
           }
-          final text = snap.data;
-          if (text == null) {
+          final raw = snap.data;
+          if (raw == null) {
             return const Center(child: CircularProgressIndicator());
           }
+          final text = render(
+            raw,
+            effectiveDate: effectiveDate ?? kTermsEffectiveDate,
+          );
           return ListView(
             padding: const EdgeInsets.all(20),
             children: [for (final line in text.split('\n')) _line(line)],
