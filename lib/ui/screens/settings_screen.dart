@@ -66,6 +66,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             activeThumbColor: MargeColors.gold,
             onChanged: (v) => n.setHaptics(v),
           ),
+          SwitchListTile(
+            key: const ValueKey('lite-dice-switch'),
+            title: const Text('Simple dice'),
+            subtitle: const Text('Lighter roll animation for older phones'),
+            value: s.liteDice,
+            activeThumbColor: MargeColors.gold,
+            onChanged: (v) => n.setLiteDice(v),
+          ),
           const Divider(height: 32),
           ListTile(
             leading: const Icon(Icons.menu_book_rounded),

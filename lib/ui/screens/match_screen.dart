@@ -465,6 +465,7 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
                       size: 64,
                       theme: skinTheme,
                       sfx: fx,
+                      lite: settings.liteDice,
                       onSettled: (serial) {
                         if (mounted && serial != _settledSerial) {
                           setState(() => _settledSerial = serial);
