@@ -241,6 +241,7 @@ class MatchSnapshot {
     required this.config,
     this.handoff,
     this.pendingShortfall,
+    this.bankGems = 0,
   });
 
   final MatchPhase phase;
@@ -255,6 +256,11 @@ class MatchSnapshot {
   final MatchConfig config;
   final HandoffState? handoff;
   final GemShortfall? pendingShortfall;
+
+  /// Gems the current seat collects if it banks the hand on the table now,
+  /// worked out by the engine with the same take rules it will apply
+  /// ([MatchController.bankGemsPreview]). 0 when there is nothing to bank.
+  final int bankGems;
 
   PlayerState get currentPlayer => players[currentSeatIndex];
 
@@ -304,7 +310,45 @@ class MatchController {
     pendingShortfall: _shortfall,
     config: config,
     handoff: _handoff,
+    bankGems: bankGemsPreview,
   );
+
+  /// What [bank] would pay the current seat right now, without changing
+  /// anything. Mirrors [_resolveBank]: a regular scoring hand takes
+  /// perOpponent from every seated opponent with the soft take (House stake
+  /// once); first-roll trips take the full amount from whoever can cover
+  /// and what is at the table from whoever cannot (a short person may still
+  /// cover later, so this is the guaranteed amount). 0 for a miss.
+  int get bankGemsPreview {
+    final t = _turn;
+    if (t == null || !t.hasRolled || !t.lastScore.isScoring) return 0;
+    if (_phase != MatchPhase.playing) return 0;
+    final score = t.lastScore;
+    if (score.kind == ScoreKind.tripleOnesPotWin) return _pot;
+    final each = score.perOpponentCents;
+    var total = 0;
+    for (var i = 0; i < _players.length; i++) {
+      if (i == _seat || !_plays(_players[i])) continue;
+      final p = _players[i];
+      if (score.isFirstRollTripsPay) {
+        total += p.bankCents >= each ? each : p.bankCents;
+      } else {
+        total += _wouldTake(p, each, soft: true);
+      }
+    }
+    return total;
+  }
+
+  /// What [_takeFromBank] takes from [p] for [amount] (pure).
+  int _wouldTake(PlayerState p, int amount, {required bool soft}) {
+    if (amount <= 0 || p.eliminated || !p.profile.participates) return 0;
+    if (p.bankCents >= amount) return amount;
+    if (soft && !p.usedHouseStake) {
+      final topped = p.bankCents + config.houseStakeCents;
+      return topped >= amount ? amount : topped;
+    }
+    return p.bankCents;
+  }
 
   /// [carryPotGems] seeds the pot with gems left in the previous table's pot
   /// ("Continue playing"), so they are not destroyed between games.

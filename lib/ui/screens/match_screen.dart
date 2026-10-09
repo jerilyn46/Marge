@@ -118,26 +118,6 @@ int gemBankOwnerSeat(MatchSnapshot snap) {
   return players.indexWhere((p) => p.profile.isHuman);
 }
 
-/// What a bank of the current winning hand pays: the per-opponent amount
-/// from every seated opponent, capped by what each can cover (table gems
-/// plus a still-unused House stake), mirroring the engine's soft take.
-@visibleForTesting
-int bankPreviewGems(MatchSnapshot snap) {
-  final t = snap.turn;
-  if (t == null || !t.lastScore.isScoring) return 0;
-  final each = t.lastScore.perOpponentCents;
-  var total = 0;
-  for (var i = 0; i < snap.players.length; i++) {
-    if (i == snap.currentSeatIndex) continue;
-    final p = snap.players[i];
-    if (!p.profile.participates || p.eliminated) continue;
-    final cover =
-        p.bankCents + (p.usedHouseStake ? 0 : snap.config.houseStakeCents);
-    total += each < cover ? each : cover;
-  }
-  return total;
-}
-
 class MatchScreen extends ConsumerStatefulWidget {
   const MatchScreen({super.key});
 
@@ -551,7 +531,7 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
                         child: _TurnActions(
                           canInteract: canInteract,
                           turn: turn,
-                          bankPreview: bankPreviewGems(snap),
+                          bankPreview: snap.bankGems, // engine's own number
                           diceSettling: diceSettling,
                           sfx: fx,
                           gemsTargetKey: _gemsTargetKey,

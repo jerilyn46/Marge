@@ -46,7 +46,7 @@ void main() {
     final snap = c.snapshot;
     expect(snap.turn!.canBank, isTrue);
     final start = snap.players[0].bankCents;
-    final amount = bankPreviewGems(snap);
+    final amount = snap.bankGems;
     expect(amount, greaterThan(0));
 
     await tester.binding.setSurfaceSize(const Size(390, 760));

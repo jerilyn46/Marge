@@ -64,8 +64,8 @@ void main() {
     expect(find.byKey(const ValueKey('bank-only')), findsOneWidget);
     expect(find.text('Bank'), findsOneWidget);
     // Amount under the label: two opponents? one bot here → 1 × trips pay.
-    expect(find.text('+${bankPreviewGems(snap)} gems'), findsOneWidget);
-    expect(bankPreviewGems(snap), snap.turn!.lastScore.perOpponentCents);
+    expect(find.text('+${snap.bankGems} gems'), findsOneWidget);
+    expect(snap.bankGems, snap.turn!.lastScore.perOpponentCents);
     expect(find.textContaining('ROLL AGAIN'), findsNothing);
     expect(find.text('ROLL'), findsNothing);
   });
@@ -94,8 +94,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await _pump(tester, MatchViewState(snapshot: snap));
     expect(find.textContaining('sweeps the pot'), findsOneWidget);
-    final dice2 =
-        tester.widgetList<DiceCube>(find.byType(DiceCube)).toList();
+    final dice2 = tester.widgetList<DiceCube>(find.byType(DiceCube)).toList();
     expect(dice2.map((d) => d.value).take(3), [1, 1, 1]);
   });
 }
