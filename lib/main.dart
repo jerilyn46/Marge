@@ -9,6 +9,7 @@ import 'ads/ads_service.dart';
 import 'services/coin_ledger.dart';
 import 'services/daily_gems_reminder.dart';
 import 'services/friends_service.dart';
+import 'services/gem_iap.dart';
 import 'services/saved_games.dart';
 import 'services/settings_service.dart';
 import 'ui/match_provider.dart';
@@ -61,12 +62,24 @@ Future<void> main() async {
 
   WidgetsBinding.instance.addPostFrameCallback((_) {
     unawaited(StartupLog.mark('first-frame'));
+    // Attach the Play Billing purchase listener now (not on first Shop open)
+    // so pending / unacknowledged gem purchases are credited and completed.
+    // Post-frame only: nothing native before runApp. Failures are contained.
+    _startGemIapSafely(container);
     if (!kAdmobEnabled) {
       debugPrint('main: ADMOB_ENABLED=false — skip ads bootstrap');
       return;
     }
     unawaited(_bootstrapAdsSafely(container));
   });
+}
+
+void _startGemIapSafely(ProviderContainer container) {
+  try {
+    container.read(gemIapProvider);
+  } catch (e, st) {
+    debugPrint('main: gem IAP start failed (Shop retries): $e\n$st');
+  }
 }
 
 Future<void> _bootstrapAdsSafely(ProviderContainer container) async {

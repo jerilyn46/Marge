@@ -104,9 +104,14 @@ class GemIapNotifier extends Notifier<GemIapState> {
       unawaited(_sub?.cancel());
       _sub = null;
     });
+    // Errors inside the microtask are caught in [_bootstrap]; never thrown
+    // into the app zone.
     Future.microtask(_bootstrap);
     return const GemIapState(loading: true);
   }
+
+  /// True once the purchase stream is attached (test/diagnostic hook).
+  bool get listening => _sub != null;
 
   Future<void> _bootstrap() async {
     if (kIsWeb) {
@@ -138,6 +143,15 @@ class GemIapNotifier extends Notifier<GemIapState> {
         },
       );
       await refreshProducts();
+      // Re-deliver gem packs that were paid for but never completed (e.g. the
+      // app died mid-purchase) so they are credited and acknowledged instead
+      // of being auto-refunded by Play after 3 days. Consumed packs are not
+      // returned, so this cannot double-credit a finished purchase.
+      try {
+        await _iap.restorePurchases();
+      } catch (e, st) {
+        debugPrint('GemIap: restorePurchases failed (non-fatal): $e\n$st');
+      }
     } catch (e, st) {
       debugPrint('GemIap: bootstrap failed: $e\n$st');
       state = GemIapState(
