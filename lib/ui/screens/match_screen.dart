@@ -138,14 +138,26 @@ class MatchScreen extends ConsumerWidget {
     // Local human can roll only while the table is live — not during handoff
     // or a shortfall choice. Gem tools live in a sheet so they never crowd
     // Roll off a phone screen.
-    final canInteract =
-        isHumanTurn && !view.busyBot && !gated && !shortfallGate;
+    final canInteract = isHumanTurn &&
+        !view.busyBot &&
+        !gated &&
+        !shortfallGate &&
+        !view.revealingRoll;
     final hotseat = HandoffState.isHotseatCta(snap.config);
 
     // Locked faces during handoff (prefer frozen handoff values).
+    // A first-roll triple-ones sweep resets the turn immediately; keep the
+    // winning dice on the table until the winner rolls again.
+    final potWinFaces = (turn == null || !turn.hasRolled) &&
+            snap.lastPayout?.kind == ScoreKind.tripleOnesPotWin &&
+            snap.lastPayout?.seatIndex == snap.currentSeatIndex
+        ? snap.lastPayout?.diceValues
+        : null;
     final List<int>? lockedFaces =
         handoff?.diceValues ??
-        (turn != null && turn.hasRolled ? turn.dice.values : null);
+        (turn != null && turn.hasRolled ? turn.dice.values : potWinFaces);
+    final showingPotWinFaces = handoff == null && potWinFaces != null &&
+        identical(lockedFaces, potWinFaces);
 
     return PopScope(
       canPop: false,
@@ -221,7 +233,9 @@ class MatchScreen extends ConsumerWidget {
                         },
                       ),
                     ),
-                    if (snap.lastPayout != null && !showStrip) ...[
+                    if (snap.lastPayout != null &&
+                        !showStrip &&
+                        !view.revealingRoll) ...[
                       const SizedBox(height: 10),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -243,11 +257,12 @@ class MatchScreen extends ConsumerWidget {
                             if (i > 0) const SizedBox(width: 12),
                             DieWidget(
                               value: lockedFaces[i],
-                              kept: gated
+                              kept: gated || showingPotWinFaces
                                   ? true
                                   : (turn?.dice.dice[i].kept ?? false),
                               enabled:
                                   canInteract &&
+                                  !showingPotWinFaces &&
                                   turn != null &&
                                   turn.rollNumber < 3,
                               theme: skinTheme,

@@ -286,6 +286,9 @@ void main() {
       expect(s.potCents, 40); // new ante
       expect(s.roundNumber, 2);
       expect(s.log.any((l) => l.contains('sweeps the pot')), isTrue);
+      // UAT #2: the winning roll stays visible even though the turn reset.
+      expect(s.lastPayout?.diceValues, [1, 1, 1]);
+      expect(s.lastPayout?.seatIndex, s.currentSeatIndex);
     });
 
     test('three of a kind collects face from others', () {

@@ -647,6 +647,8 @@ class MatchController {
         kind: ScoreKind.tripleOnesPotWin,
         amountCents: won,
         celebratory: true,
+        diceValues: List<int>.unmodifiable(t.dice.values),
+        seatIndex: _seat,
       );
       _log.add(_lastPayout!.message);
       // First-roll triple ones: take the pot, end the round, re-ante, then
