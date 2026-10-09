@@ -13,6 +13,7 @@ import '../theme/marge_theme.dart';
 import '../visuals/bank_button.dart';
 import '../visuals/dice_3d.dart';
 import '../visuals/pot_of_gems.dart';
+import '../visuals/pot_win_flight.dart';
 import '../widgets/confetti_overlay.dart';
 import '../widgets/daily_drip_card.dart';
 import '../widgets/get_more_gems_button.dart';
@@ -133,10 +134,106 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
   /// win/near-miss readout and Bank wait) until it matches the view.
   int? _settledSerial;
 
+  /// The bowl, so a pot win's gems can lift out of it.
+  final GlobalKey _potKey = GlobalKey(debugLabel: 'pot');
+
+  /// One key per seat chip: where a pot win's gems land first.
+  final List<GlobalKey> _seatKeys = [];
+
+  final List<OverlayEntry> _flights = [];
+
+  GlobalKey _seatKey(int i) {
+    while (_seatKeys.length <= i) {
+      _seatKeys.add(GlobalKey(debugLabel: 'seat-${_seatKeys.length}'));
+    }
+    return _seatKeys[i];
+  }
+
+  @override
+  void dispose() {
+    for (final e in _flights) {
+      if (e.mounted) e.remove();
+    }
+    _flights.clear();
+    super.dispose();
+  }
+
+  static Offset? _centerOf(GlobalKey key) {
+    final box = key.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.attached || !box.hasSize) return null;
+    return box.localToGlobal(box.size.center(Offset.zero));
+  }
+
+  /// Pot win (DESIGNER_SPEC §3 "Pot taken"): once the winning dice have been
+  /// seen, gems lift out of the bowl, fly to the winner's seat, then on into
+  /// the Bank flow (the gem readout) when a person at this device won.
+  /// Reduce Motion: nothing flies; the numbers just change.
+  void _launchPotWinFlight(MatchSnapshot snap, PayoutEvent payout) {
+    if (!mounted) return;
+    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) return;
+    final overlay = Overlay.maybeOf(context);
+    final potBox = _potKey.currentContext?.findRenderObject() as RenderBox?;
+    if (overlay == null || potBox == null || !potBox.hasSize) return;
+    final s = potBox.size.width / PotOfGems.canvas.width;
+    final from = potBox.localToGlobal(PotOfGems.landingCenter * s);
+    final seatIndex = payout.seatIndex ?? snap.currentSeatIndex;
+    final seat =
+        (seatIndex >= 0 && seatIndex < _seatKeys.length
+            ? _centerOf(_seatKeys[seatIndex])
+            : null) ??
+        from + const Offset(0, 90);
+    final winnerIsHuman =
+        seatIndex >= 0 &&
+        seatIndex < snap.players.length &&
+        snap.players[seatIndex].profile.isHuman;
+    final bank = winnerIsHuman ? _centerOf(_gemsTargetKey) : null;
+    final settings = ref.read(settingsProvider);
+    final fx = SfxService(
+      sfxEnabled: settings.sfxEnabled,
+      hapticsEnabled: settings.hapticsEnabled,
+    );
+    late final OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => PotWinFlight(
+        key: const ValueKey('pot-win-flight'),
+        from: from,
+        seat: seat,
+        bank: bank,
+        gems: PotWinFlight.spritesFor(
+          payout.amountCents,
+          snap.config.anteCents,
+        ),
+        sfx: fx,
+        onDone: () {
+          _flights.remove(entry);
+          if (entry.mounted) entry.remove();
+        },
+      ),
+    );
+    _flights.add(entry);
+    overlay.insert(entry);
+  }
+
   @override
   Widget build(BuildContext context) {
     final view = ref.watch(matchProvider);
     final skinTheme = ref.watch(cosmeticsProvider).equippedTheme;
+    ref.listen(matchProvider, (prev, next) {
+      // The reveal beat ends: the pot is taken now, so the gems fly.
+      final payout = next?.snapshot.lastPayout;
+      if (prev?.revealingRoll != true ||
+          next == null ||
+          next.revealingRoll ||
+          payout == null ||
+          payout.kind != ScoreKind.tripleOnesPotWin ||
+          payout.amountCents <= 0) {
+        return;
+      }
+      final snap = next.snapshot;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _launchPotWinFlight(snap, payout),
+      );
+    });
     ref.listen(matchProvider, (prev, next) {
       final pending = next?.snapshot.pendingShortfall;
       if (pending == null) return;
@@ -175,7 +272,8 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
     // Roll off a phone screen.
     _settledSerial ??= view.rollSerial;
     final diceSettling = view.rollSerial != _settledSerial;
-    final canInteract = isHumanTurn &&
+    final canInteract =
+        isHumanTurn &&
         !view.busyBot &&
         !gated &&
         !shortfallGate &&
@@ -194,7 +292,8 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
     // Locked faces during handoff (prefer frozen handoff values).
     // A first-roll triple-ones sweep resets the turn immediately; keep the
     // winning dice on the table until the winner rolls again.
-    final potWinFaces = (turn == null || !turn.hasRolled) &&
+    final potWinFaces =
+        (turn == null || !turn.hasRolled) &&
             snap.lastPayout?.kind == ScoreKind.tripleOnesPotWin &&
             snap.lastPayout?.seatIndex == snap.currentSeatIndex
         ? snap.lastPayout?.diceValues
@@ -202,7 +301,9 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
     final List<int>? lockedFaces =
         handoff?.diceValues ??
         (turn != null && turn.hasRolled ? turn.dice.values : potWinFaces);
-    final showingPotWinFaces = handoff == null && potWinFaces != null &&
+    final showingPotWinFaces =
+        handoff == null &&
+        potWinFaces != null &&
         identical(lockedFaces, potWinFaces);
 
     return PopScope(
@@ -238,6 +339,7 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: PotOfGems(
+                        key: _potKey,
                         potGems: view.displayPotCents,
                         anteGems: snap.config.anteCents,
                         seats: snap.players.length,
@@ -278,10 +380,14 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
                         itemCount: snap.players.length,
                         separatorBuilder: (_, _) => const SizedBox(width: 8),
                         itemBuilder: (context, i) {
-                          return PlayerChip(
-                            player: snap.players[i],
-                            isActive: i == snap.currentSeatIndex,
-                            compact: true,
+                          return KeyedSubtree(
+                            key: _seatKey(i),
+                            child: PlayerChip(
+                              key: ValueKey('seat-chip-$i'),
+                              player: snap.players[i],
+                              isActive: i == snap.currentSeatIndex,
+                              compact: true,
+                            ),
                           );
                         },
                       ),
@@ -852,10 +958,7 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
                 const SizedBox(height: 10),
                 const GetMoreGemsButton(),
                 const SizedBox(height: 10),
-                TextButton(
-                  onPressed: _leaveQuiet,
-                  child: const Text('Quit'),
-                ),
+                TextButton(onPressed: _leaveQuiet, child: const Text('Quit')),
               ],
             ),
           ),
