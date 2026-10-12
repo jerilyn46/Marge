@@ -552,6 +552,10 @@ class MatchController {
         _log.add('${p.profile.name} ante short ($paid gems).');
       }
     }
+    if (_playableCount <= 1) {
+      _endMatch();
+      return;
+    }
 
     _seat = _firstActiveSeat(from: 0);
     _phase = MatchPhase.playing;
@@ -909,6 +913,10 @@ class MatchController {
         final paid = _takeFromBank(i, config.anteCents, soft: true);
         _pot += paid;
       }
+      if (_playableCount <= 1) {
+        _endMatch();
+        return;
+      }
       if (_players[seat].eliminated) {
         _seat = _firstActiveSeat(from: seat);
       }
@@ -995,14 +1003,11 @@ class MatchController {
     // Pay what they can; mark eliminated if broke after house stake used.
     final paid = p.bankCents;
     p = p.copyWith(bankCents: 0);
-    if (p.usedHouseStake && paid == 0) {
+    // Broke after the once-per-match House stake is used: out. The soft
+    // bankrupt never keeps a broke seat (and so the match) going.
+    if (p.usedHouseStake) {
       p = p.copyWith(eliminated: true);
       _log.add('${p.profile.name} is out of gems.');
-    } else if (p.usedHouseStake && p.bankCents == 0 && paid < amount) {
-      // Still broke after paying remainder — soft eliminate next ante.
-      if (p.bankCents == 0) {
-        // leave at 0; may get eliminated on next failed ante
-      }
     }
     _players[index] = p;
     _remember(index);
@@ -1100,6 +1105,7 @@ class MatchController {
     _handoff = null;
     _shortfall = null;
     _tripsCollected = 0;
+    _awardPotToLastStanding();
     final sorted = _players.where(_plays).toList()
       ..sort((a, b) => b.bankCents.compareTo(a.bankCents));
     if (sorted.isEmpty) {
@@ -1112,6 +1118,44 @@ class MatchController {
       'Match over. Winner: ${sorted.first.profile.name} '
       'with ${sorted.first.bankCents} gems.',
     );
+  }
+
+  /// Rule (Jerilyn): if the last player runs out of money the opponent gets
+  /// the pot. When exactly one seated player still has gems, the whole pot
+  /// goes to them through the pot-win payout (same drain-to-seat flow as a
+  /// pot sweep). Same for 2 or 3+ seats, hotseat and bots.
+  /// Winner-facing text for the last-standing pot award (gems only).
+  static String lastStandingMessage(PlayerState winner, {required int seated}) {
+    if (winner.profile.isBot || !winner.profile.isHuman) {
+      return '${winner.profile.name} wins the pot. '
+          '${seated <= 2 ? 'You ran out of gems.' : 'Everyone else is out of gems.'}';
+    }
+    return seated <= 2
+        ? 'Your opponent ran out of gems. You win the pot!'
+        : 'Everyone else is out of gems. You win the pot!';
+  }
+
+  void _awardPotToLastStanding() {
+    final alive = [
+      for (var i = 0; i < _players.length; i++)
+        if (_plays(_players[i])) i,
+    ];
+    if (alive.length != 1 || _pot <= 0) return;
+    final seat = alive.single;
+    final won = _pot;
+    _credit(seat, won);
+    _pot = 0;
+    _lastPayout = PayoutEvent(
+      message: lastStandingMessage(
+        _players[seat],
+        seated: _players.where((p) => p.profile.participates).length,
+      ),
+      kind: ScoreKind.tripleOnesPotWin,
+      amountCents: won,
+      celebratory: true,
+      seatIndex: seat,
+    );
+    _log.add(_lastPayout!.message);
   }
 
   /// Drive one bot action if current seat is a bot. Returns true if acted.
@@ -1195,6 +1239,11 @@ class MatchController {
     _winnerId = saved.winnerId;
     for (var i = 0; i < _players.length; i++) {
       _remember(i);
+    }
+    if ((_phase == MatchPhase.playing || _phase == MatchPhase.roundEnd) &&
+        _playableCount <= 1) {
+      _endMatch(); // older saves: a lone solvent seat takes the pot
+      return;
     }
     if (_phase == MatchPhase.playing &&
         _turn == null &&

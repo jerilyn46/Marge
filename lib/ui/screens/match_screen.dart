@@ -977,6 +977,16 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
+                // Last player with gems takes the pot (shown with the win).
+                if (snapshot.lastPayout case final p?
+                    when p.kind == ScoreKind.tripleOnesPotWin &&
+                        p.diceValues == null) ...[
+                  const SizedBox(height: 12),
+                  KeyedSubtree(
+                    key: const ValueKey('last-standing-banner'),
+                    child: PayoutBanner(event: p),
+                  ),
+                ],
                 const SizedBox(height: 24),
                 Expanded(
                   child: ListView.separated(

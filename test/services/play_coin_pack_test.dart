@@ -94,15 +94,17 @@ void main() {
       expect(ledger.savedCents('You', bot: false), 100);
       expect(
         c.snapshot.players.firstWhere((p) => p.profile.isBot).bankCents,
-        90,
+        100, // last player with gems took the 10-gem pot (new rule)
       );
-      expect(ledger.savedCents('Spike', bot: true), 90);
+      expect(ledger.savedCents('Spike', bot: true), 100);
       expect(ledger.savedCents('Sam', bot: false), isNull);
       expect(
         c.snapshot.players.firstWhere((p) => p.profile.name == 'Sam').bankCents,
         0,
       );
-      expect(c.snapshot.currentPlayer.profile.isBot, isTrue);
+      // You were out at the first ante, so the bot took the pot and the
+      // match ended (new last-player-with-gems rule).
+      expect(c.snapshot.phase, MatchPhase.matchEnd);
     });
   });
 }

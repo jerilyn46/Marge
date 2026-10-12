@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:marge/engine/dice.dart';
 import 'package:marge/engine/hand_evaluator.dart';
 import 'package:marge/engine/match_controller.dart';
+import 'package:marge/engine/match_checkpoint.dart';
 import 'package:marge/engine/player.dart';
 
 /// Deterministic RNG that yields a fixed sequence of nextInt results.
@@ -30,6 +31,7 @@ class ScriptedRandom implements Random {
 }
 
 void main() {
+  lastStandingTests();
   group('MatchConfig lobby helpers', () {
     test('default is 3 bots + 0 other humans', () {
       const c = MatchConfig();
@@ -368,7 +370,8 @@ void main() {
         final bot = c.snapshot.players.firstWhere((p) => p.profile.isBot);
         expect(bot.bankCents, 0);
         expect(bot.eliminated, isTrue);
-        expect(you.bankCents, 5 + 5);
+        // Bot out -> last solvent player also takes the 20-gem pot.
+        expect(you.bankCents, 5 + 5 + 20);
         expect(c.snapshot.pendingShortfall, isNull);
       },
     );
@@ -400,7 +403,8 @@ void main() {
         c.quitShortfall();
         expect(c.snapshot.players[1].bankCents, 0);
         expect(c.snapshot.players[1].eliminated, isTrue);
-        expect(c.snapshot.players[0].bankCents, rollerBefore + owedBefore);
+        // Last solvent player also takes the 20-gem pot (new rule).
+        expect(c.snapshot.players[0].bankCents, rollerBefore + owedBefore + 20);
         expect(c.snapshot.pendingShortfall, isNull);
       },
     );
@@ -721,6 +725,224 @@ void main() {
       c.bank(); // refused
       expect(c.snapshot.phase, MatchPhase.playing);
       expect(c.snapshot.handoff, isNull);
+    });
+  });
+}
+
+MatchController _broke({
+  required int bots,
+  int others = 0,
+  required int bank,
+}) => MatchController(
+  config: MatchConfig(
+    botCount: bots,
+    otherHumanCount: others,
+    startBankCents: bank,
+    anteCents: 10,
+    houseStakeCents: 50,
+  ),
+  rng: Random(5),
+);
+
+/// Bust the current seat's turn (three misses) and confirm the handoff.
+void _bustTurn(MatchController c) {
+  // Drive until the phase leaves playing for this seat.
+  for (var k = 0; k < 400 && c.snapshot.phase == MatchPhase.playing; k++) {
+    final t = c.snapshot.turn;
+    if (t == null) break;
+    if (c.snapshot.currentPlayer.profile.isBot) {
+      c.tickBot();
+    } else if (t.hasRolled && (t.canBank || t.mustFinish)) {
+      c.bank();
+    } else {
+      c.roll();
+    }
+  }
+  if (c.snapshot.phase == MatchPhase.awaitingHandoff) c.confirmHandoff();
+  if (c.snapshot.phase == MatchPhase.awaitingShortfall) c.quitShortfall();
+}
+
+void _setBank(MatchController c, int seat, int cents, {bool stake = true}) {
+  final cp = c.capture();
+  final ps = List<PlayerState>.from(cp.players);
+  ps[seat] = ps[seat].copyWith(bankCents: cents, usedHouseStake: stake);
+  c.restore(
+    MatchCheckpoint(
+      phase: cp.phase,
+      players: ps,
+      potCents: cp.potCents,
+      roundNumber: cp.roundNumber,
+      currentSeatIndex: cp.currentSeatIndex,
+      config: cp.config,
+      turn: cp.turn,
+      handoff: cp.handoff,
+      log: cp.log,
+      lastPayout: cp.lastPayout,
+      winnerId: cp.winnerId,
+      pendingShortfall: cp.pendingShortfall,
+    ),
+  );
+}
+
+void lastStandingTests() {
+  group('Last player with gems takes the pot', () {
+    test('2 players: opponent broke after the stake -> I win the pot', () {
+      final c = _broke(bots: 1, bank: 100);
+      c.startMatch();
+      _setBank(c, 1, 0); // bot broke, stake already used
+      // Next ante (round restart) eliminates it.
+      final pot = c.snapshot.potCents;
+      final mine = c.snapshot.players[0].bankCents;
+      for (var k = 0; k < 40 && c.snapshot.phase != MatchPhase.matchEnd; k++) {
+        _bustTurn(c);
+      }
+      final s = c.snapshot;
+      expect(s.phase, MatchPhase.matchEnd);
+      expect(s.potCents, 0);
+      expect(s.winnerId, 'human_0');
+      expect(s.players[1].eliminated, isTrue);
+      expect(s.lastPayout!.kind, ScoreKind.tripleOnesPotWin);
+      expect(
+        s.lastPayout!.message,
+        'Your opponent ran out of gems. You win the pot!',
+      );
+      expect(s.players[0].bankCents, greaterThanOrEqualTo(mine + pot - 30));
+    });
+
+    test('stake first: a broke seat gets +50 once and keeps playing', () {
+      final c = _broke(bots: 1, bank: 5);
+      c.startMatch();
+      expect(c.snapshot.phase, MatchPhase.playing);
+      for (final p in c.snapshot.players) {
+        expect(p.usedHouseStake, isTrue);
+        expect(p.eliminated, isFalse);
+        expect(MatchController.houseStakeOwed(p, c.config), 50);
+      }
+    });
+
+    test('stake then broke: eliminated, never kept alive, pot awarded', () {
+      final c = _broke(bots: 1, bank: 100);
+      c.startMatch();
+      _setBank(c, 1, 3); // stake used, can't cover the next ante
+      for (var k = 0; k < 40 && c.snapshot.phase != MatchPhase.matchEnd; k++) {
+        _bustTurn(c);
+      }
+      final s = c.snapshot;
+      expect(s.phase, MatchPhase.matchEnd);
+      expect(s.players[1].bankCents, 0);
+      expect(s.players[1].eliminated, isTrue);
+      expect(s.potCents, 0);
+      // Stake repayment bookkeeping unchanged for both seats.
+      expect(MatchController.houseStakeOwed(s.players[1], c.config), 50);
+    });
+
+    test('3 players: one elimination does not end the match', () {
+      final c = _broke(bots: 2, bank: 100);
+      c.startMatch();
+      _setBank(c, 2, 0);
+      for (var k = 0; k < 6 && !c.snapshot.players[2].eliminated; k++) {
+        _bustTurn(c);
+      }
+      expect(c.snapshot.players[2].eliminated, isTrue);
+      expect(c.snapshot.phase, isNot(MatchPhase.matchEnd));
+      // Second elimination ends it with the 3+ wording.
+      _setBank(c, 1, 0);
+      for (var k = 0; k < 40 && c.snapshot.phase != MatchPhase.matchEnd; k++) {
+        _bustTurn(c);
+      }
+      final s = c.snapshot;
+      expect(s.phase, MatchPhase.matchEnd);
+      expect(s.potCents, 0);
+      if (s.winnerId == 'human_0') {
+        expect(
+          s.lastPayout!.message,
+          'Everyone else is out of gems. You win the pot!',
+        );
+      }
+    });
+
+    test('bot wins: message names the bot', () {
+      final c = _broke(bots: 1, bank: 100);
+      c.startMatch();
+      _setBank(c, 0, 0); // I am broke with the stake used
+      for (var k = 0; k < 40 && c.snapshot.phase != MatchPhase.matchEnd; k++) {
+        _bustTurn(c);
+      }
+      final s = c.snapshot;
+      expect(s.phase, MatchPhase.matchEnd);
+      expect(s.winnerId, s.players[1].profile.id);
+      expect(
+        s.lastPayout!.message,
+        '${s.players[1].profile.name} wins the pot. You ran out of gems.',
+      );
+      expect(s.potCents, 0);
+    });
+
+    test('checkpoint restore with one solvent seat ends + awards the pot', () {
+      final c = _broke(bots: 2, bank: 100);
+      c.startMatch();
+      final cp = c.capture();
+      final ps = [
+        for (var i = 0; i < cp.players.length; i++)
+          i == 0
+              ? cp.players[i]
+              : cp.players[i].copyWith(
+                  bankCents: 0,
+                  usedHouseStake: true,
+                  eliminated: true,
+                ),
+      ];
+      final pot = cp.potCents;
+      final mine = cp.players[0].bankCents;
+      final d = MatchController(config: c.config, rng: Random(1));
+      d.restore(
+        MatchCheckpoint(
+          phase: MatchPhase.playing,
+          players: ps,
+          potCents: pot,
+          roundNumber: cp.roundNumber,
+          currentSeatIndex: 0,
+          config: cp.config,
+          log: cp.log,
+        ),
+      );
+      expect(d.snapshot.phase, MatchPhase.matchEnd);
+      expect(d.snapshot.potCents, 0);
+      expect(d.snapshot.players[0].bankCents, mine + pot);
+      expect(
+        d.snapshot.lastPayout!.message,
+        'Everyone else is out of gems. You win the pot!',
+      );
+      // Round-trips through capture.
+      expect(d.capture().phase, MatchPhase.matchEnd);
+    });
+
+    test('message wording: gems only', () {
+      PlayerState p(bool bot) => PlayerState(
+        profile: PlayerProfile(
+          id: bot ? 'bot_0' : 'human_0',
+          name: bot ? 'Rusty' : 'You',
+          kind: bot ? SeatKind.bot : SeatKind.human,
+        ),
+        bankCents: 10,
+      );
+      final all = [
+        MatchController.lastStandingMessage(p(false), seated: 2),
+        MatchController.lastStandingMessage(p(false), seated: 4),
+        MatchController.lastStandingMessage(p(true), seated: 2),
+        MatchController.lastStandingMessage(p(true), seated: 3),
+      ];
+      expect(all[0], 'Your opponent ran out of gems. You win the pot!');
+      expect(all[1], 'Everyone else is out of gems. You win the pot!');
+      expect(all[3], 'Rusty wins the pot. Everyone else is out of gems.');
+      for (final m in all) {
+        expect(
+          m,
+          isNot(
+            matches(RegExp(r'cash|money|\$|dollar|coin', caseSensitive: false)),
+          ),
+        );
+      }
     });
   });
 }

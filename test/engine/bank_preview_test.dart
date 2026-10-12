@@ -52,7 +52,16 @@ void main() {
             shortfallCases++;
             c.quitShortfall();
           }
-          final after = c.snapshot.players[seat].bankCents;
+          var after = c.snapshot.players[seat].bankCents;
+          // New rule: if that bank left one solvent seat, the match ends
+          // and the pot goes to them as a separate payout.
+          final end = c.snapshot;
+          if (end.phase == MatchPhase.matchEnd &&
+              end.lastPayout?.kind == ScoreKind.tripleOnesPotWin &&
+              end.lastPayout?.seatIndex == seat &&
+              t.lastScore.kind != ScoreKind.tripleOnesPotWin) {
+            after -= end.lastPayout!.amountCents;
+          }
           expect(after - before, preview, reason: 'seed $seed step $step');
           checked++;
           continue;
