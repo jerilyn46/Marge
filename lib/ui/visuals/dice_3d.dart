@@ -6,6 +6,9 @@ import '../../cosmetics/dice_skin.dart';
 import '../../services/sfx_service.dart';
 import '../theme/marge_theme.dart';
 import '../widgets/die_widget.dart';
+import 'dice_throw_sim.dart';
+
+part 'dice_throw_layer.dart';
 
 /// A six-face die drawn in 3D: Matrix4 perspective (setEntry(3,2,0.0015))
 /// plus rotateX/Y/Z, using the equipped skin's face art (DESIGNER_SPEC §1).
@@ -21,7 +24,11 @@ class DiceCube extends StatelessWidget {
     this.rz = 0,
     this.theme,
     this.kept = false,
+    this.orientation,
   });
+
+  /// Full rotation (throw playback). Overrides [rx]/[ry]/[rz] when set.
+  final Matrix4? orientation;
 
   final int value;
   final double size;
@@ -58,10 +65,12 @@ class DiceCube extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final half = size / 2;
-    final rot = Matrix4.identity()
-      ..rotateX(rx)
-      ..rotateY(ry)
-      ..rotateZ(rz);
+    final rot =
+        orientation?.clone() ??
+        (Matrix4.identity()
+          ..rotateX(rx)
+          ..rotateY(ry)
+          ..rotateZ(rz));
     final faces = <(double, Widget)>[];
     for (final (faceValue, faceM) in facesFor(value, half)) {
       final m = rot.multiplied(faceM);
@@ -192,7 +201,19 @@ class DiceTray extends StatefulWidget {
     this.dim = false,
     this.onSettled,
     this.lite = false,
+    this.fromTop = false,
+    this.firstRoll = false,
+    this.highlight = false,
   });
+
+  /// Mirror the throw (other seat: hotseat / bot turns).
+  final bool fromTop;
+
+  /// First roll of the turn (first-roll triple 1s gets the biggest slow-mo).
+  final bool firstRoll;
+
+  /// Big result decided by the screen (win / near miss): slow-mo + zoom.
+  final bool highlight;
 
   /// Lighter 2D tumble for low-end devices (see class docs).
   final bool lite;
@@ -239,6 +260,11 @@ class DiceTrayState extends State<DiceTray>
   /// True from the throw until every die has settled.
   bool get settling => _c.isAnimating;
 
+  /// Throw-mode state (see dice_throw_layer.dart).
+  final _ThrowState _th = _ThrowState();
+
+  void _rebuild() => setState(() {});
+
   @override
   void didUpdateWidget(DiceTray oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -258,6 +284,11 @@ class DiceTrayState extends State<DiceTray>
       return;
     }
     _reduce = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    if (!widget.lite) {
+      _startThrow(moving);
+      return;
+    }
+    _th.active = false;
     final rnd = math.Random(widget.rollSerial * 7349 + 17);
     _tumbles = [for (var i = 0; i < widget.values.length; i++) _Tumble(rnd)];
     _moving = moving;
@@ -285,6 +316,10 @@ class DiceTrayState extends State<DiceTray>
   double _localMs(int i) => _ms - _order(i) * DiceTray.staggerMs;
 
   void _tick() {
+    if (_th.active) {
+      _throwTick();
+      return;
+    }
     for (var i = 0; i < _moving.length; i++) {
       if (!_moving[i] || (_landedMask & (1 << i)) != 0) continue;
       final landAt = _reduce ? DiceTray.reduceMotionMs : DiceTray.tumbleEnd;
@@ -297,6 +332,10 @@ class DiceTrayState extends State<DiceTray>
   }
 
   void _settled() {
+    if (_th.active) {
+      _throwSettled();
+      return;
+    }
     for (var i = 0; i < _moving.length; i++) {
       if (_moving[i] && (_landedMask & (1 << i)) == 0) {
         _landedMask |= 1 << i;
@@ -511,6 +550,7 @@ class DiceTrayState extends State<DiceTray>
 
   @override
   Widget build(BuildContext context) {
+    if (!widget.lite) return _buildTable(context);
     return Opacity(
       opacity: widget.dim ? 0.35 : 1,
       child: Row(
