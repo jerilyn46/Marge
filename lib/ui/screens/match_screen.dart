@@ -425,52 +425,58 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
                         child: PayoutBanner(event: snap.lastPayout!),
                       ),
                     ],
-                    const Spacer(),
+                    const SizedBox(height: 8),
                     _TurnBanner(
                       snapshot: snap,
                       busyBot: view.busyBot,
                       gated: gated,
                     ),
-                    const SizedBox(height: 16),
-                    DiceTray(
-                      values: lockedFaces ?? const [1, 1, 1],
-                      dim: lockedFaces == null,
-                      rollSerial: view.rollSerial,
-                      // Gold outline = kept (held through handoff and the
-                      // pot-win display too). Kept dice never tumble.
-                      kept: [
-                        for (var i = 0; i < 3; i++)
-                          lockedFaces != null &&
-                              (gated || showingPotWinFaces
-                                  ? true
-                                  : (turn?.dice.dice[i].kept ?? false)),
-                      ],
-                      animate: [
-                        for (var i = 0; i < 3; i++)
-                          !(turn != null &&
-                              turn.hasRolled &&
-                              turn.dice.dice[i].kept),
-                      ],
-                      enabled: [
-                        for (var i = 0; i < 3; i++)
-                          lockedFaces != null &&
-                              canInteract &&
-                              !showingPotWinFaces &&
-                              turn != null &&
-                              !turn.canBank &&
-                              turn.rollNumber < 3,
-                      ],
-                      onTap: (i) =>
-                          ref.read(matchProvider.notifier).toggleKeep(i),
-                      size: 64,
-                      theme: skinTheme,
-                      sfx: fx,
-                      lite: settings.liteDice,
-                      onSettled: (serial) {
-                        if (mounted && serial != _settledSerial) {
-                          setState(() => _settledSerial = serial);
-                        }
-                      },
+                    const SizedBox(height: 8),
+                    // The felt: dice are thrown across this area (DICE_SPEC).
+                    Expanded(
+                      flex: 3,
+                      child: DiceTray(
+                        values: lockedFaces ?? const [1, 1, 1],
+                        dim: lockedFaces == null,
+                        rollSerial: view.rollSerial,
+                        // Gold outline = kept (held through handoff and the
+                        // pot-win display too). Kept dice never tumble.
+                        kept: [
+                          for (var i = 0; i < 3; i++)
+                            lockedFaces != null &&
+                                (gated || showingPotWinFaces
+                                    ? true
+                                    : (turn?.dice.dice[i].kept ?? false)),
+                        ],
+                        animate: [
+                          for (var i = 0; i < 3; i++)
+                            !(turn != null &&
+                                turn.hasRolled &&
+                                turn.dice.dice[i].kept),
+                        ],
+                        enabled: [
+                          for (var i = 0; i < 3; i++)
+                            lockedFaces != null &&
+                                canInteract &&
+                                !showingPotWinFaces &&
+                                turn != null &&
+                                !turn.canBank &&
+                                turn.rollNumber < 3,
+                        ],
+                        onTap: (i) =>
+                            ref.read(matchProvider.notifier).toggleKeep(i),
+                        size: 64,
+                        theme: skinTheme,
+                        sfx: fx,
+                        lite: settings.liteDice,
+                        firstRoll: turn != null && turn.rollNumber == 1,
+                        fromTop: view.busyBot,
+                        onSettled: (serial) {
+                          if (mounted && serial != _settledSerial) {
+                            setState(() => _settledSerial = serial);
+                          }
+                        },
+                      ),
                     ),
                     if (diceSettling)
                       const SizedBox.shrink()
