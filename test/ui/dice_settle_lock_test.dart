@@ -92,7 +92,10 @@ void main() {
     expect(find.text('ROLL'), findsNothing);
     expect(find.textContaining('Trips on'), findsNothing); // readout waits
 
-    await tester.pump(const Duration(milliseconds: 700)); // settled
+    // Real throw: settles by 2.2 s sim + slow-mo + 250 ms beat (< 3.2 s).
+    for (var i = 0; i < 27; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
     await tester.pump();
     expect(find.byType(BankButton), findsOneWidget);
     expect(find.textContaining('Trips on'), findsOneWidget);

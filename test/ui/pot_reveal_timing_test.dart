@@ -126,11 +126,12 @@ void main() {
     expect(after.revealingRoll, isFalse);
     expect(shownPot(), 20);
     expect(shownPot(), after.snapshot.potCents);
-    // The readout also waits for the 3D dice to settle. On a device they
-    // start one 16 ms frame after the throw and settle at ~1.04 s, inside
-    // the pause; this fake-time test only ticks them from the 300 ms pump,
-    // so allow the remaining ~120 ms here.
-    await tester.pump(const Duration(milliseconds: 150));
+    // The readout also waits for the thrown dice to settle (real throw:
+    // up to ~3 s with the triples slow-mo and the 250 ms beat).
+    expect(find.textContaining('sweeps the pot'), findsNothing);
+    for (var i = 0; i < 30; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
     expect(find.textContaining('sweeps the pot'), findsOneWidget);
     // The plate drains from 50 to 20 after the pause, never before.
     await tester.pump(const Duration(milliseconds: 600));
