@@ -201,13 +201,30 @@ class DiceTray extends StatefulWidget {
     this.dim = false,
     this.onSettled,
     this.lite = false,
-    this.fromTop = false,
+    this.throwEdge = DiceThrowSim.edgeBottom,
     this.firstRoll = false,
     this.highlight = false,
   });
 
-  /// Mirror the throw (other seat: hotseat / bot turns).
-  final bool fromTop;
+  /// Table edge the current seat throws from ([DiceThrowSim.edgeBottom] …).
+  final int throwEdge;
+
+  /// Edge for seat [seat] of [seats] around the table: the local seat (0)
+  /// throws from the bottom; with two seats the other throws from the top;
+  /// with more, the others spread left → top → right.
+  static int edgeForSeat(int seat, int seats) {
+    if (seat <= 0 || seats <= 1) return DiceThrowSim.edgeBottom;
+    if (seats == 2) return DiceThrowSim.edgeTop;
+    const ring = [
+      DiceThrowSim.edgeLeft,
+      DiceThrowSim.edgeTop,
+      DiceThrowSim.edgeRight,
+    ];
+    if (seats == 3) {
+      return seat == 1 ? DiceThrowSim.edgeLeft : DiceThrowSim.edgeRight;
+    }
+    return ring[((seat - 1) * 3 ~/ (seats - 1)).clamp(0, 2)];
+  }
 
   /// First roll of the turn (first-roll triple 1s gets the biggest slow-mo).
   final bool firstRoll;
@@ -244,8 +261,7 @@ class DiceTray extends StatefulWidget {
   State<DiceTray> createState() => DiceTrayState();
 }
 
-class DiceTrayState extends State<DiceTray>
-    with SingleTickerProviderStateMixin {
+class DiceTrayState extends State<DiceTray> with TickerProviderStateMixin {
   late final AnimationController _c = AnimationController(vsync: this)
     ..addListener(_tick)
     ..addStatusListener((s) {
@@ -263,11 +279,127 @@ class DiceTrayState extends State<DiceTray>
   /// Throw-mode state (see dice_throw_layer.dart).
   final _ThrowState _th = _ThrowState();
 
+  /// Kept-die slide to the holding spot (200 ms).
+  late final AnimationController _slide = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 200),
+    value: 1,
+  );
+
+  // --- Test hooks (the dice are painted, not widgets) ---------------------
+
+  /// Faces each die is drawn with (always the decided values).
+  @visibleForTesting
+  List<int> get debugValues => List.unmodifiable(widget.values);
+
+  /// The face pointing at the viewer for each die right now.
+  @visibleForTesting
+  List<int> get debugFrontFaces {
+    final t = _th.table;
+    return [
+      for (final d in _frame(t).dice) _frontFace(widget.values[d.index], d.rot),
+    ];
+  }
+
+  static int _frontFace(int value, Matrix4 rot) {
+    var best = value;
+    var bestNz = 0.0;
+    for (final (fv, faceM) in DiceCube.facesFor(value, 1)) {
+      final nz = rot.multiplied(faceM).entry(2, 2); // -nz toward viewer
+      if (nz > bestNz) {
+        bestNz = nz;
+        best = fv;
+      }
+    }
+    return best;
+  }
+
+  /// On-screen centre of each die (before shake/zoom).
+  @visibleForTesting
+  List<Offset> get debugCenters => [
+    for (final d in _frame(_th.table).dice) _DieGeometry(d, widget.size).center,
+  ];
+
+  /// On-screen bounds of each die, from its projected cube corners.
+  @visibleForTesting
+  List<Rect> get debugBounds {
+    final s = widget.size;
+    final out = <Rect>[];
+    for (final d in _frame(_th.table).dice) {
+      final g = _DieGeometry(d, s);
+      final pm = Matrix4.identity()
+        ..setEntry(3, 2, DiceCube.perspective)
+        ..multiply(d.rot);
+      var l = double.infinity, tp = double.infinity;
+      var r = -double.infinity, b = -double.infinity;
+      for (final sx in [-1.0, 1.0]) {
+        for (final sy in [-1.0, 1.0]) {
+          for (final sz in [-1.0, 1.0]) {
+            final px = sx * s / 2, py = sy * s / 2, pz = sz * s / 2;
+            double row(int k) =>
+                pm.entry(k, 0) * px +
+                pm.entry(k, 1) * py +
+                pm.entry(k, 2) * pz +
+                pm.entry(k, 3);
+            final w = row(3);
+            final x = row(0) / w * g.scale, y = row(1) / w * g.scale;
+            l = math.min(l, x);
+            r = math.max(r, x);
+            tp = math.min(tp, y);
+            b = math.max(b, y);
+          }
+        }
+      }
+      out.add(Rect.fromLTRB(l, tp, r, b).shift(g.center));
+    }
+    return out;
+  }
+
+  /// Which dice draw the kept outline.
+  @visibleForTesting
+  List<bool> get debugKeptOutline => [
+    for (final d in _frame(_th.table).dice) d.kept,
+  ];
+
+  /// Number of times the tray built (painted frames do not rebuild).
+  @visibleForTesting
+  int debugBuilds = 0;
+
+  /// Table size the dice are laid out in.
+  @visibleForTesting
+  Size get debugTable => _th.table;
+
   void _rebuild() => setState(() {});
 
   @override
   void didUpdateWidget(DiceTray oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!widget.lite &&
+        widget.rollSerial == oldWidget.rollSerial &&
+        _th.table != Size.zero) {
+      // Keep toggled: slide between the felt spot and the holding spot.
+      var any = false;
+      for (
+        var i = 0;
+        i < widget.kept.length && i < oldWidget.kept.length;
+        i++
+      ) {
+        if (widget.kept[i] != oldWidget.kept[i]) {
+          final rest = _th.rest[i];
+          final slot = _slot(i, _th.table);
+          _th.slideFrom[i] = oldWidget.kept[i] ? slot : (rest ?? slot);
+          if (!widget.kept[i]) {
+            // Un-kept dice stay in the holding spot until the next throw.
+            _th.rest[i] = slot;
+            _th.restYaw[i] = 0;
+          }
+          any = true;
+        }
+      }
+      if (any && !(MediaQuery.maybeDisableAnimationsOf(context) ?? false)) {
+        _slide.forward(from: 0);
+      }
+    }
     if (widget.rollSerial != oldWidget.rollSerial) _start();
   }
 
@@ -348,6 +480,7 @@ class DiceTrayState extends State<DiceTray>
 
   @override
   void dispose() {
+    _slide.dispose();
     _c.dispose();
     super.dispose();
   }
@@ -550,6 +683,7 @@ class DiceTrayState extends State<DiceTray>
 
   @override
   Widget build(BuildContext context) {
+    debugBuilds++;
     if (!widget.lite) return _buildTable(context);
     return Opacity(
       opacity: widget.dim ? 0.35 : 1,
