@@ -27,12 +27,8 @@ Widget tray({
     onTap: onTap,
   ),
   reduceMotion: reduceMotion,
-  size: const Size(360, 160),
+  size: const Size(360, 280),
 );
-
-List<double> poses(WidgetTester t) => [
-  for (final c in t.widgetList<DiceCube>(find.byType(DiceCube))) c.rx + c.ry,
-];
 
 void main() {
   test('cube faces: result in front, opposite faces sum to 7', () {
@@ -53,34 +49,19 @@ void main() {
     final sfx = SfxService(hapticsEnabled: false)..debugOnCue = cues.add;
     final settled = <int>[];
     await tester.pumpWidget(tray(serial: 0, sfx: sfx, onSettled: settled.add));
-    final keptPos = tester.getCenter(find.byKey(const ValueKey('die-cube-1')));
+    DiceTrayState st() => tester.state<DiceTrayState>(find.byType(DiceTray));
+    final keptPos = st().debugCenters[1];
     await tester.pumpWidget(tray(serial: 1, sfx: sfx, onSettled: settled.add));
     expect(cues, [SfxCue.cupRattle]);
-    for (var ms = 0; ms < 3200; ms += 50) {
+    for (var ms = 0; ms < 2300; ms += 50) {
       await tester.pump(const Duration(milliseconds: 50));
-      expect(
-        tester
-            .widgetList<DiceCube>(
-              find.byKey(const ValueKey('die-cube-0')).evaluate().isEmpty
-                  ? find.byType(DiceCube)
-                  : find.descendant(
-                      of: find.byKey(const ValueKey('die-cube-0')),
-                      matching: find.byType(DiceCube),
-                    ),
-            )
-            .map((c) => c.value)
-            .toSet(),
-        {2},
-      );
-      // Kept die (index 1) never moves (only the 4–6 dp table shake).
-      final d =
-          tester.getCenter(find.byKey(const ValueKey('die-cube-1'))) - keptPos;
-      expect(d.distance, lessThan(8));
+      expect(st().debugValues, [2, 5, 6]); // always the engine result
+      expect(st().debugCenters[1], keptPos); // kept die never moves
     }
+    expect(st().settling, isFalse);
     expect(cues.where((c) => c == SfxCue.dieClack).length, 2); // 2 movers
-    expect(tester.getCenter(find.byKey(const ValueKey('die-cube-1'))), keptPos);
     expect(settled, [1]);
-    expect(poses(tester).toSet(), {DiceCube.restRx + DiceCube.restRy});
+    expect(st().debugFrontFaces, [2, 5, 6]);
   });
 
   testWidgets('input locked until settle', (tester) async {
@@ -90,17 +71,44 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     await tester.tap(find.byKey(const ValueKey('die-0')), warnIfMissed: false);
     expect(taps, isEmpty);
-    for (var i = 0; i < 32; i++) {
+    for (var i = 0; i < 18; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
-    await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.byKey(const ValueKey('die-0')));
     expect(taps, [0]);
   });
 
   testWidgets('kept dice show the gold outline and stay still', (tester) async {
     await tester.pumpWidget(tray(serial: 0));
-    expect(find.byKey(const ValueKey('kept-outline')), findsOneWidget);
+    expect(
+      tester.state<DiceTrayState>(find.byType(DiceTray)).debugKeptOutline,
+      [false, true, false],
+    );
+  });
+
+  testWidgets('one CustomPainter inside a RepaintBoundary draws the dice', (
+    tester,
+  ) async {
+    await tester.pumpWidget(tray(serial: 0));
+    await tester.pumpWidget(tray(serial: 1));
+    await tester.pump(const Duration(milliseconds: 300));
+    final paint = find.byKey(const ValueKey('dice-table-painter'));
+    expect(paint, findsOneWidget);
+    expect(
+      find.ancestor(of: paint, matching: find.byType(RepaintBoundary)),
+      findsWidgets,
+    );
+    expect(find.byType(DiceCube), findsNothing); // no per-die widgets
+    // Mid-throw frames repaint without rebuilding the tray.
+    final st = tester.state<DiceTrayState>(find.byType(DiceTray));
+    final builds = st.debugBuilds;
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(st.debugBuilds, builds);
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
   });
 
   testWidgets('Reduce Motion: 250 ms fade + drop, no throw', (tester) async {
@@ -108,29 +116,41 @@ void main() {
     await tester.pumpWidget(
       tray(serial: 0, reduceMotion: true, onSettled: settled.add),
     );
-    final rest = poses(tester);
+    DiceTrayState st() => tester.state<DiceTrayState>(find.byType(DiceTray));
     final spot = tester.getCenter(find.byKey(const ValueKey('die-0')));
     await tester.pumpWidget(
       tray(serial: 1, reduceMotion: true, onSettled: settled.add),
     );
     await tester.pump(const Duration(milliseconds: 100));
-    expect(poses(tester), rest); // orientation never leaves the result
-    expect(find.byKey(const ValueKey('ghost-0-0')), findsNothing);
+    expect(st().debugFrontFaces, [2, 5, 6]); // never leaves the result pose
     await tester.pump(const Duration(milliseconds: 200));
     expect(settled, [1]);
-    // Final spot = its holding spot; no shake/zoom layers.
     expect(tester.getCenter(find.byKey(const ValueKey('die-0'))), spot);
-    expect(find.byKey(const ValueKey('big-vignette')), findsNothing);
   });
 
   testWidgets('golden: settled dice frame', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(360, 160));
+    await tester.binding.setSurfaceSize(const Size(360, 280));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(tray(serial: 0));
     await tester.pumpWidget(tray(serial: 1));
-    for (var i = 0; i < 35; i++) {
+    for (var i = 0; i < 23; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     } // settled
+    final st = tester.state<DiceTrayState>(find.byType(DiceTray));
+    final b = st.debugBounds;
+    final table = Offset.zero & st.debugTable;
+    for (var i = 0; i < 3; i++) {
+      // Every die fully visible...
+      expect(
+        table.contains(b[i].topLeft) && table.contains(b[i].bottomRight),
+        isTrue,
+        reason: 'die $i ${b[i]} in $table',
+      );
+      // ...and none overlap on screen.
+      for (var j = i + 1; j < 3; j++) {
+        expect(b[i].overlaps(b[j]), isFalse, reason: 'dice $i/$j');
+      }
+    }
     expect(tester.hasRunningAnimations, isFalse);
     await expectLater(
       find.byKey(const ValueKey('tray')),

@@ -81,10 +81,11 @@ void main() {
     // Engine result already known (three 4s, bankable) before any motion.
     expect(view.snapshot.turn!.dice.values, [4, 4, 4]);
     expect(view.snapshot.turn!.canBank, isTrue);
-    expect(
-      tester.widgetList<DiceCube>(find.byType(DiceCube)).map((c) => c.value),
-      [4, 4, 4],
-    );
+    expect(tester.state<DiceTrayState>(find.byType(DiceTray)).debugValues, [
+      4,
+      4,
+      4,
+    ]);
 
     await tester.pump(const Duration(milliseconds: 500)); // mid-tumble
     expect(tester.state<DiceTrayState>(find.byType(DiceTray)).settling, isTrue);
@@ -92,8 +93,8 @@ void main() {
     expect(find.text('ROLL'), findsNothing);
     expect(find.textContaining('Trips on'), findsNothing); // readout waits
 
-    // Real throw: settles by 2.2 s sim + slow-mo + 250 ms beat (< 3.2 s).
-    for (var i = 0; i < 27; i++) {
+    // Real throw: tap-to-still incl. slow-mo + 250 ms beat ≤ ~2.2 s.
+    for (var i = 0; i < 18; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
     await tester.pump();

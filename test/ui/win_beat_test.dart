@@ -86,15 +86,21 @@ void main() {
 
     // Beat 1: dice on the table, banner held.
     await _pump(tester, MatchViewState(snapshot: snap, revealingRoll: true));
-    final dice = tester.widgetList<DiceCube>(find.byType(DiceCube)).toList();
-    expect(dice.map((d) => d.value).take(3), [1, 1, 1]);
+    expect(tester.state<DiceTrayState>(find.byType(DiceTray)).debugValues, [
+      1,
+      1,
+      1,
+    ]);
     expect(find.textContaining('sweeps the pot'), findsNothing);
 
     // Beat 2: the notification follows; dice still visible.
     await tester.pumpWidget(const SizedBox());
     await _pump(tester, MatchViewState(snapshot: snap));
     expect(find.textContaining('sweeps the pot'), findsOneWidget);
-    final dice2 = tester.widgetList<DiceCube>(find.byType(DiceCube)).toList();
-    expect(dice2.map((d) => d.value).take(3), [1, 1, 1]);
+    expect(tester.state<DiceTrayState>(find.byType(DiceTray)).debugValues, [
+      1,
+      1,
+      1,
+    ]);
   });
 }
