@@ -6,6 +6,7 @@ import 'package:marge/engine/hand_evaluator.dart';
 import 'package:marge/engine/match_controller.dart';
 import 'package:marge/engine/match_checkpoint.dart';
 import 'package:marge/engine/player.dart';
+import 'package:marge/services/coin_ledger.dart';
 
 /// Deterministic RNG that yields a fixed sequence of nextInt results.
 class ScriptedRandom implements Random {
@@ -32,6 +33,7 @@ class ScriptedRandom implements Random {
 
 void main() {
   lastStandingTests();
+  brokeHumanGateTests();
   group('MatchConfig lobby helpers', () {
     test('default is 3 bots + 0 other humans', () {
       const c = MatchConfig();
@@ -745,7 +747,7 @@ MatchController _broke({
 );
 
 /// Bust the current seat's turn (three misses) and confirm the handoff.
-void _bustTurn(MatchController c) {
+void _bustTurn(MatchController c, {bool quit = true}) {
   // Drive until the phase leaves playing for this seat.
   for (var k = 0; k < 400 && c.snapshot.phase == MatchPhase.playing; k++) {
     final t = c.snapshot.turn;
@@ -759,7 +761,9 @@ void _bustTurn(MatchController c) {
     }
   }
   if (c.snapshot.phase == MatchPhase.awaitingHandoff) c.confirmHandoff();
-  if (c.snapshot.phase == MatchPhase.awaitingShortfall) c.quitShortfall();
+  if (quit && c.snapshot.phase == MatchPhase.awaitingShortfall) {
+    c.quitShortfall();
+  }
 }
 
 void _setBank(MatchController c, int seat, int cents, {bool stake = true}) {
@@ -862,12 +866,9 @@ void lastStandingTests() {
     });
 
     test('bot wins: message names the bot', () {
-      final c = _broke(bots: 1, bank: 100);
+      final c = _starter(bots: 1);
       c.startMatch();
-      _setBank(c, 0, 0); // I am broke with the stake used
-      for (var k = 0; k < 40 && c.snapshot.phase != MatchPhase.matchEnd; k++) {
-        _bustTurn(c);
-      }
+      c.quitShortfall(); // I decline to add gems
       final s = c.snapshot;
       expect(s.phase, MatchPhase.matchEnd);
       expect(s.winnerId, s.players[1].profile.id);
@@ -943,6 +944,79 @@ void lastStandingTests() {
           ),
         );
       }
+    });
+  });
+}
+
+/// Human sits down at 0 gems with no House stake left to give; bots have
+/// their normal 100-gem banks.
+MatchController _starter({required int bots}) {
+  final ledger = PlayerCoinLedger()..write('You', bot: false, cents: 0);
+  return MatchController(
+    config: MatchConfig(
+      botCount: bots,
+      anteCents: 10,
+      houseStakeCents: 0,
+      localPlayerName: 'You',
+    ),
+    coins: ledger,
+    rng: Random(5),
+  );
+}
+
+void brokeHumanGateTests() {
+  group('Broke human gets the add-gems choice first', () {
+    test('decline -> out -> opponent wins the pot', () {
+      final c = _starter(bots: 1);
+      c.startMatch();
+      expect(c.snapshot.phase, MatchPhase.awaitingShortfall);
+      expect(c.snapshot.pendingShortfall!.face, 0);
+      expect(c.snapshot.players[0].eliminated, isFalse);
+      final pot = c.snapshot.potCents;
+      final botBank = c.snapshot.players[1].bankCents;
+      c.quitShortfall();
+      final s = c.snapshot;
+      expect(s.players[0].eliminated, isTrue);
+      expect(s.phase, MatchPhase.matchEnd);
+      expect(s.winnerId, s.players[1].profile.id);
+      expect(s.players[1].bankCents, botBank + pot);
+      expect(s.potCents, 0);
+      expect(
+        s.lastPayout!.message,
+        '${s.players[1].profile.name} wins the pot. You ran out of gems.',
+      );
+    });
+
+    test('add gems -> pays the ante and keeps playing', () {
+      final c = _starter(bots: 1);
+      c.startMatch();
+      expect(c.coverShortfall(), isFalse); // still can't pay: nothing taken
+      expect(c.snapshot.phase, MatchPhase.awaitingShortfall);
+      c.addTableGems(0, 30);
+      final pot = c.snapshot.potCents;
+      expect(c.coverShortfall(), isTrue);
+      expect(c.snapshot.phase, MatchPhase.playing);
+      expect(c.snapshot.players[0].bankCents, 20);
+      expect(c.snapshot.potCents, pot + 10);
+      expect(c.snapshot.players[0].eliminated, isFalse);
+    });
+
+    test('3 players: a declining human is out, match goes on', () {
+      final c = _starter(bots: 2);
+      c.startMatch();
+      c.quitShortfall();
+      expect(c.snapshot.players[0].eliminated, isTrue);
+      expect(c.snapshot.phase, isNot(MatchPhase.matchEnd));
+    });
+
+    test('gate survives a checkpoint round-trip', () {
+      final c = _starter(bots: 1);
+      c.startMatch();
+      expect(c.snapshot.phase, MatchPhase.awaitingShortfall);
+      final d = MatchController(config: c.config, rng: Random(1));
+      d.restore(MatchCheckpoint.fromJson(c.capture().toJson())!);
+      expect(d.snapshot.phase, MatchPhase.awaitingShortfall);
+      expect(d.snapshot.pendingShortfall!.face, 0);
     });
   });
 }

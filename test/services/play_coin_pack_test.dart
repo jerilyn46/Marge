@@ -75,9 +75,11 @@ void main() {
       final you = c.snapshot.players.firstWhere(
         (p) => p.profile.id == 'human_0',
       );
+      // Broke at the first ante: offered add gems before being out.
       expect(you.bankCents, 0);
-      expect(you.eliminated, isTrue);
-      expect(you.usedHouseStake, isTrue);
+      expect(you.eliminated, isFalse);
+      expect(c.snapshot.phase, MatchPhase.awaitingShortfall);
+      expect(c.snapshot.pendingShortfall!.face, 0);
 
       final sam = c.snapshot.players.firstWhere((p) => p.profile.name == 'Sam');
       expect(sam.profile.isWaiting, isTrue);
@@ -90,21 +92,22 @@ void main() {
       );
       expect(after.bankCents, 100);
       expect(after.eliminated, isFalse);
-      expect(after.usedHouseStake, isTrue);
-      expect(ledger.savedCents('You', bot: false), 100);
+      // Pay the ante from the added gems and keep playing.
+      expect(c.coverShortfall(), isTrue);
+      expect(c.snapshot.phase, MatchPhase.playing);
+      expect(c.snapshot.players[0].bankCents, 90);
+      expect(ledger.savedCents('You', bot: false), 90);
       expect(
         c.snapshot.players.firstWhere((p) => p.profile.isBot).bankCents,
-        100, // last player with gems took the 10-gem pot (new rule)
+        90,
       );
-      expect(ledger.savedCents('Spike', bot: true), 100);
+      expect(ledger.savedCents('Spike', bot: true), 90);
       expect(ledger.savedCents('Sam', bot: false), isNull);
       expect(
         c.snapshot.players.firstWhere((p) => p.profile.name == 'Sam').bankCents,
         0,
       );
-      // You were out at the first ante, so the bot took the pot and the
-      // match ended (new last-player-with-gems rule).
-      expect(c.snapshot.phase, MatchPhase.matchEnd);
+      expect(c.snapshot.currentPlayer.profile.id, 'human_0');
     });
   });
 }
