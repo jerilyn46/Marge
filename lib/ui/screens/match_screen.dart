@@ -240,7 +240,11 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
                     final pw =
                         (h * (tiny ? 0.11 : 0.15)).clamp(56.0, 150.0) * 1.6;
                     final dieSize = tiny ? 44.0 : (compact ? 52.0 : 64.0);
-                    final seatsH = compact ? 56.0 : 72.0;
+                    // Seat chips grow with large text so their labels never overflow.
+                    final ts = MediaQuery.textScalerOf(context)
+                        .scale(1)
+                        .clamp(1.0, 1.6);
+                    final seatsH = (compact ? 56.0 : 72.0) * ts;
                     return Column(
                       children: [
                         Expanded(
