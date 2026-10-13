@@ -515,4 +515,72 @@ void _suite(int haptic) {
     );
     timeDilation = 1;
   });
+
+  // Jerilyn's exact taps: 1-1-1 on roll 3, then Bank. Tap Bank at every
+  // 16 ms frame offset from the moment it can be tapped (through the
+  // banner/celebration), then Roll at every offset after the bank lands.
+  Future<void> bankThenRoll(WidgetTester tester, int bankAt, int rollAt) async {
+    final c = await _boot(tester, [2, 2, 0, 2, 2, 0, 0, 0, 0, 3, 5, 5]);
+    await _settle(tester);
+    await _tap(tester, 'ROLL');
+    await _tap(tester, 'KEEP ROLLING');
+    final ks = _btn('KEEP ROLLING');
+    await tester.tap(ks); // 1,1,1 on roll 3
+    await tester.pump();
+    final bank = find.byKey(const ValueKey('bank-only'));
+    var f = 0;
+    for (; f < 300; f++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      if (bank.evaluate().length == 1 &&
+          (tester.widget(bank) as BankButton).enabled &&
+          tester.state(bank).toString().isNotEmpty) {
+        break;
+      }
+    }
+    for (var k = 0; k < bankAt; k++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await tester.tap(bank, warnIfMissed: false);
+    final roll = _btn('ROLL');
+    var g = 0;
+    for (; g < 400; g++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      if (roll.evaluate().length == 1 && _enabled(tester, roll)) break;
+    }
+    if (g == 400) {
+      // Bank tap landed before the button could take it: tap again.
+      await tester.tap(bank, warnIfMissed: false);
+      for (g = 0; g < 400; g++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        if (roll.evaluate().length == 1 && _enabled(tester, roll)) break;
+      }
+    }
+    expect(roll.evaluate().length, 1, reason: 'no ROLL after bank: ${_dbg(c)}');
+    for (var k = 0; k < rollAt; k++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await tester.tap(roll);
+    await _settle(tester);
+    expect(
+      _enabled(tester, _btn('KEEP ROLLING')),
+      isTrue,
+      reason: 'bank@$bankAt roll@$rollAt locked: ${_dbg(c)}',
+    );
+  }
+
+  _tw('Bank at every frame offset 0..60 after 1-1-1 on roll 3', (tester) async {
+    for (var b = 0; b <= 60; b++) {
+      await bankThenRoll(tester, b, 0);
+      _last?.read(matchProvider.notifier).endMatch();
+      await tester.pump(const Duration(seconds: 6));
+    }
+  });
+
+  _tw('Roll at every frame offset 0..40 after the bank lands', (tester) async {
+    for (var r = 0; r <= 40; r++) {
+      await bankThenRoll(tester, 0, r);
+      _last?.read(matchProvider.notifier).endMatch();
+      await tester.pump(const Duration(seconds: 6));
+    }
+  });
 }

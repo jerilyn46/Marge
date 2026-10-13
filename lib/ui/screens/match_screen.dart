@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../ads/ads_service.dart';
+import '../../debug/settle_log.dart';
 import '../../cosmetics/skins_service.dart';
 import '../../engine/engine.dart';
 import '../../engine/gem_label.dart';
@@ -121,6 +122,10 @@ int bankPreviewGems(MatchSnapshot snap) {
 }
 
 class MatchScreen extends ConsumerStatefulWidget {
+  /// Settle-lock watchdog (see [_MatchScreenState._armWatchdog]).
+  @visibleForTesting
+  static Duration settleWatchdog = const Duration(milliseconds: 2500);
+
   const MatchScreen({super.key});
 
   @override
@@ -137,7 +142,6 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
 
   /// Safety net for the settle lock: a throw is ~1 s, so if a roll still
   /// reads as "settling" well after that, nothing is in flight; release it.
-  static const settleWatchdog = Duration(milliseconds: 2500);
   Timer? _watchdog;
   int? _watchSerial;
 
@@ -145,10 +149,32 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
     if (_watchSerial == serial) return;
     _watchSerial = serial;
     _watchdog?.cancel();
-    _watchdog = Timer(settleWatchdog, () {
+    _watchdog = Timer(MatchScreen.settleWatchdog, () {
       if (!mounted || _settledSerial == serial) return;
       if (ref.read(matchProvider)?.rollSerial != serial) return;
-      setState(() => _settledSerial = serial);
+      SettleLog.add(
+        'watchdog-fired',
+        serial: serial,
+        roll: ref.read(matchProvider)?.snapshot.turn?.rollNumber,
+        reason:
+            'released after ${MatchScreen.settleWatchdog.inMilliseconds} ms',
+      );
+      // Snap a still-moving throw to rest first; it reports settled itself.
+      DiceTrayState? tray;
+      void find(Element e) {
+        if (tray != null) return;
+        if (e is StatefulElement && e.state is DiceTrayState) {
+          tray = e.state as DiceTrayState;
+          return;
+        }
+        e.visitChildren(find);
+      }
+
+      (context as Element).visitChildren(find);
+      tray?.snapToRest('watchdog');
+      if (mounted && _settledSerial != serial) {
+        setState(() => _settledSerial = serial);
+      }
     });
   }
 
@@ -200,6 +226,14 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
     // Roll off a phone screen.
     _settledSerial ??= view.rollSerial;
     final diceSettling = view.rollSerial != _settledSerial;
+    if (diceSettling && _watchSerial != view.rollSerial) {
+      SettleLog.add(
+        'lock-set',
+        serial: view.rollSerial,
+        roll: turn?.rollNumber,
+        reason: 'waiting on throw (settled=$_settledSerial)',
+      );
+    }
     if (diceSettling) _armWatchdog(view.rollSerial);
     final canInteract =
         isHumanTurn &&
@@ -419,6 +453,17 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
                                         theme: skinTheme,
                                         sfx: fx,
                                         onSettled: (serial) {
+                                          SettleLog.add(
+                                            serial == _settledSerial
+                                                ? 'report-dup'
+                                                : serial == view.rollSerial
+                                                ? 'lock-released'
+                                                : 'stale-report',
+                                            serial: serial,
+                                            roll: turn?.rollNumber,
+                                            reason:
+                                                'tray onSettled (view=${view.rollSerial} settled=$_settledSerial)',
+                                          );
                                           if (mounted &&
                                               serial != _settledSerial) {
                                             setState(
