@@ -304,6 +304,11 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
                     ),
                     const SizedBox(height: 16),
                     DiceTray(
+                      // Keyed: the conditional banner/notice rows above it
+                      // come and go on the roll frame; without a key the
+                      // Column re-created the tray mid-throw and its settle
+                      // callback never fired (input stayed locked).
+                      key: const ValueKey('dice-tray'),
                       values: lockedFaces ?? const [1, 1, 1],
                       dim: lockedFaces == null,
                       rollSerial: view.rollSerial,

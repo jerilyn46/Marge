@@ -225,6 +225,18 @@ class DiceTrayState extends State<DiceTray>
   bool get settling => _c.isAnimating;
 
   @override
+  void initState() {
+    super.initState();
+    // A freshly mounted tray has nothing in flight: report its roll as
+    // settled so a parent waiting on [onSettled] can never stay locked
+    // (e.g. the tray was re-created mid-throw by a layout change).
+    final serial = widget.rollSerial;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_c.isAnimating) widget.onSettled?.call(serial);
+    });
+  }
+
+  @override
   void didUpdateWidget(DiceTray oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.rollSerial != oldWidget.rollSerial) _start();
