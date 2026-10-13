@@ -175,7 +175,8 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
     // Roll off a phone screen.
     _settledSerial ??= view.rollSerial;
     final diceSettling = view.rollSerial != _settledSerial;
-    final canInteract = isHumanTurn &&
+    final canInteract =
+        isHumanTurn &&
         !view.busyBot &&
         !gated &&
         !shortfallGate &&
@@ -187,14 +188,12 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
       sfxEnabled: settings.sfxEnabled,
       hapticsEnabled: settings.hapticsEnabled,
     );
-    // Bowl takes ~15 % of the screen height so Roll never leaves the screen.
-    final potWidth =
-        (MediaQuery.sizeOf(context).height * 0.15).clamp(90.0, 150.0) * 1.6;
 
     // Locked faces during handoff (prefer frozen handoff values).
     // A first-roll triple-ones sweep resets the turn immediately; keep the
     // winning dice on the table until the winner rolls again.
-    final potWinFaces = (turn == null || !turn.hasRolled) &&
+    final potWinFaces =
+        (turn == null || !turn.hasRolled) &&
             snap.lastPayout?.kind == ScoreKind.tripleOnesPotWin &&
             snap.lastPayout?.seatIndex == snap.currentSeatIndex
         ? snap.lastPayout?.diceValues
@@ -202,7 +201,9 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
     final List<int>? lockedFaces =
         handoff?.diceValues ??
         (turn != null && turn.hasRolled ? turn.dice.values : potWinFaces);
-    final showingPotWinFaces = handoff == null && potWinFaces != null &&
+    final showingPotWinFaces =
+        handoff == null &&
+        potWinFaces != null &&
         identical(lockedFaces, potWinFaces);
 
     return PopScope(
@@ -228,194 +229,267 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
                 ),
               ),
               child: SafeArea(
-                child: Column(
-                  children: [
-                    _TopBar(
-                      snap: snap,
-                      gemsKey: _gemsTargetKey,
-                      onGems: () => _openTableGemsSheet(context, ref),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: PotOfGems(
-                        potGems: view.displayPotCents,
-                        anteGems: snap.config.anteCents,
-                        seats: snap.players.length,
-                        width: potWidth,
-                        sfx: fx,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    if (view.turnNotice != null) ...[
-                      const SizedBox(height: 8),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Material(
-                          color: MargeColors.gold.withValues(alpha: 0.18),
-                          borderRadius: BorderRadius.circular(12),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                            child: Text(
-                              view.turnNotice!,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: MargeColors.gold,
-                                fontWeight: FontWeight.w900,
+                child: LayoutBuilder(
+                  builder: (context, box) {
+                    // Short windows (Flip 7 cover screen, small phones): scale
+                    // the bowl, dice and seats down; the table scrolls and the
+                    // actions stay pinned to the bottom.
+                    final h = box.maxHeight;
+                    final compact = h < 720;
+                    final tiny = h < 600;
+                    final pw =
+                        (h * (tiny ? 0.11 : 0.15)).clamp(56.0, 150.0) * 1.6;
+                    final dieSize = tiny ? 44.0 : (compact ? 52.0 : 64.0);
+                    final seatsH = compact ? 56.0 : 72.0;
+                    return Column(
+                      children: [
+                        Expanded(
+                          child: LayoutBuilder(
+                            builder: (context, inner) => SingleChildScrollView(
+                              key: const ValueKey('table-scroll'),
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  minHeight: inner.maxHeight,
+                                ),
+                                child: IntrinsicHeight(
+                                  child: Column(
+                                    children: [
+                                      _TopBar(
+                                        snap: snap,
+                                        gemsKey: _gemsTargetKey,
+                                        onGems: () =>
+                                            _openTableGemsSheet(context, ref),
+                                      ),
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                        ),
+                                        child: PotOfGems(
+                                          potGems: view.displayPotCents,
+                                          anteGems: snap.config.anteCents,
+                                          seats: snap.players.length,
+                                          width: pw,
+                                          sfx: fx,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      if (view.turnNotice != null) ...[
+                                        const SizedBox(height: 8),
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                          ),
+                                          child: Material(
+                                            color: MargeColors.gold.withValues(
+                                              alpha: 0.18,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                            child: Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                    vertical: 8,
+                                                  ),
+                                              child: Text(
+                                                view.turnNotice!,
+                                                textAlign: TextAlign.center,
+                                                style: const TextStyle(
+                                                  color: MargeColors.gold,
+                                                  fontWeight: FontWeight.w900,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                      SizedBox(
+                                        height: seatsH,
+                                        child: ListView.separated(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                          ),
+                                          scrollDirection: Axis.horizontal,
+                                          itemCount: snap.players.length,
+                                          separatorBuilder: (_, _) =>
+                                              const SizedBox(width: 8),
+                                          itemBuilder: (context, i) {
+                                            return PlayerChip(
+                                              player: snap.players[i],
+                                              isActive:
+                                                  i == snap.currentSeatIndex,
+                                              compact: true,
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                      if (snap.lastPayout != null &&
+                                          !showStrip &&
+                                          !view.revealingRoll &&
+                                          !diceSettling) ...[
+                                        const SizedBox(height: 10),
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                          ),
+                                          child: PayoutBanner(
+                                            event: snap.lastPayout!,
+                                          ),
+                                        ),
+                                      ],
+                                      const Spacer(),
+                                      _TurnBanner(
+                                        snapshot: snap,
+                                        busyBot: view.busyBot,
+                                        gated: gated,
+                                      ),
+                                      const SizedBox(height: 16),
+                                      DiceTray(
+                                        // Keyed: the conditional banner/notice rows above it
+                                        // come and go on the roll frame; without a key the
+                                        // Column re-created the tray mid-throw and its settle
+                                        // callback never fired (input stayed locked).
+                                        key: const ValueKey('dice-tray'),
+                                        values: lockedFaces ?? const [1, 1, 1],
+                                        dim: lockedFaces == null,
+                                        rollSerial: view.rollSerial,
+                                        // Gold outline = kept (held through handoff and the
+                                        // pot-win display too). Kept dice never tumble.
+                                        kept: [
+                                          for (var i = 0; i < 3; i++)
+                                            lockedFaces != null &&
+                                                (gated || showingPotWinFaces
+                                                    ? true
+                                                    : (turn
+                                                              ?.dice
+                                                              .dice[i]
+                                                              .kept ??
+                                                          false)),
+                                        ],
+                                        animate: [
+                                          for (var i = 0; i < 3; i++)
+                                            !(turn != null &&
+                                                turn.hasRolled &&
+                                                turn.dice.dice[i].kept),
+                                        ],
+                                        enabled: [
+                                          for (var i = 0; i < 3; i++)
+                                            lockedFaces != null &&
+                                                canInteract &&
+                                                !showingPotWinFaces &&
+                                                turn != null &&
+                                                !turn.canBank &&
+                                                turn.rollNumber < 3,
+                                        ],
+                                        onTap: (i) => ref
+                                            .read(matchProvider.notifier)
+                                            .toggleKeep(i),
+                                        size: dieSize,
+                                        theme: skinTheme,
+                                        sfx: fx,
+                                        onSettled: (serial) {
+                                          if (mounted &&
+                                              serial != _settledSerial) {
+                                            setState(
+                                              () => _settledSerial = serial,
+                                            );
+                                          }
+                                        },
+                                      ),
+                                      if (diceSettling)
+                                        const SizedBox.shrink()
+                                      else if (!gated &&
+                                          turn != null &&
+                                          turn.mustKeepRolling)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            top: 10,
+                                          ),
+                                          child: Text(
+                                            canInteract
+                                                ? 'No score yet — keep rolling · ${turn.rollsLeft} rolls left'
+                                                : '',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              color: MargeColors.cream
+                                                  .withValues(alpha: 0.7),
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                        )
+                                      else if (!gated &&
+                                          turn != null &&
+                                          turn.hasRolled &&
+                                          turn.canBank &&
+                                          turn.rollsLeft > 0)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            top: 10,
+                                          ),
+                                          child: Text(
+                                            canInteract
+                                                ? 'Winning hand · bank it'
+                                                : '',
+                                            style: TextStyle(
+                                              color: MargeColors.cream
+                                                  .withValues(alpha: 0.7),
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                        ),
+                                      if (!gated &&
+                                          !diceSettling &&
+                                          turn != null &&
+                                          turn.lastScore.isScoring)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            top: 8,
+                                          ),
+                                          child: Text(
+                                            _scoreHint(turn.lastScore),
+                                            style: const TextStyle(
+                                              color: MargeColors.gold,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ),
+                                      const Spacer(),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                    SizedBox(
-                      height: 72,
-                      child: ListView.separated(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        scrollDirection: Axis.horizontal,
-                        itemCount: snap.players.length,
-                        separatorBuilder: (_, _) => const SizedBox(width: 8),
-                        itemBuilder: (context, i) {
-                          return PlayerChip(
-                            player: snap.players[i],
-                            isActive: i == snap.currentSeatIndex,
-                            compact: true,
-                          );
-                        },
-                      ),
-                    ),
-                    if (snap.lastPayout != null &&
-                        !showStrip &&
-                        !view.revealingRoll &&
-                        !diceSettling) ...[
-                      const SizedBox(height: 10),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: PayoutBanner(event: snap.lastPayout!),
-                      ),
-                    ],
-                    const Spacer(),
-                    _TurnBanner(
-                      snapshot: snap,
-                      busyBot: view.busyBot,
-                      gated: gated,
-                    ),
-                    const SizedBox(height: 16),
-                    DiceTray(
-                      // Keyed: the conditional banner/notice rows above it
-                      // come and go on the roll frame; without a key the
-                      // Column re-created the tray mid-throw and its settle
-                      // callback never fired (input stayed locked).
-                      key: const ValueKey('dice-tray'),
-                      values: lockedFaces ?? const [1, 1, 1],
-                      dim: lockedFaces == null,
-                      rollSerial: view.rollSerial,
-                      // Gold outline = kept (held through handoff and the
-                      // pot-win display too). Kept dice never tumble.
-                      kept: [
-                        for (var i = 0; i < 3; i++)
-                          lockedFaces != null &&
-                              (gated || showingPotWinFaces
-                                  ? true
-                                  : (turn?.dice.dice[i].kept ?? false)),
-                      ],
-                      animate: [
-                        for (var i = 0; i < 3; i++)
-                          !(turn != null &&
-                              turn.hasRolled &&
-                              turn.dice.dice[i].kept),
-                      ],
-                      enabled: [
-                        for (var i = 0; i < 3; i++)
-                          lockedFaces != null &&
-                              canInteract &&
-                              !showingPotWinFaces &&
-                              turn != null &&
-                              !turn.canBank &&
-                              turn.rollNumber < 3,
-                      ],
-                      onTap: (i) =>
-                          ref.read(matchProvider.notifier).toggleKeep(i),
-                      size: 64,
-                      theme: skinTheme,
-                      sfx: fx,
-                      onSettled: (serial) {
-                        if (mounted && serial != _settledSerial) {
-                          setState(() => _settledSerial = serial);
-                        }
-                      },
-                    ),
-                    if (diceSettling)
-                      const SizedBox.shrink()
-                    else if (!gated && turn != null && turn.mustKeepRolling)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 10),
-                        child: Text(
-                          canInteract
-                              ? 'No score yet — keep rolling · ${turn.rollsLeft} rolls left'
-                              : '',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: MargeColors.cream.withValues(alpha: 0.7),
-                            fontSize: 13,
+                        if (showStrip && handoff != null)
+                          HandoffStrip(
+                            handoff: handoff,
+                            hotseat: hotseat,
+                            skinTheme: skinTheme,
+                            onConfirm: () => ref
+                                .read(matchProvider.notifier)
+                                .confirmHandoff(),
+                          )
+                        else
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                            child: _TurnActions(
+                              canInteract: canInteract,
+                              turn: turn,
+                              bankPreview: bankPreviewGems(snap),
+                              diceSettling: diceSettling,
+                              sfx: fx,
+                              gemsTargetKey: _gemsTargetKey,
+                              onRoll: () =>
+                                  ref.read(matchProvider.notifier).roll(),
+                              onBank: () =>
+                                  ref.read(matchProvider.notifier).bank(),
+                            ),
                           ),
-                        ),
-                      )
-                    else if (!gated &&
-                        turn != null &&
-                        turn.hasRolled &&
-                        turn.canBank &&
-                        turn.rollsLeft > 0)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 10),
-                        child: Text(
-                          canInteract ? 'Winning hand · bank it' : '',
-                          style: TextStyle(
-                            color: MargeColors.cream.withValues(alpha: 0.7),
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    if (!gated &&
-                        !diceSettling &&
-                        turn != null &&
-                        turn.lastScore.isScoring)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          _scoreHint(turn.lastScore),
-                          style: const TextStyle(
-                            color: MargeColors.gold,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                    const Spacer(),
-                    if (showStrip && handoff != null)
-                      HandoffStrip(
-                        handoff: handoff,
-                        hotseat: hotseat,
-                        skinTheme: skinTheme,
-                        onConfirm: () =>
-                            ref.read(matchProvider.notifier).confirmHandoff(),
-                      )
-                    else
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                        child: _TurnActions(
-                          canInteract: canInteract,
-                          turn: turn,
-                          bankPreview: bankPreviewGems(snap),
-                          diceSettling: diceSettling,
-                          sfx: fx,
-                          gemsTargetKey: _gemsTargetKey,
-                          onRoll: () => ref.read(matchProvider.notifier).roll(),
-                          onBank: () => ref.read(matchProvider.notifier).bank(),
-                        ),
-                      ),
-                  ],
+                      ],
+                    );
+                  },
                 ),
               ),
             ),
@@ -857,10 +931,7 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
                 const SizedBox(height: 10),
                 const GetMoreGemsButton(),
                 const SizedBox(height: 10),
-                TextButton(
-                  onPressed: _leaveQuiet,
-                  child: const Text('Quit'),
-                ),
+                TextButton(onPressed: _leaveQuiet, child: const Text('Quit')),
               ],
             ),
           ),
