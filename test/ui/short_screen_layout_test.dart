@@ -3,7 +3,6 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:marge/engine/hand_evaluator.dart';
 import 'package:marge/engine/match_controller.dart';
 import 'package:marge/ui/match_provider.dart';
 import 'package:marge/ui/screens/match_screen.dart';
@@ -31,112 +30,125 @@ class _Live extends MatchNotifier {
   void show(MatchViewState v) => state = v;
 }
 
-/// Jerilyn's table: her fresh turn (a celebratory banner from the last
-/// beat still up), then she rolls 3, 3, 1 on roll 1 — no score, 2 left.
-(MatchViewState, MatchViewState) _tables() {
+MatchViewState _state(String which) {
   final c = MatchController(
     config: const MatchConfig(botCount: 1),
-    rng: _Scripted([0, 0, 0, 2, 2, 0]),
+    rng: _Scripted(which == 'bank' ? [3, 4, 5] : [2, 2, 0]),
   );
   c.startMatch();
-  c.roll(); // 1,1,1 first roll: pot sweep, same seat, fresh 3 rolls
-  final before = c.snapshot;
-  expect(before.lastPayout?.celebratory, isTrue);
-  expect(before.turn!.hasRolled, isFalse);
-  c.roll(); // 3,3,1
-  final after = c.snapshot;
-  expect(after.turn!.dice.values, [3, 3, 1]);
-  expect(after.turn!.lastScore.kind, ScoreKind.none);
-  expect(after.turn!.mustKeepRolling, isTrue);
-  return (
-    MatchViewState(snapshot: before, rollSerial: 0),
-    MatchViewState(snapshot: after, rollSerial: 1),
+  if (which != 'roll') c.roll();
+  return MatchViewState(
+    snapshot: c.snapshot,
+    rollSerial: which == 'roll' ? 0 : 1,
   );
-}
-
-ElevatedButton _keepRolling(WidgetTester t) => t.widget<ElevatedButton>(
-  find.ancestor(
-    of: find.textContaining('KEEP ROLLING'),
-    matching: find.byType(ElevatedButton),
-  ),
-);
-
-Future<_Live> _mount(
-  WidgetTester tester,
-  MatchViewState first,
-  Size size,
-) async {
-  await tester.binding.setSurfaceSize(size);
-  addTearDown(() => tester.binding.setSurfaceSize(null));
-  late _Live live;
-  await tester.pumpWidget(
-    ProviderScope(
-      overrides: [matchProvider.overrideWith(() => live = _Live(first))],
-      child: MaterialApp(theme: buildMargeTheme(), home: const MatchScreen()),
-    ),
-  );
-  await tester.pump(const Duration(milliseconds: 50));
-  return live;
 }
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  const sizes = {
-    'Flip 7 cover 926x820 px @ ~2.6': Size(356, 315),
-    'Flip 7 cover landscape-ish': Size(463, 410),
-    '360x640': Size(360, 640),
-    '320x568': Size(320, 568),
+  // Real Flip 7 cover: 948x1048 px @ 342 ppi, at its three display sizes.
+  const covers = {
+    '361x399 dp': (2.625),
+    '421x466 dp': (2.25),
+    '474x524 dp': (2.0),
   };
-  for (final e in sizes.entries) {
-    testWidgets('short screen ${e.key}: dice + action fully visible', (
-      tester,
-    ) async {
-      final (_, after) = _tables();
-      await _mount(tester, after, e.value);
-      await tester.pump(const Duration(seconds: 4));
-      expect(tester.takeException(), isNull, reason: 'no overflow');
-      final screen = Offset.zero & e.value;
-      final btn = find.ancestor(
-        of: find.textContaining('KEEP ROLLING'),
-        matching: find.byType(ElevatedButton),
-      );
-      final b = tester.getRect(btn);
-      expect(
-        screen.contains(b.topLeft) &&
-            screen.contains(b.bottomRight - const Offset(0.01, 0.01)),
-        isTrue,
-        reason: 'button $b on $screen',
-      );
-      expect(_keepRolling(tester).onPressed, isNotNull);
-      final tray = tester.getRect(find.byKey(const ValueKey('dice-tray')));
-      // Scroll the table so the dice are in view, if needed.
-      if (tray.bottom > b.top) {
-        await tester.drag(
-          find.byKey(const ValueKey('table-scroll')),
-          const Offset(0, -400),
+  const phones = {'360x640': Size(360, 640), '320x568': Size(320, 568)};
+  final cases = <(String, Size, double, double)>[
+    for (final e in covers.entries)
+      for (final s in [1.0, 1.3, 2.0])
+        ('Flip 7 cover ${e.key}', const Size(948, 1048) / e.value, e.value, s),
+    for (final e in phones.entries)
+      for (final s in [1.0, 1.3]) (e.key, e.value, 2.0, s),
+  ];
+  for (final (name, dp, dpr, scale) in cases) {
+    for (final which in ['roll', 'keep', 'bank']) {
+      testWidgets('$name text x$scale [$which]: no overflow, action visible', (
+        tester,
+      ) async {
+        tester.view.devicePixelRatio = dpr;
+        tester.view.physicalSize = dp * dpr;
+        // 28 dp status bar, 24 dp nav bar.
+        final pad = FakeViewPadding(top: 28 * dpr, bottom: 24 * dpr);
+        tester.view.padding = pad;
+        tester.view.viewPadding = pad;
+        tester.platformDispatcher.textScaleFactorTestValue = scale;
+        addTearDown(tester.view.reset);
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        final st = _state(which);
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [matchProvider.overrideWith(() => _Live(st))],
+            child: MaterialApp(
+              theme: buildMargeTheme(),
+              home: const MatchScreen(),
+            ),
+          ),
         );
-        await tester.pump();
-      }
-      final t2 = tester.getRect(find.byKey(const ValueKey('dice-tray')));
-      expect(
-        t2.top >= 0 && t2.bottom <= b.top + 0.5,
-        isTrue,
-        reason: 'dice $t2 above pinned button $b',
-      );
-      final st = tester.state<DiceTrayState>(find.byType(DiceTray));
-      for (final r in st.debugBounds) {
-        final g = r.shift(t2.topLeft);
+        await tester.pump(const Duration(seconds: 4));
+        expect(tester.takeException(), isNull, reason: 'no overflow');
+        final usable = Rect.fromLTRB(0, 28, dp.width, dp.height - 24);
+        final Finder btn = switch (which) {
+          'roll' => find.ancestor(
+            of: find.text('ROLL'),
+            matching: find.byType(ElevatedButton),
+          ),
+          'keep' => find.ancestor(
+            of: find.textContaining('KEEP ROLLING'),
+            matching: find.byType(ElevatedButton),
+          ),
+          _ => find.byKey(const ValueKey('bank-only')),
+        };
+        expect(btn, findsOneWidget);
+        final b = tester.getRect(btn);
         expect(
-          g.top >= t2.top - 0.5 &&
-              g.bottom <= t2.bottom + 0.5 &&
-              g.left >= -0.5 &&
-              g.right <= e.value.width + 0.5 &&
-              g.bottom <= b.top + 0.5,
+          b.top >= usable.top - 0.5 &&
+              b.bottom <= usable.bottom + 0.5 &&
+              b.left >= -0.5 &&
+              b.right <= usable.right + 0.5,
           isTrue,
-          reason: 'die $g in tray $t2, button $b',
+          reason: 'button $b in $usable',
         );
-      }
-    });
+        if (which == 'bank') {
+          expect((tester.widget(btn) as dynamic).enabled, isTrue);
+        } else {
+          expect((tester.widget(btn) as ElevatedButton).onPressed, isNotNull);
+        }
+        // Enabled AND hit-testable at its centre.
+        final target = tester.renderObject(btn);
+        expect(
+          tester
+              .hitTestOnBinding(b.center)
+              .path
+              .any((e) => identical(e.target, target)),
+          isTrue,
+          reason: 'button hit-testable',
+        );
+        final tray = tester.getRect(find.byKey(const ValueKey('dice-tray')));
+        if (tray.bottom > b.top || tray.top < 0) {
+          await tester.ensureVisible(find.byKey(const ValueKey('dice-tray')));
+          await tester.pump();
+        }
+        final t2 = tester.getRect(find.byKey(const ValueKey('dice-tray')));
+        expect(
+          t2.top >= -0.5 && t2.bottom <= b.top + 0.5,
+          isTrue,
+          reason: 'dice $t2 above button $b',
+        );
+        // Every die drawn fully inside the felt, above the pinned button.
+        final dt = tester.state<DiceTrayState>(find.byType(DiceTray));
+        for (final r in dt.debugBounds) {
+          final g = r.shift(t2.topLeft);
+          expect(
+            g.top >= t2.top - 0.5 &&
+                g.bottom <= t2.bottom + 0.5 &&
+                g.left >= -0.5 &&
+                g.right <= dp.width + 0.5 &&
+                g.bottom <= b.top + 0.5,
+            isTrue,
+            reason: 'die $g in tray $t2, button $b',
+          );
+        }
+      });
+    }
   }
 }

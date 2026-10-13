@@ -291,28 +291,39 @@ class _BankButtonState extends State<BankButton> with TickerProviderStateMixin {
                       ),
                     ),
                   ),
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text(
-                      'Bank',
-                      style: TextStyle(
-                        color: MargeColors.velvet,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                        height: 1.05,
-                      ),
+                // Large text: shrink the label to the pill, never overflow.
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 6,
+                    horizontal: 12,
+                  ),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text(
+                          'Bank',
+                          style: TextStyle(
+                            color: MargeColors.velvet,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                            height: 1.05,
+                          ),
+                        ),
+                        Text(
+                          '+${widget.amountGems} gems',
+                          style: const TextStyle(
+                            color: MargeColors.velvet,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            height: 1.1,
+                          ),
+                        ),
+                      ],
                     ),
-                    Text(
-                      '+${widget.amountGems} gems',
-                      style: const TextStyle(
-                        color: MargeColors.velvet,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        height: 1.1,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ],
             ),

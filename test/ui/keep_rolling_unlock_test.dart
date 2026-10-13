@@ -8,6 +8,7 @@ import 'package:marge/engine/match_controller.dart';
 import 'package:marge/ui/match_provider.dart';
 import 'package:marge/ui/screens/match_screen.dart';
 import 'package:marge/ui/theme/marge_theme.dart';
+import 'package:marge/ui/visuals/dice_3d.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _Scripted implements Random {
@@ -114,5 +115,48 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(360, 700));
     await tester.pump(const Duration(seconds: 3));
     expect(_keepRolling(tester).onPressed, isNotNull);
+  });
+
+  // Guards the tray key alone: the banner rows above the tray change on the
+  // roll frame; the tray must keep its State (and its throw) across that.
+  testWidgets('tray key: same DiceTray State across the roll frame', (
+    tester,
+  ) async {
+    final (before, after) = _tables();
+    final live = await _mount(tester, before, const Size(390, 760));
+    final s0 = tester.state(find.byType(DiceTray));
+    live.show(after);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(identical(tester.state(find.byType(DiceTray)), s0), isTrue);
+  });
+
+  // Guards the settled-on-mount report alone: a tray force-mounted mid-throw
+  // (new key) must still report the current roll as settled.
+  testWidgets('settled-on-mount: a tray re-created mid-throw reports settled', (
+    tester,
+  ) async {
+    final settled = <int>[];
+    Widget tray(int serial, String key) => MaterialApp(
+      home: Center(
+        child: DiceTray(
+          key: ValueKey(key),
+          values: const [3, 3, 1],
+          kept: const [false, false, false],
+          animate: const [true, true, true],
+          rollSerial: serial,
+          onSettled: settled.add,
+        ),
+      ),
+    );
+    await tester.pumpWidget(tray(0, 'a'));
+    await tester.pump();
+    await tester.pumpWidget(tray(1, 'a'));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(settled.contains(1), isFalse); // mid-throw
+    await tester.pumpWidget(tray(1, 'b')); // re-created
+    await tester.pump();
+    await tester.pump();
+    expect(settled.last, 1);
   });
 }

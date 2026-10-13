@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -357,7 +359,11 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
                         : tiny
                         ? 44.0
                         : (compact ? 52.0 : 64.0);
-                    final seatsH = compact ? 56.0 : 72.0;
+                    // Seat chips grow with large text so their labels never overflow.
+                    final ts = MediaQuery.textScalerOf(context)
+                        .scale(1)
+                        .clamp(1.0, 1.6);
+                    final seatsH = (compact ? 56.0 : 72.0) * ts;
                     return Column(
                       children: [
                         // Header (bar, bowl, seats, banners) is capped on
@@ -482,63 +488,67 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
                         Expanded(
                           key: const ValueKey('dice-tray-slot'),
                           flex: 3,
-                          child: DiceTray(
-                            key: const ValueKey('dice-tray'),
-                            values: lockedFaces ?? const [1, 1, 1],
-                            dim: lockedFaces == null,
-                            rollSerial: view.rollSerial,
-                            // Gold outline = kept (held through handoff and the
-                            // pot-win display too). Kept dice never tumble.
-                            kept: [
-                              for (var i = 0; i < 3; i++)
-                                lockedFaces != null &&
-                                    (gated || showingPotWinFaces
-                                        ? true
-                                        : (turn?.dice.dice[i].kept ?? false)),
-                            ],
-                            animate: [
-                              for (var i = 0; i < 3; i++)
-                                !(turn != null &&
-                                    turn.hasRolled &&
-                                    turn.dice.dice[i].kept),
-                            ],
-                            enabled: [
-                              for (var i = 0; i < 3; i++)
-                                lockedFaces != null &&
-                                    canInteract &&
-                                    !showingPotWinFaces &&
-                                    turn != null &&
-                                    !turn.canBank &&
-                                    turn.rollNumber < 3,
-                            ],
-                            onTap: (i) =>
-                                ref.read(matchProvider.notifier).toggleKeep(i),
-                            size: dieSize,
-                            theme: skinTheme,
-                            sfx: fx,
-                            lite: settings.liteDice,
-                            firstRoll: turn != null && turn.rollNumber == 1,
-                            // Winning hand: big-result slow-mo/zoom (2.6 s cap).
-                            highlight:
-                                turn != null &&
-                                turn.hasRolled &&
-                                turn.lastScore.isScoring,
-                            throwEdge: DiceTray.edgeForSeat(
-                              snap.currentSeatIndex,
-                              snap.players
-                                  .where((p) => p.profile.participates)
-                                  .length,
+                          // Dice never outgrow a short felt.
+                          child: LayoutBuilder(
+                            builder: (context, felt) => DiceTray(
+                              key: const ValueKey('dice-tray'),
+                              values: lockedFaces ?? const [1, 1, 1],
+                              dim: lockedFaces == null,
+                              rollSerial: view.rollSerial,
+                              // Gold outline = kept (held through handoff and the
+                              // pot-win display too). Kept dice never tumble.
+                              kept: [
+                                for (var i = 0; i < 3; i++)
+                                  lockedFaces != null &&
+                                      (gated || showingPotWinFaces
+                                          ? true
+                                          : (turn?.dice.dice[i].kept ?? false)),
+                              ],
+                              animate: [
+                                for (var i = 0; i < 3; i++)
+                                  !(turn != null &&
+                                      turn.hasRolled &&
+                                      turn.dice.dice[i].kept),
+                              ],
+                              enabled: [
+                                for (var i = 0; i < 3; i++)
+                                  lockedFaces != null &&
+                                      canInteract &&
+                                      !showingPotWinFaces &&
+                                      turn != null &&
+                                      !turn.canBank &&
+                                      turn.rollNumber < 3,
+                              ],
+                              onTap: (i) => ref
+                                  .read(matchProvider.notifier)
+                                  .toggleKeep(i),
+                              size: math.min(dieSize, felt.maxHeight * 0.42),
+                              theme: skinTheme,
+                              sfx: fx,
+                              lite: settings.liteDice,
+                              firstRoll: turn != null && turn.rollNumber == 1,
+                              // Winning hand: big-result slow-mo/zoom (2.6 s cap).
+                              highlight:
+                                  turn != null &&
+                                  turn.hasRolled &&
+                                  turn.lastScore.isScoring,
+                              throwEdge: DiceTray.edgeForSeat(
+                                snap.currentSeatIndex,
+                                snap.players
+                                    .where((p) => p.profile.participates)
+                                    .length,
+                              ),
+                              onSettled: (serial) {
+                                if (mounted && serial != _settledSerial) {
+                                  setState(() => _settledSerial = serial);
+                                }
+                                if (mounted) {
+                                  ref
+                                      .read(matchProvider.notifier)
+                                      .diceSettled(serial);
+                                }
+                              },
                             ),
-                            onSettled: (serial) {
-                              if (mounted && serial != _settledSerial) {
-                                setState(() => _settledSerial = serial);
-                              }
-                              if (mounted) {
-                                ref
-                                    .read(matchProvider.notifier)
-                                    .diceSettled(serial);
-                              }
-                            },
                           ),
                         ),
                         if (diceSettling)
@@ -546,29 +556,38 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
                         else if (!gated && turn != null && turn.mustKeepRolling)
                           Padding(
                             padding: const EdgeInsets.only(top: 10),
-                            child: Text(
-                              canInteract
-                                  ? 'No score yet — keep rolling · ${turn.rollsLeft} rolls left'
-                                  : '',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: MargeColors.cream.withValues(alpha: 0.7),
-                                fontSize: 13,
+                            child: _OneLine(
+                              Text(
+                                canInteract
+                                    ? 'No score yet — keep rolling · ${turn.rollsLeft} rolls left'
+                                    : '',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: MargeColors.cream.withValues(
+                                    alpha: 0.7,
+                                  ),
+                                  fontSize: 13,
+                                ),
                               ),
                             ),
                           )
-                        else if (!gated &&
+                        else if (h >= 480 &&
+                            !gated &&
                             turn != null &&
                             turn.hasRolled &&
                             turn.canBank &&
                             turn.rollsLeft > 0)
                           Padding(
                             padding: const EdgeInsets.only(top: 10),
-                            child: Text(
-                              canInteract ? 'Winning hand · bank it' : '',
-                              style: TextStyle(
-                                color: MargeColors.cream.withValues(alpha: 0.7),
-                                fontSize: 13,
+                            child: _OneLine(
+                              Text(
+                                canInteract ? 'Winning hand · bank it' : '',
+                                style: TextStyle(
+                                  color: MargeColors.cream.withValues(
+                                    alpha: 0.7,
+                                  ),
+                                  fontSize: 13,
+                                ),
                               ),
                             ),
                           ),
@@ -578,11 +597,13 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
                             turn.lastScore.isScoring)
                           Padding(
                             padding: const EdgeInsets.only(top: 8),
-                            child: Text(
-                              _scoreHint(turn.lastScore),
-                              style: const TextStyle(
-                                color: MargeColors.gold,
-                                fontWeight: FontWeight.w800,
+                            child: _OneLine(
+                              Text(
+                                _scoreHint(turn.lastScore),
+                                style: const TextStyle(
+                                  color: MargeColors.gold,
+                                  fontWeight: FontWeight.w800,
+                                ),
                               ),
                             ),
                           ),
@@ -718,7 +739,7 @@ class _TurnActions extends StatelessWidget {
         width: double.infinity,
         child: ElevatedButton(
           onPressed: canInteract ? onRoll : null,
-          child: Text('KEEP ROLLING · ${t.rollsLeft} LEFT'),
+          child: _OneLine(Text('KEEP ROLLING · ${t.rollsLeft} LEFT')),
         ),
       );
     }
@@ -761,7 +782,7 @@ class _TurnActions extends StatelessWidget {
         width: double.infinity,
         child: ElevatedButton(
           onPressed: canRoll ? onRoll : null,
-          child: Text(rollLabel),
+          child: _OneLine(Text(rollLabel)),
         ),
       );
     }
@@ -771,7 +792,7 @@ class _TurnActions extends StatelessWidget {
         width: double.infinity,
         child: FilledButton(
           onPressed: canBankNow ? onBank : null,
-          child: Text(bankLabel),
+          child: _OneLine(Text(bankLabel)),
         ),
       );
     }
@@ -779,13 +800,16 @@ class _TurnActions extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: ElevatedButton(onPressed: onRoll, child: Text(rollLabel)),
+          child: ElevatedButton(
+            onPressed: onRoll,
+            child: _OneLine(Text(rollLabel)),
+          ),
         ),
         const SizedBox(width: 12),
         Expanded(
           child: FilledButton(
             onPressed: canBankNow ? onBank : null,
-            child: Text(bankLabel),
+            child: _OneLine(Text(bankLabel)),
           ),
         ),
       ],
@@ -1104,4 +1128,14 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
       ),
     );
   }
+}
+
+/// Action labels stay on one line and scale down at large text sizes, so the
+/// pinned buttons never grow tall enough to push the table off a cover screen.
+class _OneLine extends StatelessWidget {
+  const _OneLine(this.child);
+  final Widget child;
+  @override
+  Widget build(BuildContext context) =>
+      FittedBox(fit: BoxFit.scaleDown, child: child);
 }
