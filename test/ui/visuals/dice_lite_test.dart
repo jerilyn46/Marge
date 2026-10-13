@@ -62,7 +62,7 @@ void main() {
         .toList();
     expect(faces, [2, 6]);
     await tester.pump(const Duration(milliseconds: 300));
-    expect(settled, [1]);
+    expect(settled, [0, 1]); // 0: mount, 1: the throw
     // Settled: same cubes as the full path.
     expect(
       tester.widgetList<DiceCube>(find.byType(DiceCube)).map((c) => c.value),

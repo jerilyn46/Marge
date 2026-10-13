@@ -433,9 +433,15 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
                     ),
                     const SizedBox(height: 8),
                     // The felt: dice are thrown across this area (DICE_SPEC).
+                    // Keyed: the conditional banner/notice rows above come
+                    // and go on the roll frame; unkeyed, the Column re-created
+                    // the tray mid-throw, its settle callback never fired and
+                    // input stayed locked (Keep Rolling greyed out).
                     Expanded(
+                      key: const ValueKey('dice-tray-slot'),
                       flex: 3,
                       child: DiceTray(
+                        key: const ValueKey('dice-tray'),
                         values: lockedFaces ?? const [1, 1, 1],
                         dim: lockedFaces == null,
                         rollSerial: view.rollSerial,

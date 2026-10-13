@@ -60,7 +60,7 @@ void main() {
     }
     expect(st().settling, isFalse);
     expect(cues.where((c) => c == SfxCue.dieClack).length, 2); // 2 movers
-    expect(settled, [1]);
+    expect(settled, [0, 1]); // 0: mount (nothing in flight), 1: the throw
     expect(st().debugFrontFaces, [2, 5, 6]);
   });
 
@@ -124,7 +124,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(st().debugFrontFaces, [2, 5, 6]); // never leaves the result pose
     await tester.pump(const Duration(milliseconds: 200));
-    expect(settled, [1]);
+    expect(settled, [0, 1]); // 0: mount (nothing in flight), 1: the throw
     expect(tester.getCenter(find.byKey(const ValueKey('die-0'))), spot);
   });
 
