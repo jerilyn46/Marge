@@ -10,6 +10,7 @@ import 'package:marge/services/settings_service.dart';
 import 'package:marge/ui/match_provider.dart';
 import 'package:marge/ui/screens/match_screen.dart';
 import 'package:marge/ui/theme/marge_theme.dart';
+import 'package:marge/ui/visuals/dice_3d.dart';
 import 'package:marge/ui/visuals/pot_of_gems.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -105,33 +106,36 @@ void main() {
     expect(plate(), 'Pot · $potBefore');
     expect(find.textContaining('sweeps the pot'), findsNothing);
 
-    // Every 100 ms through the rest of the 1.2 s pause: still the old pot.
-    // (The throw landed on the first pump above; 300 ms have passed.)
-    for (var t = 400; t <= 1100; t += 100) {
-      await tester.pump(const Duration(milliseconds: 100));
+    // The hold lasts until the thrown dice settle (+ the 250 ms beat),
+    // not a fixed 1.2 s: every 50 ms while the tray is still settling the
+    // old pot shows and no banner.
+    DiceTrayState tray() => tester.state<DiceTrayState>(find.byType(DiceTray));
+    // (fake time: the throw's ticker starts on the 300 ms pump above.)
+    var waited = 0;
+    while (tray().settling) {
       expect(
         container.read(matchProvider)!.revealingRoll,
         isTrue,
-        reason: '$t ms',
+        reason: '$waited ms',
       );
-      expect(shownPot(), potBefore, reason: '$t ms');
-      expect(plate(), 'Pot · $potBefore', reason: '$t ms');
+      expect(shownPot(), potBefore, reason: '$waited ms');
+      expect(plate(), 'Pot · $potBefore', reason: '$waited ms');
       expect(find.textContaining('sweeps the pot'), findsNothing);
+      await tester.pump(const Duration(milliseconds: 50));
+      waited += 50;
+      expect(waited, lessThanOrEqualTo(2250), reason: 'settles by ~2.2 s');
     }
-
-    // After the 1.2 s pause: banner and pot change land together.
-    await tester.pump(const Duration(milliseconds: 100));
+    // A slow (triples slow-mo) throw: the old fixed 1.2 s would have ended
+    // the hold mid-throw.
+    expect(waited, greaterThan(1200));
+    // Settled: the hold ends right away, banner and pot change together.
+    await tester.pump();
     await tester.pump();
     final after = container.read(matchProvider)!;
     expect(after.revealingRoll, isFalse);
     expect(shownPot(), 20);
     expect(shownPot(), after.snapshot.potCents);
-    // The readout also waits for the thrown dice to settle (real throw:
-    // up to ~3 s with the triples slow-mo and the 250 ms beat).
-    expect(find.textContaining('sweeps the pot'), findsNothing);
-    for (var i = 0; i < 30; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
+    await tester.pump(const Duration(milliseconds: 50));
     expect(find.textContaining('sweeps the pot'), findsOneWidget);
     // The plate drains from 50 to 20 after the pause, never before.
     await tester.pump(const Duration(milliseconds: 600));

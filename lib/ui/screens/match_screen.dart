@@ -470,10 +470,20 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
                         sfx: fx,
                         lite: settings.liteDice,
                         firstRoll: turn != null && turn.rollNumber == 1,
-                        fromTop: view.busyBot,
+                        throwEdge: DiceTray.edgeForSeat(
+                          snap.currentSeatIndex,
+                          snap.players
+                              .where((p) => p.profile.participates)
+                              .length,
+                        ),
                         onSettled: (serial) {
                           if (mounted && serial != _settledSerial) {
                             setState(() => _settledSerial = serial);
+                          }
+                          if (mounted) {
+                            ref
+                                .read(matchProvider.notifier)
+                                .diceSettled(serial);
                           }
                         },
                       ),

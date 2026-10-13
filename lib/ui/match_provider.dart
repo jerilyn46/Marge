@@ -115,7 +115,22 @@ class MatchNotifier extends Notifier<MatchViewState?> {
   static const int localSeat = 0;
 
   /// How long the winning dice sit on the table before the pot-win banner.
-  static Duration potWinRevealDelay = const Duration(milliseconds: 1200);
+  /// Safety cap on the triple-1s pot hold. The hold normally ends when the
+  /// dice tray reports the throw settled (+ its 250 ms beat): [diceSettled].
+  static Duration potWinRevealDelay = const Duration(milliseconds: 3500);
+
+  Completer<void>? _settleWait;
+  int _settledSerial = -1;
+
+  /// Called by the table when roll [serial] has settled (after the beat).
+  void diceSettled(int serial) {
+    _settledSerial = serial;
+    if (serial == _rollSerial) {
+      final w = _settleWait;
+      _settleWait = null;
+      if (w != null && !w.isCompleted) w.complete();
+    }
+  }
 
   /// Dice RNG source for new tables (tests inject a scripted one).
   @visibleForTesting
@@ -606,7 +621,10 @@ class MatchNotifier extends Notifier<MatchViewState?> {
   /// then wait so the roll registers before the banner/confetti.
   Future<void> _revealPotWin(int potBefore) async {
     _publish(revealingRoll: true, heldPotCents: potBefore);
-    await Future<void>.delayed(potWinRevealDelay);
+    if (_settledSerial == _rollSerial) return;
+    final w = _settleWait = Completer<void>();
+    await Future.any([w.future, Future<void>.delayed(potWinRevealDelay)]);
+    _settleWait = null;
   }
 
   Future<void> bank() async {
