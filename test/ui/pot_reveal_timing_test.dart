@@ -123,7 +123,7 @@ void main() {
       expect(find.textContaining('sweeps the pot'), findsNothing);
       await tester.pump(const Duration(milliseconds: 50));
       waited += 50;
-      expect(waited, lessThanOrEqualTo(2250), reason: 'settles by ~2.2 s');
+      expect(waited, lessThanOrEqualTo(2650), reason: 'big result: ~2.6 s');
     }
     // A slow (triples slow-mo) throw: the old fixed 1.2 s would have ended
     // the hold mid-throw.

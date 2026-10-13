@@ -93,8 +93,8 @@ void main() {
     expect(find.text('ROLL'), findsNothing);
     expect(find.textContaining('Trips on'), findsNothing); // readout waits
 
-    // Real throw: tap-to-still incl. slow-mo + 250 ms beat ≤ ~2.2 s.
-    for (var i = 0; i < 18; i++) {
+    // Real throw, winning hand: tap-to-still incl. slow-mo + beat ≤ 2.6 s.
+    for (var i = 0; i < 22; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
     await tester.pump();

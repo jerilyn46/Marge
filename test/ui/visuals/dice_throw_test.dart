@@ -40,7 +40,7 @@ void main() {
       expect(sim(43).finalFrame[0].p.x, isNot(a.finalFrame[0].p.x));
     });
 
-    test('settle time: >= 80% in 1.4–1.8 s sim; on-screen <= 2.2 s', () {
+    test('settle time: >= 80% in 1.4–1.8 s sim; caps 2.2 s / 2.6 s', () {
       for (final h in [300.0, 420.0]) {
         var inWindow = 0;
         for (var seed = 0; seed < 300; seed++) {
@@ -48,19 +48,56 @@ void main() {
           final d = r.duration;
           if (d >= 1.4 && d <= 1.8) inWindow++;
           expect(d, lessThanOrEqualTo(1.85), reason: 'seed $seed');
-          for (final (big, epic) in [
-            (false, false),
-            (true, false),
-            (true, true),
-          ]) {
-            // + 250 ms beat before the readout.
-            final wall =
-                DiceThrowSim.warp(r, big: big, epic: epic).length + 250;
-            expect(wall, lessThanOrEqualTo(2200), reason: 'seed $seed');
+          // On screen incl. the 250 ms beat before the readout.
+          final normal = DiceThrowSim.warp(r).length + 250;
+          expect(normal, lessThanOrEqualTo(2200), reason: 'seed $seed');
+          for (final epic in [false, true]) {
+            final big =
+                DiceThrowSim.warp(r, big: true, epic: epic).length + 250;
+            expect(big, lessThanOrEqualTo(2600), reason: 'seed $seed');
           }
         }
         expect(inWindow / 300, greaterThanOrEqualTo(0.8), reason: 'h $h');
       }
+    });
+
+    test('big results: full slow-mo over the last 500 ms (0.2x / 0.15x)', () {
+      for (var seed = 0; seed < 300; seed++) {
+        final r = sim(seed);
+        for (final (epic, low) in [(false, 0.2), (true, 0.15)]) {
+          final w = DiceThrowSim.warp(r, big: true, epic: epic);
+          // Count on-screen ms at the slow rate: the last ~500 ms, and only
+          // at the end (everything before runs at normal speed).
+          var slow = 0, firstSlow = -1;
+          for (var k = 0; k < w.length - 2; k++) {
+            final step = w[k + 1] - w[k];
+            if ((step - 0.001 * low).abs() < 1e-6) {
+              slow++;
+              if (firstSlow < 0) firstSlow = k;
+            }
+          }
+          expect(slow, inInclusiveRange(490, 505), reason: 'seed $seed');
+          expect(firstSlow, greaterThanOrEqualTo(w.length - 510));
+        }
+      }
+    });
+
+    test('final snap to flat is tiny: max <= 10° over 300 seeds', () {
+      final angles = <double>[];
+      for (var seed = 0; seed < 300; seed++) {
+        final r = sim(seed);
+        // Decided faces are still on top.
+        for (var i = 0; i < 3; i++) {
+          final up = (r.finalFrame[i].q * r.relabel[i]).rotate(
+            const V3(0, 0, 1),
+          );
+          expect(up.z, closeTo(1, 1e-6));
+        }
+        angles.addAll(r.snapAngles);
+      }
+      expect(angles.length, 900);
+      angles.sort();
+      expect(angles.last, lessThanOrEqualTo(10), reason: 'max snap');
     });
 
     test('dice travel up the table and settle flat', () {
@@ -256,7 +293,7 @@ void main() {
           sawSparkle = true;
         }
       }
-      expect(ms, lessThanOrEqualTo(2250));
+      expect(ms, lessThanOrEqualTo(2650)); // big-result cap 2.6 s
       expect(sawSparkle, isTrue);
     });
   });

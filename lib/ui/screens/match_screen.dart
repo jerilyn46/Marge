@@ -470,6 +470,11 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
                         sfx: fx,
                         lite: settings.liteDice,
                         firstRoll: turn != null && turn.rollNumber == 1,
+                        // Winning hand: big-result slow-mo/zoom (2.6 s cap).
+                        highlight:
+                            turn != null &&
+                            turn.hasRolled &&
+                            turn.lastScore.isScoring,
                         throwEdge: DiceTray.edgeForSeat(
                           snap.currentSeatIndex,
                           snap.players
