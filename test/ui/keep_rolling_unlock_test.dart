@@ -159,4 +159,34 @@ void main() {
     await tester.pump();
     expect(settled.last, 1);
   });
+
+  // Safety net: an idle tray re-reports its current roll on the next build
+  // if the settle report could not be delivered (no listener at the time).
+  testWidgets('idle tray re-reports a settle that had no listener', (
+    tester,
+  ) async {
+    final settled = <int>[];
+    Widget tray(int serial, {required bool listen}) => MaterialApp(
+      home: Center(
+        child: DiceTray(
+          key: const ValueKey('t'),
+          values: const [4, 6, 6],
+          kept: const [false, false, false],
+          animate: const [true, true, true],
+          rollSerial: serial,
+          onSettled: listen ? settled.add : null,
+        ),
+      ),
+    );
+    await tester.pumpWidget(tray(0, listen: true));
+    await tester.pump();
+    await tester.pumpWidget(tray(1, listen: false)); // throw, nobody listening
+    for (var i = 0; i < 40; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(settled, [0]);
+    await tester.pumpWidget(tray(1, listen: true)); // still, idle
+    await tester.pump();
+    expect(settled, [0, 1]);
+  });
 }

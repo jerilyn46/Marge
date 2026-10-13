@@ -201,7 +201,7 @@ extension _ThrowPlayback on DiceTrayState {
     _th.active = false;
     _moving = const [false, false, false];
     _rebuild();
-    widget.onSettled?.call(widget.rollSerial);
+    _report(widget.rollSerial);
   }
 
   /// Sim body rotation -> DiceCube matrix (screen space: z toward viewer is
