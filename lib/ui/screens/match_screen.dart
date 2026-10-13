@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -133,6 +135,29 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
   /// win/near-miss readout and Bank wait) until it matches the view.
   int? _settledSerial;
 
+  /// Safety net for the settle lock: a throw is ~1 s, so if a roll still
+  /// reads as "settling" well after that, nothing is in flight; release it.
+  static const settleWatchdog = Duration(milliseconds: 2500);
+  Timer? _watchdog;
+  int? _watchSerial;
+
+  void _armWatchdog(int serial) {
+    if (_watchSerial == serial) return;
+    _watchSerial = serial;
+    _watchdog?.cancel();
+    _watchdog = Timer(settleWatchdog, () {
+      if (!mounted || _settledSerial == serial) return;
+      if (ref.read(matchProvider)?.rollSerial != serial) return;
+      setState(() => _settledSerial = serial);
+    });
+  }
+
+  @override
+  void dispose() {
+    _watchdog?.cancel();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final view = ref.watch(matchProvider);
@@ -175,6 +200,7 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
     // Roll off a phone screen.
     _settledSerial ??= view.rollSerial;
     final diceSettling = view.rollSerial != _settledSerial;
+    if (diceSettling) _armWatchdog(view.rollSerial);
     final canInteract =
         isHumanTurn &&
         !view.busyBot &&

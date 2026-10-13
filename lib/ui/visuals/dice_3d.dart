@@ -232,7 +232,27 @@ class DiceTrayState extends State<DiceTray>
     // (e.g. the tray was re-created mid-throw by a layout change).
     final serial = widget.rollSerial;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && !_c.isAnimating) widget.onSettled?.call(serial);
+      if (mounted && !_c.isAnimating) _report(serial);
+    });
+  }
+
+  /// Last serial passed to [DiceTray.onSettled] (one report per serial).
+  int? _reported;
+
+  void _report(int serial) {
+    final cb = widget.onSettled;
+    if (_reported == serial || cb == null) return;
+    _reported = serial;
+    cb(serial);
+  }
+
+  /// Safety net: whenever the tray is idle after a frame (no throw in
+  /// flight), its current roll is settled. A parent waiting on
+  /// [DiceTray.onSettled] can never stay locked with still dice.
+  void _reportIfIdle() {
+    if (_c.isAnimating || _reported == widget.rollSerial) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_c.isAnimating) _report(widget.rollSerial);
     });
   }
 
@@ -250,7 +270,7 @@ class DiceTrayState extends State<DiceTray>
     if (!moving.contains(true)) {
       final serial = widget.rollSerial;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) widget.onSettled?.call(serial);
+        if (mounted) _report(serial);
       });
       return;
     }
@@ -301,7 +321,7 @@ class DiceTrayState extends State<DiceTray>
       }
     }
     setState(() => _moving = const [false, false, false]);
-    widget.onSettled?.call(widget.rollSerial);
+    _report(widget.rollSerial);
   }
 
   @override
@@ -420,6 +440,7 @@ class DiceTrayState extends State<DiceTray>
 
   @override
   Widget build(BuildContext context) {
+    _reportIfIdle();
     return Opacity(
       opacity: widget.dim ? 0.35 : 1,
       child: Row(
