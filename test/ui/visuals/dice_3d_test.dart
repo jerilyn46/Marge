@@ -70,7 +70,7 @@ void main() {
     }
     expect(poses(tester), rest); // landed exactly on the result pose
     expect(cues.where((c) => c == SfxCue.dieClack).length, 2); // 2 movers
-    expect(settled, [1]);
+    expect(settled, [0, 1]); // 0: mount (nothing in flight), 1: the throw
   });
 
   testWidgets('input locked until settle', (tester) async {
@@ -102,7 +102,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(poses(tester), rest); // orientation never leaves the result
     await tester.pump(const Duration(milliseconds: 150));
-    expect(settled, [1]);
+    expect(settled, [0, 1]); // 0: mount (nothing in flight), 1: the throw
   });
 
   testWidgets('golden: settled dice frame', (tester) async {
