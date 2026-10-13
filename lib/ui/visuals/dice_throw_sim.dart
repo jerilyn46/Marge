@@ -180,7 +180,11 @@ class ThrowResult {
     required this.settleTime,
     required this.dieSize,
     required this.moving,
+    this.snapAngles = const [],
   });
+
+  /// Rotation (degrees) each moving die's final snap-to-flat covered.
+  final List<double> snapAngles;
 
   /// frames[k][i]: die i at t = (k+1) * dt.
   final List<List<DieFrame>> frames;
@@ -224,6 +228,7 @@ class _Die {
   int still = 0;
   int? snapK;
   Quat? snapFrom, snapTo;
+  double snapAngle = 0;
   bool done = false;
   int bounces = 0;
   bool get frozen => fixed || done || snapK != null;
@@ -237,6 +242,10 @@ class DiceThrowSim {
   static const maxT = 1.7; // hard-damp deadline (on-screen ≤ ~2.2 s)
   static const minSettle = 1.36; // no die snaps flat before this
   static const dampRamp = 0.3;
+
+  /// From here every moving die is eased toward its nearest face-up pose
+  /// (slerp blend + spin damping), so the final snap is tiny (≤ ~10°).
+  static const faceUpFrom = 1.3;
   static const feltRestitution = 0.35;
   static const feltFriction = 0.55;
   static const railRestitution = 0.5;
@@ -256,7 +265,12 @@ class DiceThrowSim {
   ];
 
   /// On-screen budget from tap to still, before the 250 ms readout beat.
-  static const wallBudgetMs = 1950;
+  static const wallBudgetMs = 1950; // + 250 beat = 2.2 s (normal rolls)
+
+  /// Big results (wins, near misses, triples): 2.6 s cap incl. the beat,
+  /// with the full spec slow-mo over the last [bigSlowMoMs].
+  static const bigWallBudgetMs = 2350;
+  static const bigSlowMoMs = 500;
 
   /// Playback time warp: wall ms -> sim seconds (one sample per ms).
   /// Normal throws: 0.35x from the last real bounce, eased back. Big
@@ -267,12 +281,14 @@ class DiceThrowSim {
     ThrowResult r, {
     bool big = false,
     bool epic = false,
-    int budgetMs = wallBudgetMs,
+    int? budgetMs,
   }) {
     final end = r.duration;
     final tb = r.lastBounce;
     final low = epic ? 0.15 : (big ? 0.2 : 0.35);
-    var w = big ? (epic ? 0.12 : 0.1) : 0.135;
+    // Big: the last 500 ms on screen play at [low] (500 ms × low of sim).
+    var w = big ? bigSlowMoMs / 1000 * low : 0.135;
+    budgetMs ??= big ? bigWallBudgetMs : wallBudgetMs;
     List<double> build(double w) {
       final ramp = w * 0.75;
       double rate(double ts) {
@@ -541,6 +557,16 @@ class DiceThrowSim {
           d.w = d.w * 0.93;
           d.v = V3(d.v.x * 0.95, d.v.y * 0.95, d.v.z);
         }
+        if (t >= faceUpFrom) {
+          // 0 → 1 across [faceUpFrom, maxT - 0.12]: blend strength per step.
+          final u = ((t - faceUpFrom) / (maxT - 0.12 - faceUpFrom)).clamp(
+            0.0,
+            1.0,
+          );
+          final k = 0.015 + 0.2 * u * u;
+          d.q = Quat.slerp(d.q, _faceUp(d.q), k).normalized();
+          d.w = d.w * (1 - 0.6 * k);
+        }
         if (late) {
           final k = 0.80 + 0.15 * (maxT - t) / dampRamp;
           d.w = d.w * k;
@@ -602,10 +628,34 @@ class DiceThrowSim {
       settleTime: frames.length * dt,
       dieSize: dieSize,
       moving: List.of(moving),
+      snapAngles: [
+        for (var i = 0; i < n; i++)
+          if (moving[i]) dice[i].snapAngle,
+      ],
     );
   }
 
+  /// Nearest face-up orientation (same yaw).
+  static Quat _faceUp(Quat q) {
+    final m = q.matrix;
+    var k = 0;
+    for (var c = 1; c < 3; c++) {
+      if (m[6 + c].abs() > m[6 + k].abs()) k = c;
+    }
+    final sgn = m[6 + k] >= 0 ? 1.0 : -1.0;
+    final up = V3(m[k] * sgn, m[3 + k] * sgn, m[6 + k] * sgn);
+    final axis = up.cross(const V3(0, 0, 1));
+    final ang = math.asin(math.min(1.0, axis.length));
+    return (Quat.axisAngle(axis, ang) * q).normalized();
+  }
+
+  static double _angleDeg(Quat a, Quat b) {
+    final d = (a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z).abs();
+    return 2 * math.acos(d.clamp(0.0, 1.0)) * 180 / math.pi;
+  }
+
   static void _beginSnap(_Die d) {
+    d.snapAngle = _angleDeg(d.q, _faceUp(d.q));
     final m = d.q.matrix;
     var k = 0;
     for (var c = 1; c < 3; c++) {
