@@ -231,7 +231,12 @@ class _Die {
 
 class DiceThrowSim {
   static const dt = 1 / 120;
-  static const maxT = 2.2; // force-damp deadline (spec)
+
+  /// Thrower's table edge.
+  static const edgeBottom = 0, edgeTop = 1, edgeLeft = 2, edgeRight = 3;
+  static const maxT = 1.7; // hard-damp deadline (on-screen ≤ ~2.2 s)
+  static const minSettle = 1.36; // no die snaps flat before this
+  static const dampRamp = 0.3;
   static const feltRestitution = 0.35;
   static const feltFriction = 0.55;
   static const railRestitution = 0.5;
@@ -249,6 +254,54 @@ class DiceThrowSim {
     V3(1, 1, -1),
     V3(1, 1, 1),
   ];
+
+  /// On-screen budget from tap to still, before the 250 ms readout beat.
+  static const wallBudgetMs = 1950;
+
+  /// Playback time warp: wall ms -> sim seconds (one sample per ms).
+  /// Normal throws: 0.35x from the last real bounce, eased back. Big
+  /// results: 0.2x (first-roll triple 1s 0.15x) over the final moments.
+  /// The slow windows shrink until tap-to-still fits [wallBudgetMs], so
+  /// with the 250 ms beat the whole roll stays at or under ~2.2 s.
+  static List<double> warp(
+    ThrowResult r, {
+    bool big = false,
+    bool epic = false,
+    int budgetMs = wallBudgetMs,
+  }) {
+    final end = r.duration;
+    final tb = r.lastBounce;
+    final low = epic ? 0.15 : (big ? 0.2 : 0.35);
+    var w = big ? (epic ? 0.12 : 0.1) : 0.135;
+    List<double> build(double w) {
+      final ramp = w * 0.75;
+      double rate(double ts) {
+        if (big) return ts >= end - w ? low : 1;
+        if (tb <= 0) return 1;
+        if (ts >= tb && ts < tb + w) return low;
+        if (ts >= tb + w && ts < tb + w + ramp) {
+          return low + (1 - low) * (ts - tb - w) / ramp;
+        }
+        return 1;
+      }
+
+      final out = <double>[];
+      var ts = 0.0;
+      while (ts < end && out.length < 6000) {
+        out.add(ts);
+        ts += 0.001 * rate(ts);
+      }
+      out.add(end);
+      return out;
+    }
+
+    var out = build(w);
+    while (out.length > budgetMs && w > 0.002) {
+      w *= 0.8;
+      out = build(w);
+    }
+    return out;
+  }
 
   static Footprint footprintOf(V3 p, Quat q, double hs) {
     final m = q.matrix;
@@ -284,7 +337,7 @@ class DiceThrowSim {
     required List<bool> moving,
     required List<int> values,
     List<(double, double)?>? rest,
-    bool fromTop = false,
+    int edge = edgeBottom,
     (double, double, double)? avoid,
   }) {
     final rnd = math.Random(seed);
@@ -294,32 +347,50 @@ class DiceThrowSim {
     final n = moving.length;
     final cx = width / 2, cy = height / 2;
     final ra = width / 2 - hs * 0.9, rb = height / 2 - hs * 0.9;
-    final dir = fromTop ? -1.0 : 1.0; // +1: thrown up from the bottom edge
+    // Throws are generated as if from the bottom edge of a canonical
+    // (cw x ch) table, then mapped onto the thrower's [edge].
+    final side = edge == edgeLeft || edge == edgeRight;
+    final cw = side ? height : width, ch = side ? width : height;
+    final ccx = cw / 2;
+    (V3, V3) place(double x, double y, double vx, double vy) {
+      switch (edge) {
+        case edgeTop:
+          return (V3(width - x, height - y, 0), V3(-vx, -vy, 0));
+        case edgeLeft:
+          return (V3(width - y, x, 0), V3(-vy, vx, 0));
+        case edgeRight:
+          return (V3(y, height - x, 0), V3(vy, -vx, 0));
+        default:
+          return (V3(x, y, 0), V3(vx, vy, 0));
+      }
+    }
+
     final slotY = height - hs * 1.6;
     double slotX(int i) => cx + (i - (n - 1) / 2) * dieSize * 1.35;
 
     final dice = <_Die>[];
     final wild = rnd.nextInt(n);
     final wdir = rnd.nextBool() ? 1.0 : -1.0;
-    final aimX = cx + (rnd.nextDouble() - 0.5) * width * 0.25;
-    // Travel 60–75% of the table height before friction wins.
-    final travel = height * (0.6 + rnd.nextDouble() * 0.15);
+    final aimX = ccx + (rnd.nextDouble() - 0.5) * cw * 0.25;
+    // Travel 60–75% of the table depth before friction wins.
+    final travel = ch * (0.6 + rnd.nextDouble() * 0.15);
     for (var i = 0; i < n; i++) {
       if (!moving[i]) {
         final r = (rest != null && i < rest.length) ? rest[i] : null;
         final x = r?.$1 ?? slotX(i);
-        final y = r?.$2 ?? (fromTop ? height - slotY : slotY);
+        final y = r?.$2 ?? slotY;
         dice.add(
           _Die(V3(x, y, hs), V3.zero, Quat.identity, V3.zero, fixed: true)
             ..done = true,
         );
         continue;
       }
-      final x0 = cx + (i - 1) * dieSize * 1.05 + (rnd.nextDouble() - .5) * 8;
-      final y0 = fromTop ? hs * 1.7 : height - hs * 1.7;
+      final x0 = ccx + (i - 1) * dieSize * 1.05 + (rnd.nextDouble() - .5) * 8;
+      final y0 = ch - hs * 1.7;
       var vx = (aimX + (i - 1) * hs - x0) * 1.1 + (rnd.nextDouble() - .5) * 90;
-      if (i == wild) vx += wdir * (0.25 + rnd.nextDouble() * 0.35) * width;
-      final vy = -dir * travel * (1.0 + rnd.nextDouble() * 0.15);
+      if (i == wild) vx += wdir * (0.25 + rnd.nextDouble() * 0.35) * cw;
+      final vy = -travel * (1.0 + rnd.nextDouble() * 0.15);
+      final (p0, v0) = place(x0, y0, vx, vy);
       final vz = 300 + rnd.nextDouble() * 120;
       final q = Quat(
         rnd.nextDouble() - .5,
@@ -336,8 +407,8 @@ class DiceThrowSim {
       final w = ax * ((8 + rnd.nextDouble() * 8) / math.max(ax.length, 1e-6));
       dice.add(
         _Die(
-          V3(x0, y0, hs * 2.6 + rnd.nextDouble() * hs),
-          V3(vx, vy, vz),
+          V3(p0.x, p0.y, hs * 2.6 + rnd.nextDouble() * hs),
+          V3(v0.x, v0.y, vz),
           q,
           w,
         ),
@@ -373,7 +444,7 @@ class DiceThrowSim {
     var t = 0.0;
     final steps = (maxT / dt).round();
     for (var step = 0; step < steps; step++) {
-      final late = t > maxT - 0.35; // force-damp ramp toward 2.2 s
+      final late = t > maxT - dampRamp; // hard-damp ramp toward maxT
       for (var i = 0; i < n; i++) {
         final d = dice[i];
         if (d.done) continue;
@@ -471,11 +542,12 @@ class DiceThrowSim {
           d.v = V3(d.v.x * 0.95, d.v.y * 0.95, d.v.z);
         }
         if (late) {
-          final k = 0.80 + 0.15 * (maxT - t) / 0.35;
+          final k = 0.80 + 0.15 * (maxT - t) / dampRamp;
           d.w = d.w * k;
           d.v = V3(d.v.x * k, d.v.y * k, d.v.z);
         }
-        if (d.still >= stillSteps || (contact && t >= maxT - 0.12)) {
+        if ((d.still >= stillSteps && t >= minSettle - 0.06) ||
+            (contact && t >= maxT - 0.12)) {
           _beginSnap(d);
         }
       }
@@ -496,20 +568,32 @@ class DiceThrowSim {
           d.done = true;
         }
       }
-      _separate(dice, hs, cx, cy, ra, rb);
       frames.add([for (final d in dice) DieFrame(d.p, d.q, 0, settled: true)]);
-    } else {
-      final moved = _separate(dice, hs, cx, cy, ra, rb);
-      if (moved) {
-        frames.add([
-          for (final d in dice) DieFrame(d.p, d.q, 0, settled: true),
-        ]);
-      }
     }
 
     final relabel = <Quat>[];
     for (var i = 0; i < n; i++) {
       relabel.add(moving[i] ? _upRelabel(dice[i].q) : Quat.identity);
+    }
+    // Rest framing: no footprint overlap, no on-screen (perspective) overlap,
+    // and every die fully inside the table. Ease any correction in over
+    // ~100 ms so nothing pops.
+    final before = [for (final d in dice) d.p];
+    final yaws = [for (var i = 0; i < n; i++) restYaw(dice[i].q * relabel[i])];
+    if (_separate(dice, hs, cx, cy, ra, rb, yaws, width, height)) {
+      const k = 12;
+      for (var f = 1; f <= k; f++) {
+        final e = 1 - math.pow(1 - f / k, 3).toDouble();
+        frames.add([
+          for (var i = 0; i < n; i++)
+            DieFrame(
+              before[i] + (dice[i].p - before[i]) * e,
+              dice[i].q,
+              0,
+              settled: true,
+            ),
+        ]);
+      }
     }
     return ThrowResult(
       frames: frames,
@@ -602,6 +686,53 @@ class DiceThrowSim {
   }
 
   /// Guarantee zero footprint overlap at rest and stay inside the rail.
+  /// Camera tilt the table is viewed with (matches DiceCube.restRx/Ry).
+  static const viewTiltX = 0.30, viewTiltY = 0.26, perspective = 0.0015;
+
+  /// Yaw (about the felt normal) of a die resting value-face up.
+  static double restYaw(Quat q) {
+    final m = q.matrix;
+    return math.atan2(m[3], m[0]);
+  }
+
+  /// On-screen bounds of a resting die drawn at (x, y) with [yaw]:
+  /// DiceCube's rotateX(tilt) · rotateY(tilt) · rotateZ(yaw) + perspective.
+  static (double, double, double, double) restBounds(
+    double x,
+    double y,
+    double yaw,
+    double hs,
+  ) {
+    final cz = math.cos(yaw), sz = math.sin(yaw);
+    final cy = math.cos(viewTiltY), sy = math.sin(viewTiltY);
+    final cx = math.cos(viewTiltX), sx = math.sin(viewTiltX);
+    var l = double.infinity, t = double.infinity;
+    var r = -double.infinity, b = -double.infinity;
+    for (final c in _corners) {
+      var px = c.x * hs, py = c.y * hs, pz = c.z * hs;
+      // Z
+      var nx = px * cz - py * sz, ny = px * sz + py * cz;
+      px = nx;
+      py = ny;
+      // Y
+      nx = px * cy + pz * sy;
+      final nz = -px * sy + pz * cy;
+      px = nx;
+      pz = nz;
+      // X
+      ny = py * cx - pz * sx;
+      final nz2 = py * sx + pz * cx;
+      py = ny;
+      final w = 1 + perspective * nz2;
+      final X = px / w, Y = py / w;
+      l = math.min(l, X);
+      r = math.max(r, X);
+      t = math.min(t, Y);
+      b = math.max(b, Y);
+    }
+    return (x + l, y + t, x + r, y + b);
+  }
+
   static bool _separate(
     List<_Die> dice,
     double hs,
@@ -609,9 +740,12 @@ class DiceThrowSim {
     double cy,
     double ra,
     double rb,
+    List<double> yaws,
+    double width,
+    double height,
   ) {
     var moved = false;
-    for (var iter = 0; iter < 40; iter++) {
+    for (var iter = 0; iter < 80; iter++) {
       var any = false;
       for (var i = 0; i < dice.length; i++) {
         for (var j = i + 1; j < dice.length; j++) {
@@ -635,6 +769,46 @@ class DiceThrowSim {
         if (f > 1) {
           final s = 1 / math.sqrt(f);
           d.p = V3(cx + dx * s, cy + dy * s, d.p.z);
+        }
+      }
+      // On-screen boxes (with the camera tilt) must not overlap either.
+      const gap = 2.0;
+      for (var i = 0; i < dice.length; i++) {
+        for (var j = i + 1; j < dice.length; j++) {
+          final a = dice[i], b = dice[j];
+          final ba = restBounds(a.p.x, a.p.y, yaws[i], hs);
+          final bb = restBounds(b.p.x, b.p.y, yaws[j], hs);
+          final ox = math.min(ba.$3, bb.$3) - math.max(ba.$1, bb.$1) + gap;
+          final oy = math.min(ba.$4, bb.$4) - math.max(ba.$2, bb.$2) + gap;
+          if (ox <= 0 || oy <= 0) continue;
+          any = true;
+          final wa = a.fixed ? 0.0 : 1.0, wb = b.fixed ? 0.0 : 1.0;
+          final tot = math.max(wa + wb, 1e-9);
+          // Push along the cheaper axis.
+          if (ox < oy) {
+            final sgn = a.p.x <= b.p.x ? -1.0 : 1.0;
+            a.p = V3(a.p.x + sgn * ox * wa / tot, a.p.y, a.p.z);
+            b.p = V3(b.p.x - sgn * ox * wb / tot, b.p.y, b.p.z);
+          } else {
+            final sgn = a.p.y <= b.p.y ? -1.0 : 1.0;
+            a.p = V3(a.p.x, a.p.y + sgn * oy * wa / tot, a.p.z);
+            b.p = V3(b.p.x, b.p.y - sgn * oy * wb / tot, b.p.z);
+          }
+        }
+      }
+      // Fully inside the table on screen.
+      for (var i = 0; i < dice.length; i++) {
+        final d = dice[i];
+        if (d.fixed) continue;
+        final bd = restBounds(d.p.x, d.p.y, yaws[i], hs);
+        var dx = 0.0, dy = 0.0;
+        if (bd.$1 < gap) dx = gap - bd.$1;
+        if (bd.$3 > width - gap) dx = width - gap - bd.$3;
+        if (bd.$2 < gap) dy = gap - bd.$2;
+        if (bd.$4 > height - gap) dy = height - gap - bd.$4;
+        if (dx != 0 || dy != 0) {
+          any = true;
+          d.p = V3(d.p.x + dx, d.p.y + dy, d.p.z);
         }
       }
       if (!any) break;
