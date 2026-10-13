@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../debug/settle_log.dart';
+
 import '../../cosmetics/dice_skin.dart';
 import '../../services/sfx_service.dart';
 import '../theme/marge_theme.dart';
@@ -261,7 +263,8 @@ class DiceTray extends StatefulWidget {
   State<DiceTray> createState() => DiceTrayState();
 }
 
-class DiceTrayState extends State<DiceTray> with TickerProviderStateMixin {
+class DiceTrayState extends State<DiceTray>
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _c = AnimationController(vsync: this)
     ..addListener(_tick)
     ..addStatusListener((s) {
@@ -374,21 +377,39 @@ class DiceTrayState extends State<DiceTray> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // A freshly mounted tray has nothing in flight: report its roll as
     // settled so a parent waiting on [onSettled] can never stay locked
     // (e.g. the tray was re-created mid-throw by a layout change).
     final serial = widget.rollSerial;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && !_c.isAnimating) _report(serial);
+      if (mounted && !_c.isAnimating) _report(serial, 'mount');
     });
+  }
+
+  /// Finish an in-flight throw at its settled faces and report it. Used on
+  /// resume and by the screen's watchdog so input never unlocks while the
+  /// dice are still visibly moving.
+  void snapToRest(String why) {
+    if (!_c.isAnimating) return;
+    SettleLog.add('throw-snapped', serial: widget.rollSerial, reason: why);
+    _c.stop();
+    _c.value = 1;
+    _settled();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) snapToRest('app resumed');
   }
 
   /// Last serial passed to [DiceTray.onSettled] (one report per serial).
   int? _reported;
 
-  void _report(int serial) {
+  void _report(int serial, [String why = 'settled']) {
     final cb = widget.onSettled;
     if (_reported == serial || cb == null) return;
+    SettleLog.add('tray-report', serial: serial, reason: why);
     _reported = serial;
     cb(serial);
   }
@@ -399,7 +420,7 @@ class DiceTrayState extends State<DiceTray> with TickerProviderStateMixin {
   void _reportIfIdle() {
     if (_c.isAnimating || _reported == widget.rollSerial) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && !_c.isAnimating) _report(widget.rollSerial);
+      if (mounted && !_c.isAnimating) _report(widget.rollSerial, 'idle');
     });
   }
 
@@ -443,7 +464,7 @@ class DiceTrayState extends State<DiceTray> with TickerProviderStateMixin {
     if (!moving.contains(true)) {
       final serial = widget.rollSerial;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _report(serial);
+        if (mounted) _report(serial, 'nothing to throw');
       });
       return;
     }
@@ -462,6 +483,11 @@ class DiceTrayState extends State<DiceTray> with TickerProviderStateMixin {
       milliseconds: _reduce
           ? DiceTray.reduceMotionMs
           : DiceTray.dieMs + DiceTray.staggerMs * (movers - 1),
+    );
+    SettleLog.add(
+      'throw-start',
+      serial: widget.rollSerial,
+      reason: '$movers dice',
     );
     _c.forward(from: 0);
     widget.sfx?.diceThrown();
@@ -513,6 +539,7 @@ class DiceTrayState extends State<DiceTray> with TickerProviderStateMixin {
   @override
   void dispose() {
     _slide.dispose();
+    WidgetsBinding.instance.removeObserver(this);
     _c.dispose();
     super.dispose();
   }

@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+
+import '../../debug/settle_log.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../ads/ads_service.dart';
@@ -48,8 +51,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               border: OutlineInputBorder(),
               prefixIcon: Icon(Icons.person),
             ),
-            onSubmitted: (v) => n.setPlayerName(v.trim().isEmpty ? 'You' : v.trim()),
-            onChanged: (v) => n.setPlayerName(v.trim().isEmpty ? 'You' : v.trim()),
+            onSubmitted: (v) =>
+                n.setPlayerName(v.trim().isEmpty ? 'You' : v.trim()),
+            onChanged: (v) =>
+                n.setPlayerName(v.trim().isEmpty ? 'You' : v.trim()),
           ),
           const SizedBox(height: 16),
           SwitchListTile(
@@ -82,7 +87,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               await n.setSeenRules(false);
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Rules tip will show next play')),
+                  const SnackBar(
+                    content: Text('Rules tip will show next play'),
+                  ),
                 );
               }
             },
@@ -90,7 +97,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ListTile(
             leading: const Icon(Icons.privacy_tip_outlined),
             title: const Text('Privacy / ad consent'),
-            subtitle: const Text('UMP privacy options (EU/EEA/UK when required)'),
+            subtitle: const Text(
+              'UMP privacy options (EU/EEA/UK when required)',
+            ),
             onTap: () async {
               final ads = ref.read(adsServiceProvider);
               final required = await ads.isPrivacyOptionsRequired();
@@ -139,6 +148,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 24),
+          // Long-press the version for the dice-lock breadcrumbs (support).
+          GestureDetector(
+            key: const ValueKey('settings-version'),
+            onLongPress: () => showDialog<void>(
+              context: context,
+              builder: (_) => const SettleLogDialog(),
+            ),
+            child: Text(
+              'Version $kAppVersion',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: MargeColors.cream.withValues(alpha: 0.55),
+                fontSize: 12,
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
           Text(
             'Marge Dice Game · com.jerilynroberts.marge\nVirtual gems only — no real money.',
             textAlign: TextAlign.center,
@@ -149,6 +175,43 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Hidden support view: the last dice-lock breadcrumbs, for a screenshot.
+class SettleLogDialog extends StatelessWidget {
+  const SettleLogDialog({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = SettleLog.entries.reversed.map((e) => e.toString()).toList();
+    return AlertDialog(
+      title: const Text('Dice lock log'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: lines.isEmpty
+            ? const Text('No entries yet.')
+            : ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final l in lines)
+                    Text(
+                      l,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 11,
+                      ),
+                    ),
+                ],
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+      ],
     );
   }
 }

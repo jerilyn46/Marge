@@ -62,6 +62,11 @@ extension _ThrowPlayback on DiceTrayState {
   }
 
   void _startThrow(List<bool> moving) {
+    SettleLog.add(
+      'throw-start',
+      serial: widget.rollSerial,
+      reason: '${moving.where((m) => m).length} dice',
+    );
     final t = _th.table == Size.zero
         ? Size(widget.size * 5.6, widget.size * 4)
         : _th.table;
