@@ -9,7 +9,13 @@ class TurnState {
     required this.dice,
     required this.hasRolled,
     this.lastScore = ScoreResult.none,
+    this.setNumber = 1,
   });
+
+  /// Which set of 3 rolls this is within the seat's turn: 1, then +1 each
+  /// time a winning hand is banked and the same player keeps the seat.
+  /// [rollNumber] counts within the set (resets to 0 after a bank).
+  final int setNumber;
 
   /// Seat whose turn it is.
   final String playerId;
@@ -47,12 +53,14 @@ class TurnState {
     DiceSet? dice,
     bool? hasRolled,
     ScoreResult? lastScore,
+    int? setNumber,
   }) => TurnState(
     playerId: playerId ?? this.playerId,
     rollNumber: rollNumber ?? this.rollNumber,
     dice: dice ?? this.dice,
     hasRolled: hasRolled ?? this.hasRolled,
     lastScore: lastScore ?? this.lastScore,
+    setNumber: setNumber ?? this.setNumber,
   );
 
   factory TurnState.start(String playerId) => TurnState(

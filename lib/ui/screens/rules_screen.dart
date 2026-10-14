@@ -49,8 +49,10 @@ class RulesScreen extends ConsumerWidget {
             emoji: '👑',
             title: 'Triple ones — first roll',
             body:
-                'Three 1s on the first roll of a set takes the entire pot and ends the round. '
-                'Everyone antes again, and it is still your turn for 3 new rolls.',
+                'Three 1s on the first roll of a set: every other player pays you 10 gems, '
+                'you take the entire pot, and you win the match. '
+                'A player short of 10 can add gems or pay what they have and leave; '
+                'bots pay what they have.',
           ),
           _RuleCard(
             emoji: '💰',
