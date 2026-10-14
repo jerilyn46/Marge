@@ -77,7 +77,8 @@ Future<ProviderContainer> _boot(WidgetTester tester, List<int> seq) async {
     hapticsEnabled: hapticDelayMs > 0,
   );
   SavedGameStore.bootstrap = SavedGameStore(loaded: true, prefs: prefs);
-  MatchNotifier.rngFactory = () => _Scripted(seq);
+  final shared = _Scripted(seq); // one stream across rematches
+  MatchNotifier.rngFactory = () => shared;
   addTearDown(() {
     MatchNotifier.rngFactory = Random.new;
     PlayerCoinLedger.bootstrap = null;
@@ -294,6 +295,7 @@ void main() {
     _ticking.value = true;
     await tester.pump();
     await _settle(tester);
+    await _tap(tester, 'Continue playing'); // match over: next game
     await _tap(tester, 'ROLL'); // 4,6,6
     expect(
       _enabled(tester, _btn('KEEP ROLLING')),
@@ -319,6 +321,7 @@ void main() {
       AppLifecycleState.resumed,
     ]);
     await _settle(tester);
+    await _tap(tester, 'Continue playing'); // match over: next game
     await _tap(tester, 'ROLL');
     expect(
       _enabled(tester, _btn('KEEP ROLLING')),

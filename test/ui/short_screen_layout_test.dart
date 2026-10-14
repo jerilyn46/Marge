@@ -137,4 +137,88 @@ void main() {
       });
     }
   }
+
+  // Match over (incl. the long first-roll triple 1s message): the results
+  // scroll and Continue / Quit stay pinned, visible and tappable.
+  final endCases = <(String, Size, double, double)>[
+    for (final e in covers.entries)
+      for (final s in [1.0, 1.3, 2.0])
+        ('Flip 7 cover ${e.key}', const Size(948, 1048) / e.value, e.value, s),
+    for (final e in phones.entries)
+      for (final s in [1.0, 1.3, 2.0]) (e.key, e.value, 2.0, s),
+  ];
+  for (final (name, dp, dpr, scale) in endCases) {
+    for (final which in ['ones-vs-bot', 'ones-hotseat-5']) {
+      testWidgets('$name text x$scale [match over $which]: buttons pinned', (
+        tester,
+      ) async {
+        tester.view.devicePixelRatio = dpr;
+        tester.view.physicalSize = dp * dpr;
+        final pad = FakeViewPadding(top: 28 * dpr, bottom: 24 * dpr);
+        tester.view.padding = pad;
+        tester.view.viewPadding = pad;
+        tester.platformDispatcher.textScaleFactorTestValue = scale;
+        addTearDown(tester.view.reset);
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        final c = MatchController(
+          config: which == 'ones-vs-bot'
+              ? const MatchConfig(botCount: 1)
+              : const MatchConfig(
+                  botCount: 0,
+                  otherHumanCount: 4,
+                  localPlayerName: 'Jerilyn-Alexandria Roberts',
+                ),
+          rng: _Scripted([0, 0, 0]),
+        )..startMatch();
+        c.roll();
+        expect(c.snapshot.phase, MatchPhase.matchEnd);
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              matchProvider.overrideWith(
+                () => _Live(MatchViewState(snapshot: c.snapshot)),
+              ),
+            ],
+            child: MaterialApp(
+              theme: buildMargeTheme(),
+              home: const MatchScreen(),
+            ),
+          ),
+        );
+        await tester.pump(const Duration(seconds: 1));
+        expect(tester.takeException(), isNull, reason: 'no overflow');
+        expect(
+          find.textContaining('rolled three 1s on the first roll'),
+          findsOneWidget,
+        );
+        final usable = Rect.fromLTRB(0, 28, dp.width, dp.height - 24);
+        for (final key in ['match-end-continue', 'match-end-quit']) {
+          final btn = find.byKey(ValueKey(key));
+          expect(btn, findsOneWidget, reason: key);
+          final b = tester.getRect(btn);
+          expect(
+            b.top >= usable.top - 0.5 &&
+                b.bottom <= usable.bottom + 0.5 &&
+                b.left >= -0.5 &&
+                b.right <= usable.right + 0.5,
+            isTrue,
+            reason: '$key $b in $usable',
+          );
+          expect(
+            (tester.widget(btn) as ButtonStyleButton).onPressed,
+            isNotNull,
+          );
+          final target = tester.renderObject(btn);
+          expect(
+            tester
+                .hitTestOnBinding(b.center)
+                .path
+                .any((e) => identical(e.target, target)),
+            isTrue,
+            reason: '$key hit-testable',
+          );
+        }
+      });
+    }
+  }
 }

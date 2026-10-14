@@ -81,21 +81,22 @@ void main() {
     c.roll();
     final snap = c.snapshot;
     expect(snap.lastPayout?.kind, ScoreKind.tripleOnesPotWin);
-    // Rule unchanged: fresh 3 rolls for the same winner.
-    expect(snap.turn!.hasRolled, isFalse);
+    // New rule: everyone pays 10, the roller takes the pot, match over.
+    expect(snap.phase, MatchPhase.matchEnd);
 
-    // Beat 1: dice on the table, banner held.
+    // Beat 1: dice on the table, results held while the roll is revealed.
     await _pump(tester, MatchViewState(snapshot: snap, revealingRoll: true));
     final dice = tester.widgetList<DiceCube>(find.byType(DiceCube)).toList();
     expect(dice.map((d) => d.value).take(3), [1, 1, 1]);
-    expect(find.textContaining('sweeps the pot'), findsNothing);
+    expect(find.byKey(const ValueKey('match-end-message')), findsNothing);
 
-    // Beat 2: the notification follows; dice still visible.
+    // Beat 2: the winner message and the play-again prompt follow.
     await tester.pumpWidget(const SizedBox());
     await _pump(tester, MatchViewState(snapshot: snap));
-    expect(find.textContaining('sweeps the pot'), findsOneWidget);
-    final dice2 =
-        tester.widgetList<DiceCube>(find.byType(DiceCube)).toList();
-    expect(dice2.map((d) => d.value).take(3), [1, 1, 1]);
+    expect(
+      find.textContaining('rolled three 1s on the first roll'),
+      findsOneWidget,
+    );
+    expect(find.text('Continue playing or quit?'), findsOneWidget);
   });
 }

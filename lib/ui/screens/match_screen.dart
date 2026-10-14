@@ -211,7 +211,8 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
     }
     final snap = view.snapshot;
 
-    if (snap.phase == MatchPhase.matchEnd) {
+    // Hold the table (dice + pot) through a pot-win reveal, then results.
+    if (snap.phase == MatchPhase.matchEnd && !view.revealingRoll) {
       return _MatchEndView(snapshot: snap);
     }
 
@@ -884,6 +885,42 @@ class _MatchEndView extends ConsumerStatefulWidget {
 class _MatchEndViewState extends ConsumerState<_MatchEndView> {
   var _breakHandled = false;
 
+  /// Hotseat: each human answers "play another game?" in turn. Bots always
+  /// say yes. Index into [_humans]; answers collected in [_quit].
+  var _asking = 0;
+  final _quit = <String>{};
+
+  List<PlayerState> get _humans => [
+    for (final p in widget.snapshot.players)
+      if (p.profile.isHuman && p.profile.participates && !p.eliminated) p,
+  ];
+
+  bool get _hotseat => _humans.length > 1;
+
+  Future<void> _answer(bool again) async {
+    final humans = _humans;
+    final who = humans[_asking];
+    if (!again) _quit.add(who.profile.id);
+    final local = who.profile.name == widget.snapshot.config.localPlayerName;
+    if (!again && local) {
+      await _leaveQuiet(); // the phone's owner is done: back to Home
+      return;
+    }
+    if (_asking + 1 < humans.length) {
+      setState(() => _asking++);
+      return;
+    }
+    final cfg = widget.snapshot.config;
+    final others = humans.length - 1 - _quit.length;
+    if (others + cfg.botCount < 1) {
+      await _leaveQuiet(); // nobody left to play with
+      return;
+    }
+    await _adAfterUserAction();
+    if (!mounted) return;
+    ref.read(matchProvider.notifier).rematch(otherHumanCount: others);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -924,6 +961,31 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
     Navigator.of(context).popUntil((r) => r.isFirst);
   }
 
+  Widget _continueBtn(PlayerState? asked, {bool short = false}) {
+    final onPressed = asked != null ? () => _answer(true) : _rematch;
+    const key = ValueKey('match-end-continue');
+    if (short) {
+      // One line, scaled down to fit: the row must stay one button tall.
+      return FilledButton(
+        key: key,
+        onPressed: onPressed,
+        child: const FittedBox(child: Text('Continue playing')),
+      );
+    }
+    return FilledButton.icon(
+      key: key,
+      onPressed: onPressed,
+      icon: const Icon(Icons.replay_rounded),
+      label: const Text('Continue playing', textAlign: TextAlign.center),
+    );
+  }
+
+  Widget _quitBtn(PlayerState? asked, {bool short = false}) => TextButton(
+    key: const ValueKey('match-end-quit'),
+    onPressed: asked != null ? () => _answer(false) : _leaveQuiet,
+    child: short ? const FittedBox(child: Text('Quit')) : const Text('Quit'),
+  );
+
   @override
   Widget build(BuildContext context) {
     final snapshot = widget.snapshot;
@@ -931,7 +993,20 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
         snapshot.players.where((p) => p.profile.participates).toList()
           ..sort((a, b) => b.bankCents.compareTo(a.bankCents));
     final waiting = snapshot.players.where((p) => p.profile.isWaiting).toList();
-    final winner = ranked.isEmpty ? snapshot.players.first : ranked.first;
+    final byId = snapshot.winnerId == null
+        ? null
+        : snapshot.players
+              .where((p) => p.profile.id == snapshot.winnerId)
+              .firstOrNull;
+    final winner =
+        byId ?? (ranked.isEmpty ? snapshot.players.first : ranked.first);
+    final humans = _humans;
+    final asked = _hotseat && _asking < humans.length ? humans[_asking] : null;
+
+    final mq = MediaQuery.of(context);
+    final short =
+        mq.size.height - mq.padding.vertical <
+        420 * mq.textScaler.scale(1).clamp(1.0, 2.0);
 
     return Scaffold(
       body: Container(
@@ -943,72 +1018,105 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
           ),
         ),
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              children: [
-                const SizedBox(height: 24),
-                Text(
-                  '🏆 Match over',
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.w900,
-                    color: MargeColors.gold,
+          // The results scroll; the play-again question and Continue / Quit
+          // stay pinned so they are reachable at any size or text scale.
+          child: Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  key: const ValueKey('match-end-scroll'),
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        '🏆 Match over',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.headlineMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.w900,
+                              color: MargeColors.gold,
+                            ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        snapshot.endMessage ??
+                            '${winner.profile.avatarEmoji} ${winner.profile.name} '
+                                'wins with ${gemCount(winner.bankCents)}',
+                        key: const ValueKey('match-end-message'),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      for (
+                        var i = 0;
+                        i < ranked.length + waiting.length;
+                        i++
+                      ) ...[
+                        if (i > 0) const SizedBox(height: 8),
+                        i < ranked.length
+                            ? PlayerChip(player: ranked[i], isActive: i == 0)
+                            : PlayerChip(player: waiting[i - ranked.length]),
+                      ],
+                      const SizedBox(height: 16),
+                      Text(
+                        '${gemCount(winner.bankCents)} at the table · '
+                        'virtual gems (not real money)',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: MargeColors.cream.withValues(alpha: 0.7),
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      const Center(child: GetMoreGemsButton()),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  '${winner.profile.avatarEmoji} ${winner.profile.name} '
-                  'wins with ${gemCount(winner.bankCents)}',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                  ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      asked != null
+                          ? '${asked.profile.avatarEmoji} ${asked.profile.name}, '
+                                'play another game?'
+                          : 'Continue playing or quit?',
+                      key: const ValueKey('play-again-prompt'),
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: MargeColors.cream.withValues(alpha: 0.85),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (short)
+                      // Short screens / big text: one row saves a line.
+                      Row(
+                        children: [
+                          Expanded(child: _continueBtn(asked, short: true)),
+                          const SizedBox(width: 8),
+                          Expanded(child: _quitBtn(asked, short: true)),
+                        ],
+                      )
+                    else ...[
+                      _continueBtn(asked),
+                      const SizedBox(height: 4),
+                      _quitBtn(asked),
+                    ],
+                  ],
                 ),
-                const SizedBox(height: 24),
-                Expanded(
-                  child: ListView.separated(
-                    itemCount: ranked.length + waiting.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 8),
-                    itemBuilder: (context, i) {
-                      if (i < ranked.length) {
-                        return PlayerChip(player: ranked[i], isActive: i == 0);
-                      }
-                      return PlayerChip(player: waiting[i - ranked.length]);
-                    },
-                  ),
-                ),
-                Text(
-                  '${gemCount(winner.bankCents)} at the table · '
-                  'virtual gems (not real money)',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: MargeColors.cream.withValues(alpha: 0.7),
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Continue playing or quit?',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: MargeColors.cream.withValues(alpha: 0.85),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                FilledButton.icon(
-                  onPressed: _rematch,
-                  icon: const Icon(Icons.replay_rounded),
-                  label: const Text('Continue playing'),
-                ),
-                const SizedBox(height: 10),
-                const GetMoreGemsButton(),
-                const SizedBox(height: 10),
-                TextButton(onPressed: _leaveQuiet, child: const Text('Quit')),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
