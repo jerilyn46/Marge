@@ -11,6 +11,11 @@ enum SfxCue {
   gemChimeCascade,
   cupRattle,
   dieClack,
+  feltThud,
+  railKnock,
+  diceHit,
+  slowMoSwell,
+  bigSting,
 }
 
 /// Lightweight SFX / haptics. Sound hooks are gated by [sfxEnabled];
@@ -90,6 +95,40 @@ class SfxService {
   void dieLanded() {
     play(SfxCue.dieClack);
     _hapticFire(HapticFeedback.selectionClick);
+  }
+
+  // --- Real-throw dice (DICE_SPEC; audio later, hooks only) ---------------
+  // The tray enforces the 6-haptics-per-throw cap and passes [haptic].
+
+  /// Later felt bounce (volume by [speed] once audio exists).
+  void feltThud(double speed, {bool haptic = false}) {
+    play(SfxCue.feltThud);
+    if (haptic) _hapticFire(HapticFeedback.selectionClick);
+  }
+
+  /// Die hit the rail: knock + lightImpact.
+  void railKnock({bool haptic = true}) {
+    play(SfxCue.railKnock);
+    if (haptic) _hapticFire(HapticFeedback.lightImpact);
+  }
+
+  /// Die hit die: clack + lightImpact.
+  void diceHit({bool haptic = true}) {
+    play(SfxCue.diceHit);
+    if (haptic) _hapticFire(HapticFeedback.lightImpact);
+  }
+
+  /// Slow-mo began (low-pass + swell once audio exists).
+  void slowMo() => play(SfxCue.slowMoSwell);
+
+  /// Big result landed: mediumImpact + sting; triples: heavyImpact once.
+  void bigResult({bool triples = false, bool haptic = true}) {
+    play(SfxCue.bigSting);
+    if (haptic) {
+      _hapticFire(
+        triples ? HapticFeedback.heavyImpact : HapticFeedback.mediumImpact,
+      );
+    }
   }
 
   /// Fire-and-forget haptic for animation beats (never blocks a frame).

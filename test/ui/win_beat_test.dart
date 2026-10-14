@@ -64,8 +64,8 @@ void main() {
     expect(find.byKey(const ValueKey('bank-only')), findsOneWidget);
     expect(find.text('Bank'), findsOneWidget);
     // Amount under the label: two opponents? one bot here → 1 × trips pay.
-    expect(find.text('+${bankPreviewGems(snap)} gems'), findsOneWidget);
-    expect(bankPreviewGems(snap), snap.turn!.lastScore.perOpponentCents);
+    expect(find.text('+${snap.bankGems} gems'), findsOneWidget);
+    expect(snap.bankGems, snap.turn!.lastScore.perOpponentCents);
     expect(find.textContaining('ROLL AGAIN'), findsNothing);
     expect(find.text('ROLL'), findsNothing);
   });
@@ -86,8 +86,11 @@ void main() {
 
     // Beat 1: dice on the table, results held while the roll is revealed.
     await _pump(tester, MatchViewState(snapshot: snap, revealingRoll: true));
-    final dice = tester.widgetList<DiceCube>(find.byType(DiceCube)).toList();
-    expect(dice.map((d) => d.value).take(3), [1, 1, 1]);
+    expect(tester.state<DiceTrayState>(find.byType(DiceTray)).debugValues, [
+      1,
+      1,
+      1,
+    ]);
     expect(find.byKey(const ValueKey('match-end-message')), findsNothing);
 
     // Beat 2: the winner message and the play-again prompt follow.

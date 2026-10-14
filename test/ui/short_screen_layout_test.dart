@@ -7,6 +7,7 @@ import 'package:marge/engine/match_controller.dart';
 import 'package:marge/ui/match_provider.dart';
 import 'package:marge/ui/screens/match_screen.dart';
 import 'package:marge/ui/theme/marge_theme.dart';
+import 'package:marge/ui/visuals/dice_3d.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _Scripted implements Random {
@@ -133,7 +134,20 @@ void main() {
           isTrue,
           reason: 'dice $t2 above button $b',
         );
-        //DIE_BOUNDS
+        // Every die drawn fully inside the felt, above the pinned button.
+        final dt = tester.state<DiceTrayState>(find.byType(DiceTray));
+        for (final r in dt.debugBounds) {
+          final g = r.shift(t2.topLeft);
+          expect(
+            g.top >= t2.top - 0.5 &&
+                g.bottom <= t2.bottom + 0.5 &&
+                g.left >= -0.5 &&
+                g.right <= dp.width + 0.5 &&
+                g.bottom <= b.top + 0.5,
+            isTrue,
+            reason: 'die $g in tray $t2, button $b',
+          );
+        }
       });
     }
   }

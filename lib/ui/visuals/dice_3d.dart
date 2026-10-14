@@ -8,6 +8,9 @@ import '../../cosmetics/dice_skin.dart';
 import '../../services/sfx_service.dart';
 import '../theme/marge_theme.dart';
 import '../widgets/die_widget.dart';
+import 'dice_throw_sim.dart';
+
+part 'dice_throw_layer.dart';
 
 /// A six-face die drawn in 3D: Matrix4 perspective (setEntry(3,2,0.0015))
 /// plus rotateX/Y/Z, using the equipped skin's face art (DESIGNER_SPEC §1).
@@ -23,7 +26,11 @@ class DiceCube extends StatelessWidget {
     this.rz = 0,
     this.theme,
     this.kept = false,
+    this.orientation,
   });
+
+  /// Full rotation (throw playback). Overrides [rx]/[ry]/[rz] when set.
+  final Matrix4? orientation;
 
   final int value;
   final double size;
@@ -60,10 +67,12 @@ class DiceCube extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final half = size / 2;
-    final rot = Matrix4.identity()
-      ..rotateX(rx)
-      ..rotateY(ry)
-      ..rotateZ(rz);
+    final rot =
+        orientation?.clone() ??
+        (Matrix4.identity()
+          ..rotateX(rx)
+          ..rotateY(ry)
+          ..rotateZ(rz));
     final faces = <(double, Widget)>[];
     for (final (faceValue, faceM) in facesFor(value, half)) {
       final m = rot.multiplied(faceM);
@@ -150,13 +159,17 @@ class _Tumble {
       offX = r.nextDouble() * 2 * math.pi,
       offY = r.nextDouble() * 2 * math.pi,
       zSpin = (r.nextDouble() - 0.5) * math.pi,
-      drift = (r.nextDouble() * 2 - 1) * 8;
+      drift = (r.nextDouble() * 2 - 1) * 8,
+      flicker = [for (var k = 0; k < 8; k++) 1 + r.nextInt(6)];
   final int turnsX;
   final int turnsY;
   final double offX;
   final double offY;
   final double zSpin;
   final double drift; // ±8 dp
+
+  /// Lite path: faces flashed during the tumble (seeded, then the result).
+  final List<int> flicker;
 }
 
 /// The three dice on the table. Animates only when [rollSerial] changes:
@@ -168,6 +181,13 @@ class _Tumble {
 /// drift), 650–800 land on the result with one bounce (1.0→0.94→1.0,
 /// +4 dp), 800–900 settle. [onSettled] fires when the roll has settled so
 /// the screen can keep input locked until then. Reduce Motion: 200 ms fade/scale.
+///
+/// [lite] (Settings → Simple dice; for low-end phones): the same timeline,
+/// sounds and haptics, but each moving die is ONE flat face (no 6-face cube,
+/// no perspective): it spins in-plane 2–3 turns while flashing seeded faces,
+/// then snaps to the result and bounces. Settled dice look the same as the
+/// full path. Chosen over a pre-rendered sprite sheet because no per-skin
+/// sheets exist and this needs no art. Reduce Motion still wins.
 class DiceTray extends StatefulWidget {
   const DiceTray({
     super.key,
@@ -182,7 +202,40 @@ class DiceTray extends StatefulWidget {
     this.sfx,
     this.dim = false,
     this.onSettled,
+    this.lite = false,
+    this.throwEdge = DiceThrowSim.edgeBottom,
+    this.firstRoll = false,
+    this.highlight = false,
   });
+
+  /// Table edge the current seat throws from ([DiceThrowSim.edgeBottom] …).
+  final int throwEdge;
+
+  /// Edge for seat [seat] of [seats] around the table: the local seat (0)
+  /// throws from the bottom; with two seats the other throws from the top;
+  /// with more, the others spread left → top → right.
+  static int edgeForSeat(int seat, int seats) {
+    if (seat <= 0 || seats <= 1) return DiceThrowSim.edgeBottom;
+    if (seats == 2) return DiceThrowSim.edgeTop;
+    const ring = [
+      DiceThrowSim.edgeLeft,
+      DiceThrowSim.edgeTop,
+      DiceThrowSim.edgeRight,
+    ];
+    if (seats == 3) {
+      return seat == 1 ? DiceThrowSim.edgeLeft : DiceThrowSim.edgeRight;
+    }
+    return ring[((seat - 1) * 3 ~/ (seats - 1)).clamp(0, 2)];
+  }
+
+  /// First roll of the turn (first-roll triple 1s gets the biggest slow-mo).
+  final bool firstRoll;
+
+  /// Big result decided by the screen (win / near miss): slow-mo + zoom.
+  final bool highlight;
+
+  /// Lighter 2D tumble for low-end devices (see class docs).
+  final bool lite;
 
   final List<int> values;
   final List<bool> kept;
@@ -211,7 +264,7 @@ class DiceTray extends StatefulWidget {
 }
 
 class DiceTrayState extends State<DiceTray>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _c = AnimationController(vsync: this)
     ..addListener(_tick)
     ..addStatusListener((s) {
@@ -225,6 +278,101 @@ class DiceTrayState extends State<DiceTray>
 
   /// True from the throw until every die has settled.
   bool get settling => _c.isAnimating;
+
+  /// Throw-mode state (see dice_throw_layer.dart).
+  final _ThrowState _th = _ThrowState();
+
+  /// Kept-die slide to the holding spot (200 ms).
+  late final AnimationController _slide = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 200),
+    value: 1,
+  );
+
+  // --- Test hooks (the dice are painted, not widgets) ---------------------
+
+  /// Faces each die is drawn with (always the decided values).
+  @visibleForTesting
+  List<int> get debugValues => List.unmodifiable(widget.values);
+
+  /// The face pointing at the viewer for each die right now.
+  @visibleForTesting
+  List<int> get debugFrontFaces {
+    final t = _th.table;
+    return [
+      for (final d in _frame(t).dice) _frontFace(widget.values[d.index], d.rot),
+    ];
+  }
+
+  static int _frontFace(int value, Matrix4 rot) {
+    var best = value;
+    var bestNz = 0.0;
+    for (final (fv, faceM) in DiceCube.facesFor(value, 1)) {
+      final nz = rot.multiplied(faceM).entry(2, 2); // -nz toward viewer
+      if (nz > bestNz) {
+        bestNz = nz;
+        best = fv;
+      }
+    }
+    return best;
+  }
+
+  /// On-screen centre of each die (before shake/zoom).
+  @visibleForTesting
+  List<Offset> get debugCenters => [
+    for (final d in _frame(_th.table).dice) _DieGeometry(d, widget.size).center,
+  ];
+
+  /// On-screen bounds of each die, from its projected cube corners.
+  @visibleForTesting
+  List<Rect> get debugBounds {
+    final s = widget.size;
+    final out = <Rect>[];
+    for (final d in _frame(_th.table).dice) {
+      final g = _DieGeometry(d, s);
+      final pm = Matrix4.identity()
+        ..setEntry(3, 2, DiceCube.perspective)
+        ..multiply(d.rot);
+      var l = double.infinity, tp = double.infinity;
+      var r = -double.infinity, b = -double.infinity;
+      for (final sx in [-1.0, 1.0]) {
+        for (final sy in [-1.0, 1.0]) {
+          for (final sz in [-1.0, 1.0]) {
+            final px = sx * s / 2, py = sy * s / 2, pz = sz * s / 2;
+            double row(int k) =>
+                pm.entry(k, 0) * px +
+                pm.entry(k, 1) * py +
+                pm.entry(k, 2) * pz +
+                pm.entry(k, 3);
+            final w = row(3);
+            final x = row(0) / w * g.scale, y = row(1) / w * g.scale;
+            l = math.min(l, x);
+            r = math.max(r, x);
+            tp = math.min(tp, y);
+            b = math.max(b, y);
+          }
+        }
+      }
+      out.add(Rect.fromLTRB(l, tp, r, b).shift(g.center));
+    }
+    return out;
+  }
+
+  /// Which dice draw the kept outline.
+  @visibleForTesting
+  List<bool> get debugKeptOutline => [
+    for (final d in _frame(_th.table).dice) d.kept,
+  ];
+
+  /// Number of times the tray built (painted frames do not rebuild).
+  @visibleForTesting
+  int debugBuilds = 0;
+
+  /// Table size the dice are laid out in.
+  @visibleForTesting
+  Size get debugTable => _th.table;
+
+  void _rebuild() => setState(() {});
 
   @override
   void initState() {
@@ -279,6 +427,32 @@ class DiceTrayState extends State<DiceTray>
   @override
   void didUpdateWidget(DiceTray oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!widget.lite &&
+        widget.rollSerial == oldWidget.rollSerial &&
+        _th.table != Size.zero) {
+      // Keep toggled: slide between the felt spot and the holding spot.
+      var any = false;
+      for (
+        var i = 0;
+        i < widget.kept.length && i < oldWidget.kept.length;
+        i++
+      ) {
+        if (widget.kept[i] != oldWidget.kept[i]) {
+          final rest = _th.rest[i];
+          final slot = _slot(i, _th.table);
+          _th.slideFrom[i] = oldWidget.kept[i] ? slot : (rest ?? slot);
+          if (!widget.kept[i]) {
+            // Un-kept dice stay in the holding spot until the next throw.
+            _th.rest[i] = slot;
+            _th.restYaw[i] = 0;
+          }
+          any = true;
+        }
+      }
+      if (any && !(MediaQuery.maybeDisableAnimationsOf(context) ?? false)) {
+        _slide.forward(from: 0);
+      }
+    }
     if (widget.rollSerial != oldWidget.rollSerial) _start();
   }
 
@@ -295,6 +469,11 @@ class DiceTrayState extends State<DiceTray>
       return;
     }
     _reduce = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    if (!widget.lite) {
+      _startThrow(moving);
+      return;
+    }
+    _th.active = false;
     final rnd = math.Random(widget.rollSerial * 7349 + 17);
     _tumbles = [for (var i = 0; i < widget.values.length; i++) _Tumble(rnd)];
     _moving = moving;
@@ -327,6 +506,10 @@ class DiceTrayState extends State<DiceTray>
   double _localMs(int i) => _ms - _order(i) * DiceTray.staggerMs;
 
   void _tick() {
+    if (_th.active) {
+      _throwTick();
+      return;
+    }
     for (var i = 0; i < _moving.length; i++) {
       if (!_moving[i] || (_landedMask & (1 << i)) != 0) continue;
       final landAt = _reduce ? DiceTray.reduceMotionMs : DiceTray.tumbleEnd;
@@ -339,6 +522,10 @@ class DiceTrayState extends State<DiceTray>
   }
 
   void _settled() {
+    if (_th.active) {
+      _throwSettled();
+      return;
+    }
     for (var i = 0; i < _moving.length; i++) {
       if (_moving[i] && (_landedMask & (1 << i)) == 0) {
         _landedMask |= 1 << i;
@@ -351,6 +538,7 @@ class DiceTrayState extends State<DiceTray>
 
   @override
   void dispose() {
+    _slide.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _c.dispose();
     super.dispose();
@@ -362,6 +550,7 @@ class DiceTrayState extends State<DiceTray>
     var rx = DiceCube.restRx, ry = DiceCube.restRy, rz = 0.0;
     var dy = 0.0, dx = 0.0, scale = 1.0, shadow = 1.0, opacity = 1.0;
     final moving = _c.isAnimating && i < _moving.length && _moving[i];
+    if (moving && !_reduce && widget.lite) return _liteDie(i, value);
     if (moving && _reduce) {
       final t = (_ms / DiceTray.reduceMotionMs).clamp(0.0, 1.0);
       opacity = t;
@@ -464,9 +653,98 @@ class DiceTrayState extends State<DiceTray>
     );
   }
 
+  /// Lite tumble: one flat face, in-plane spin, seeded face flashes.
+  Widget _liteDie(int i, int value) {
+    final s = widget.size;
+    final t = _localMs(i);
+    final tb = _tumbles[i];
+    final spin = 2 * math.pi * tb.turnsX + tb.zSpin;
+    var face = value;
+    var angle = 0.0, dy = 0.0, dx = 0.0, scale = 1.0, shadow = 1.0;
+    if (t < DiceTray.liftEnd) {
+      final q = Curves.easeOut.transform((t / DiceTray.liftEnd).clamp(0, 1));
+      scale = 1 + 0.08 * q;
+      dy = -12 * q;
+      shadow = 1 - 0.4 * q;
+      angle = spin;
+      face = tb.flicker[0];
+    } else if (t < DiceTray.tumbleEnd) {
+      final q =
+          (t - DiceTray.liftEnd) / (DiceTray.tumbleEnd - DiceTray.liftEnd);
+      angle = spin * (1 - Curves.easeOutCubic.transform(q));
+      scale = 1.08 - 0.08 * q;
+      dy = -12 * (1 - q);
+      dx = tb.drift * math.sin(q * math.pi);
+      shadow = 0.6 + 0.2 * q;
+      face =
+          tb.flicker[(q * tb.flicker.length).floor().clamp(
+            0,
+            tb.flicker.length - 1,
+          )];
+    } else if (t < DiceTray.landEnd) {
+      final q =
+          (t - DiceTray.tumbleEnd) / (DiceTray.landEnd - DiceTray.tumbleEnd);
+      final b = math.sin(q * math.pi);
+      scale = 1 - 0.06 * b;
+      dy = 4 * b;
+      shadow = 0.8 + 0.1 * q;
+    } else {
+      shadow =
+          0.9 +
+          0.1 *
+              ((t - DiceTray.landEnd) / (DiceTray.dieMs - DiceTray.landEnd))
+                  .clamp(0.0, 1.0);
+    }
+    return SizedBox(
+      key: ValueKey('die-$i'),
+      width: s + 20,
+      height: s + 44,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          Positioned(
+            bottom: 0,
+            child: Transform.translate(
+              offset: Offset(dx, 0),
+              child: Container(
+                width: s * 0.95 * shadow,
+                height: s * 0.22 * shadow,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.all(
+                    Radius.elliptical(s * 0.5, s * 0.11),
+                  ),
+                  color: Colors.black.withValues(alpha: 0.32 * shadow),
+                ),
+              ),
+            ),
+          ),
+          Transform.translate(
+            offset: Offset(dx, dy - 6),
+            child: Transform.rotate(
+              angle: angle,
+              child: Transform.scale(
+                scale: scale,
+                child: DieFace(
+                  key: ValueKey('lite-face-$i'),
+                  value: face,
+                  size: s,
+                  theme: widget.theme,
+                  radius: s * 0.08,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     _reportIfIdle();
+    debugBuilds++;
+    if (!widget.lite) return _buildTable(context);
     return Opacity(
       opacity: widget.dim ? 0.35 : 1,
       child: Row(

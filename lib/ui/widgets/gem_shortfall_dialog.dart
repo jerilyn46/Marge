@@ -44,8 +44,12 @@ class GemShortfallDialog extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              '${payer.profile.name} owes ${gemCount(due)} for three ${pending.face}s on the first roll. '
-              'This table has ${gemCount(table)}. Gem bank has ${gemCount(bank)}.',
+              pending.face == 0
+                  ? '${payer.profile.name} is out of gems for the '
+                        '${gemCount(due)} ante. Add gems to keep playing. '
+                        'Gem bank has ${gemCount(bank)}.'
+                  : '${payer.profile.name} owes ${gemCount(due)} for three ${pending.face}s on the first roll. '
+                        'This table has ${gemCount(table)}. Gem bank has ${gemCount(bank)}.',
             ),
             const SizedBox(height: 12),
             Text(
@@ -69,7 +73,12 @@ class GemShortfallDialog extends ConsumerWidget {
             ref.read(matchProvider.notifier).quitShortfall();
             Navigator.of(context).pop();
           },
-          child: Text('Spend ${gemCount(table)} and quit this game'),
+          key: const ValueKey('shortfall-quit'),
+          child: Text(
+            pending.face == 0
+                ? 'Leave this game'
+                : 'Spend ${gemCount(table)} and quit this game',
+          ),
         ),
         FilledButton(
           onPressed: canCover

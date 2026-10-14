@@ -27,12 +27,8 @@ Widget tray({
     onTap: onTap,
   ),
   reduceMotion: reduceMotion,
-  size: const Size(360, 160),
+  size: const Size(360, 280),
 );
-
-List<double> poses(WidgetTester t) => [
-  for (final c in t.widgetList<DiceCube>(find.byType(DiceCube))) c.rx + c.ry,
-];
 
 void main() {
   test('cube faces: result in front, opposite faces sum to 7', () {
@@ -46,31 +42,26 @@ void main() {
     }
   });
 
-  testWidgets('result decided first: faces never change, land at 650 ms', (
+  testWidgets('result decided first: faces never change, settles', (
     tester,
   ) async {
     final cues = <SfxCue>[];
     final sfx = SfxService(hapticsEnabled: false)..debugOnCue = cues.add;
     final settled = <int>[];
     await tester.pumpWidget(tray(serial: 0, sfx: sfx, onSettled: settled.add));
-    final rest = poses(tester);
+    DiceTrayState st() => tester.state<DiceTrayState>(find.byType(DiceTray));
+    final keptPos = st().debugCenters[1];
     await tester.pumpWidget(tray(serial: 1, sfx: sfx, onSettled: settled.add));
     expect(cues, [SfxCue.cupRattle]);
-    for (var ms = 0; ms < 1000; ms += 50) {
+    for (var ms = 0; ms < 2300; ms += 50) {
       await tester.pump(const Duration(milliseconds: 50));
-      // The value shown is always the engine result.
-      expect(
-        tester.widgetList<DiceCube>(find.byType(DiceCube)).map((c) => c.value),
-        [2, 5, 6],
-      );
-      final p = poses(tester);
-      // Kept die (index 1) never moves.
-      expect(p[1], rest[1]);
-      if (ms == 300) expect(p[0], isNot(rest[0])); // tumbling
+      expect(st().debugValues, [2, 5, 6]); // always the engine result
+      expect(st().debugCenters[1], keptPos); // kept die never moves
     }
-    expect(poses(tester), rest); // landed exactly on the result pose
+    expect(st().settling, isFalse);
     expect(cues.where((c) => c == SfxCue.dieClack).length, 2); // 2 movers
     expect(settled, [0, 1]); // 0: mount (nothing in flight), 1: the throw
+    expect(st().debugFrontFaces, [2, 5, 6]);
   });
 
   testWidgets('input locked until settle', (tester) async {
@@ -78,39 +69,88 @@ void main() {
     await tester.pumpWidget(tray(serial: 0, onTap: taps.add));
     await tester.pumpWidget(tray(serial: 1, onTap: taps.add));
     await tester.pump(const Duration(milliseconds: 500));
-    await tester.tap(find.byKey(const ValueKey('die-0')));
+    await tester.tap(find.byKey(const ValueKey('die-0')), warnIfMissed: false);
     expect(taps, isEmpty);
-    await tester.pump(const Duration(milliseconds: 600));
+    for (var i = 0; i < 18; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
     await tester.tap(find.byKey(const ValueKey('die-0')));
     expect(taps, [0]);
   });
 
   testWidgets('kept dice show the gold outline and stay still', (tester) async {
     await tester.pumpWidget(tray(serial: 0));
-    expect(find.byKey(const ValueKey('kept-outline')), findsOneWidget);
+    expect(
+      tester.state<DiceTrayState>(find.byType(DiceTray)).debugKeptOutline,
+      [false, true, false],
+    );
   });
 
-  testWidgets('Reduce Motion: 200 ms fade/scale, no tumble', (tester) async {
+  testWidgets('one CustomPainter inside a RepaintBoundary draws the dice', (
+    tester,
+  ) async {
+    await tester.pumpWidget(tray(serial: 0));
+    await tester.pumpWidget(tray(serial: 1));
+    await tester.pump(const Duration(milliseconds: 300));
+    final paint = find.byKey(const ValueKey('dice-table-painter'));
+    expect(paint, findsOneWidget);
+    expect(
+      find.ancestor(of: paint, matching: find.byType(RepaintBoundary)),
+      findsWidgets,
+    );
+    expect(find.byType(DiceCube), findsNothing); // no per-die widgets
+    // Mid-throw frames repaint without rebuilding the tray.
+    final st = tester.state<DiceTrayState>(find.byType(DiceTray));
+    final builds = st.debugBuilds;
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(st.debugBuilds, builds);
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+  });
+
+  testWidgets('Reduce Motion: 250 ms fade + drop, no throw', (tester) async {
     final settled = <int>[];
     await tester.pumpWidget(
       tray(serial: 0, reduceMotion: true, onSettled: settled.add),
     );
-    final rest = poses(tester);
+    DiceTrayState st() => tester.state<DiceTrayState>(find.byType(DiceTray));
+    final spot = tester.getCenter(find.byKey(const ValueKey('die-0')));
     await tester.pumpWidget(
       tray(serial: 1, reduceMotion: true, onSettled: settled.add),
     );
     await tester.pump(const Duration(milliseconds: 100));
-    expect(poses(tester), rest); // orientation never leaves the result
-    await tester.pump(const Duration(milliseconds: 150));
+    expect(st().debugFrontFaces, [2, 5, 6]); // never leaves the result pose
+    await tester.pump(const Duration(milliseconds: 200));
     expect(settled, [0, 1]); // 0: mount (nothing in flight), 1: the throw
+    expect(tester.getCenter(find.byKey(const ValueKey('die-0'))), spot);
   });
 
   testWidgets('golden: settled dice frame', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(360, 160));
+    await tester.binding.setSurfaceSize(const Size(360, 280));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(tray(serial: 0));
     await tester.pumpWidget(tray(serial: 1));
-    await tester.pump(const Duration(milliseconds: 1200)); // settled
+    for (var i = 0; i < 23; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    } // settled
+    final st = tester.state<DiceTrayState>(find.byType(DiceTray));
+    final b = st.debugBounds;
+    final table = Offset.zero & st.debugTable;
+    for (var i = 0; i < 3; i++) {
+      // Every die fully visible...
+      expect(
+        table.contains(b[i].topLeft) && table.contains(b[i].bottomRight),
+        isTrue,
+        reason: 'die $i ${b[i]} in $table',
+      );
+      // ...and none overlap on screen.
+      for (var j = i + 1; j < 3; j++) {
+        expect(b[i].overlaps(b[j]), isFalse, reason: 'dice $i/$j');
+      }
+    }
     expect(tester.hasRunningAnimations, isFalse);
     await expectLater(
       find.byKey(const ValueKey('tray')),

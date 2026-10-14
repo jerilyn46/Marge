@@ -183,7 +183,9 @@ void main() {
     await tester.pumpWidget(tray(0, listen: true));
     await tester.pump();
     await tester.pumpWidget(tray(1, listen: false)); // throw, nobody listening
-    await tester.pump(const Duration(seconds: 2));
+    for (var i = 0; i < 40; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
     expect(settled, [0]);
     await tester.pumpWidget(tray(1, listen: true)); // still, idle
     await tester.pump();

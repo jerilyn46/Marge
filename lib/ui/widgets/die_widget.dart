@@ -46,10 +46,7 @@ class DieWidget extends StatelessWidget {
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: border,
-            width: kept ? 3 : 1.5,
-          ),
+          border: Border.all(color: border, width: kept ? 3 : 1.5),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.35),
@@ -128,8 +125,7 @@ class _DieFacePainter extends CustomPainter {
     _paintPattern(canvas, size);
     final paint = Paint()..color = pipColor;
     final r = size.shortestSide * 0.09;
-    Offset p(double x, double y) =>
-        Offset(size.width * x, size.height * y);
+    Offset p(double x, double y) => Offset(size.width * x, size.height * y);
 
     final map = <int, List<Offset>>{
       1: [p(0.5, 0.5)],
@@ -220,4 +216,45 @@ class _DieFacePainter extends CustomPainter {
       old.pipColor != pipColor ||
       old.pattern != pattern ||
       old.patternColor != patternColor;
+}
+
+/// Paint one die face (fill, border, skin pattern, pips) into a [size]
+/// square at the canvas origin. Same art as [DieFace]; used by the
+/// real-throw dice painter so the whole table draws in one CustomPainter.
+void paintDieFace(
+  Canvas canvas,
+  double size,
+  int value,
+  DiceSkinTheme? theme, {
+  double? radius,
+  double shade = 0,
+}) {
+  final t = theme ?? DieWidget._fallback;
+  final rr = RRect.fromRectAndRadius(
+    Rect.fromLTWH(0, 0, size, size),
+    Radius.circular(radius ?? size * 0.1),
+  );
+  canvas.drawRRect(rr, Paint()..color = t.face);
+  canvas.save();
+  canvas.clipRRect(rr);
+  _DieFacePainter(
+    value: value,
+    pipColor: t.pip,
+    pattern: t.pattern,
+    patternColor: t.patternColor ?? t.pip.withValues(alpha: 0.2),
+  ).paint(canvas, Size(size, size));
+  canvas.restore();
+  canvas.drawRRect(
+    rr.deflate(0.75),
+    Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..color = t.border,
+  );
+  if (shade > 0.01) {
+    canvas.drawRRect(
+      rr,
+      Paint()..color = Colors.black.withValues(alpha: shade),
+    );
+  }
 }

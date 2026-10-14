@@ -241,6 +241,7 @@ class MatchSnapshot {
     required this.config,
     this.handoff,
     this.pendingShortfall,
+    this.bankGems = 0,
     this.endMessage,
   });
 
@@ -259,6 +260,11 @@ class MatchSnapshot {
   final MatchConfig config;
   final HandoffState? handoff;
   final GemShortfall? pendingShortfall;
+
+  /// Gems the current seat collects if it banks the hand on the table now,
+  /// worked out by the engine with the same take rules it will apply
+  /// ([MatchController.bankGemsPreview]). 0 when there is nothing to bank.
+  final int bankGems;
 
   PlayerState get currentPlayer => players[currentSeatIndex];
 
@@ -309,8 +315,46 @@ class MatchController {
     pendingShortfall: _shortfall,
     config: config,
     handoff: _handoff,
+    bankGems: bankGemsPreview,
     endMessage: _endMessage,
   );
+
+  /// What [bank] would pay the current seat right now, without changing
+  /// anything. Mirrors [_resolveBank]: a regular scoring hand takes
+  /// perOpponent from every seated opponent with the soft take (House stake
+  /// once); first-roll trips take the full amount from whoever can cover
+  /// and what is at the table from whoever cannot (a short person may still
+  /// cover later, so this is the guaranteed amount). 0 for a miss.
+  int get bankGemsPreview {
+    final t = _turn;
+    if (t == null || !t.hasRolled || !t.lastScore.isScoring) return 0;
+    if (_phase != MatchPhase.playing) return 0;
+    final score = t.lastScore;
+    if (score.kind == ScoreKind.tripleOnesPotWin) return _pot;
+    final each = score.perOpponentCents;
+    var total = 0;
+    for (var i = 0; i < _players.length; i++) {
+      if (i == _seat || !_plays(_players[i])) continue;
+      final p = _players[i];
+      if (score.isFirstRollTripsPay) {
+        total += p.bankCents >= each ? each : p.bankCents;
+      } else {
+        total += _wouldTake(p, each, soft: true);
+      }
+    }
+    return total;
+  }
+
+  /// What [_takeFromBank] takes from [p] for [amount] (pure).
+  int _wouldTake(PlayerState p, int amount, {required bool soft}) {
+    if (amount <= 0 || p.eliminated || !p.profile.participates) return 0;
+    if (p.bankCents >= amount) return amount;
+    if (soft && !p.usedHouseStake) {
+      final topped = p.bankCents + config.houseStakeCents;
+      return topped >= amount ? amount : topped;
+    }
+    return p.bankCents;
+  }
 
   /// [carryPotGems] seeds the pot with gems left in the previous table's pot
   /// ("Continue playing"), so they are not destroyed between games.
@@ -505,19 +549,78 @@ class MatchController {
     _log.add('— Round $_round — ante ${config.anteCents} gems —');
 
     // Collect ante from each seated player. Waiting chairs do not ante.
+    if (_gateAnte(_collectAntes(), -1)) return;
+    if (_playableCount <= 1) {
+      _endMatch();
+      return;
+    }
+
+    _seat = _firstActiveSeat(from: 0);
+    _phase = MatchPhase.playing;
+    _startTurn();
+  }
+
+  /// Whether this seat can pay [amount] now (bank, or bank + unused stake).
+  bool _canPay(PlayerState p, int amount) =>
+      p.bankCents >= amount ||
+      (!p.usedHouseStake &&
+          config.houseStakeCents > 0 &&
+          p.bankCents + config.houseStakeCents >= amount);
+
+  /// Collect the ante. A human who cannot pay (0 gems, House stake used) is
+  /// not taken from yet: they are queued for the add-gems choice. Returns
+  /// the queued seats. Bots keep the old soft take (and are out when broke).
+  List<int> _collectAntes() {
+    final short = <int>[];
     for (var i = 0; i < _players.length; i++) {
       final p = _players[i];
       if (!_plays(p)) continue;
+      if (!p.profile.isBot && !_canPay(p, config.anteCents)) {
+        short.add(i);
+        continue;
+      }
       final paid = _takeFromBank(i, config.anteCents, soft: true);
       _pot += paid;
       if (paid < config.anteCents) {
         _log.add('${p.profile.name} ante short ($paid gems).');
       }
     }
+    return short;
+  }
 
-    _seat = _firstActiveSeat(from: 0);
-    _phase = MatchPhase.playing;
+  /// Ante shortfall gate ([GemShortfall.face] == 0). [resumeSeat] is the
+  /// seat that keeps playing afterwards (-1: first active seat).
+  bool _gateAnte(List<int> short, int resumeSeat) {
+    if (short.isEmpty) return false;
+    _shortfall = GemShortfall(
+      payerSeatIndex: short.first,
+      rollerSeatIndex: resumeSeat,
+      dueGems: config.anteCents,
+      face: 0,
+      queuedSeatIndexes: short.skip(1).toList(),
+    );
+    _turn = null;
+    _phase = MatchPhase.awaitingShortfall;
+    final payer = _players[short.first];
+    _log.add(
+      '${payer.profile.name} is out of gems for the '
+      '${gemCount(config.anteCents)} ante. Add gems to keep playing, '
+      'or leave this game.',
+    );
+    return true;
+  }
+
+  void _resumeAfterAnte(int resumeSeat) {
+    if (_playableCount <= 1) {
+      _endMatch();
+      return;
+    }
+    final payout = _lastPayout;
+    _seat = resumeSeat >= 0 && _plays(_players[resumeSeat])
+        ? resumeSeat
+        : _firstActiveSeat(from: resumeSeat < 0 ? 0 : resumeSeat);
     _startTurn();
+    if (resumeSeat >= 0) _lastPayout = payout;
   }
 
   int _firstActiveSeat({required int from}) {
@@ -871,7 +974,17 @@ class MatchController {
   void quitShortfall() {
     final pending = _shortfall;
     if (pending == null || _phase != MatchPhase.awaitingShortfall) return;
-    _payWhatTheyHaveAndQuit(pending.payerSeatIndex, pending.rollerSeatIndex);
+    if (pending.face == 0) {
+      // Ante: whatever is left goes to the pot, then the seat is out.
+      final i = pending.payerSeatIndex;
+      final p = _players[i];
+      _pot += p.bankCents;
+      _players[i] = p.copyWith(bankCents: 0, eliminated: true);
+      _remember(i);
+      _log.add('${p.profile.name} is out of gems and leaves this game.');
+    } else {
+      _payWhatTheyHaveAndQuit(pending.payerSeatIndex, pending.rollerSeatIndex);
+    }
     _advanceShortfall(pending);
   }
 
@@ -888,14 +1001,23 @@ class MatchController {
       soft: false,
     );
     if (paid < pending.dueGems) return false;
-    _credit(pending.rollerSeatIndex, paid);
-    _tripsCollected += paid;
+    if (pending.face == 0) {
+      _pot += paid;
+    } else {
+      _credit(pending.rollerSeatIndex, paid);
+      _tripsCollected += paid;
+    }
     _log.add('${payer.profile.name} pays ${gemCount(paid)} in full.');
     _advanceShortfall(pending);
     return true;
   }
 
   void _advanceShortfall(GemShortfall pending) {
+    if (pending.queuedSeatIndexes.isEmpty && pending.face == 0) {
+      _shortfall = null;
+      _resumeAfterAnte(pending.rollerSeatIndex);
+      return;
+    }
     if (pending.queuedSeatIndexes.isEmpty) {
       _shortfall = null;
       final score = _turn?.lastScore;
@@ -943,11 +1065,13 @@ class MatchController {
     if (restartRound) {
       _round++;
       _log.add('— Round $_round — ante ${config.anteCents} gems —');
-      for (var i = 0; i < _players.length; i++) {
-        final p = _players[i];
-        if (!_plays(p)) continue;
-        final paid = _takeFromBank(i, config.anteCents, soft: true);
-        _pot += paid;
+      if (_gateAnte(_collectAntes(), seat)) {
+        _lastPayout = payout;
+        return;
+      }
+      if (_playableCount <= 1) {
+        _endMatch();
+        return;
       }
       if (_players[seat].eliminated) {
         _seat = _firstActiveSeat(from: seat);
@@ -1037,14 +1161,12 @@ class MatchController {
     // Pay what they can; mark eliminated if broke after house stake used.
     final paid = p.bankCents;
     p = p.copyWith(bankCents: 0);
-    if (p.usedHouseStake && paid == 0) {
+    // Broke after the once-per-match House stake is used: out. The soft
+    // bankrupt never keeps a broke seat (and so the match) going.
+    // Humans are offered the add-gems flow at the next ante first.
+    if (p.usedHouseStake && p.profile.isBot) {
       p = p.copyWith(eliminated: true);
       _log.add('${p.profile.name} is out of gems.');
-    } else if (p.usedHouseStake && p.bankCents == 0 && paid < amount) {
-      // Still broke after paying remainder — soft eliminate next ante.
-      if (p.bankCents == 0) {
-        // leave at 0; may get eliminated on next failed ante
-      }
     }
     _players[index] = p;
     _remember(index);
@@ -1142,6 +1264,7 @@ class MatchController {
     _handoff = null;
     _shortfall = null;
     _tripsCollected = 0;
+    _awardPotToLastStanding();
     final sorted = _players.where(_plays).toList()
       ..sort((a, b) => b.bankCents.compareTo(a.bankCents));
     if (sorted.isEmpty) {
@@ -1154,6 +1277,44 @@ class MatchController {
       'Match over. Winner: ${sorted.first.profile.name} '
       'with ${sorted.first.bankCents} gems.',
     );
+  }
+
+  /// Rule (Jerilyn): if the last player runs out of money the opponent gets
+  /// the pot. When exactly one seated player still has gems, the whole pot
+  /// goes to them through the pot-win payout (same drain-to-seat flow as a
+  /// pot sweep). Same for 2 or 3+ seats, hotseat and bots.
+  /// Winner-facing text for the last-standing pot award (gems only).
+  static String lastStandingMessage(PlayerState winner, {required int seated}) {
+    if (winner.profile.isBot || !winner.profile.isHuman) {
+      return '${winner.profile.name} wins the pot. '
+          '${seated <= 2 ? 'You ran out of gems.' : 'Everyone else is out of gems.'}';
+    }
+    return seated <= 2
+        ? 'Your opponent ran out of gems. You win the pot!'
+        : 'Everyone else is out of gems. You win the pot!';
+  }
+
+  void _awardPotToLastStanding() {
+    final alive = [
+      for (var i = 0; i < _players.length; i++)
+        if (_plays(_players[i])) i,
+    ];
+    if (alive.length != 1 || _pot <= 0) return;
+    final seat = alive.single;
+    final won = _pot;
+    _credit(seat, won);
+    _pot = 0;
+    _lastPayout = PayoutEvent(
+      message: lastStandingMessage(
+        _players[seat],
+        seated: _players.where((p) => p.profile.participates).length,
+      ),
+      kind: ScoreKind.tripleOnesPotWin,
+      amountCents: won,
+      celebratory: true,
+      seatIndex: seat,
+    );
+    _log.add(_lastPayout!.message);
   }
 
   /// Drive one bot action if current seat is a bot. Returns true if acted.
@@ -1237,6 +1398,11 @@ class MatchController {
     _winnerId = saved.winnerId;
     for (var i = 0; i < _players.length; i++) {
       _remember(i);
+    }
+    if ((_phase == MatchPhase.playing || _phase == MatchPhase.roundEnd) &&
+        _playableCount <= 1) {
+      _endMatch(); // older saves: a lone solvent seat takes the pot
+      return;
     }
     if (_phase == MatchPhase.playing &&
         _turn == null &&

@@ -6,6 +6,7 @@ class GameSettings {
   const GameSettings({
     this.sfxEnabled = true,
     this.hapticsEnabled = true,
+    this.liteDice = false,
     this.seenRules = false,
     this.playerName = 'You',
     this.hasUsername = false,
@@ -14,6 +15,9 @@ class GameSettings {
 
   final bool sfxEnabled;
   final bool hapticsEnabled;
+
+  /// Simple dice: the lighter 2D roll for low-end phones (DiceTray.lite).
+  final bool liteDice;
   final bool seenRules;
   final String playerName;
 
@@ -24,6 +28,7 @@ class GameSettings {
   GameSettings copyWith({
     bool? sfxEnabled,
     bool? hapticsEnabled,
+    bool? liteDice,
     bool? seenRules,
     String? playerName,
     bool? hasUsername,
@@ -31,6 +36,7 @@ class GameSettings {
   }) => GameSettings(
     sfxEnabled: sfxEnabled ?? this.sfxEnabled,
     hapticsEnabled: hapticsEnabled ?? this.hapticsEnabled,
+    liteDice: liteDice ?? this.liteDice,
     seenRules: seenRules ?? this.seenRules,
     playerName: playerName ?? this.playerName,
     hasUsername: hasUsername ?? this.hasUsername,
@@ -41,6 +47,7 @@ class GameSettings {
 class SettingsNotifier extends Notifier<GameSettings> {
   static const _kSfx = 'sfx';
   static const _kHaptics = 'haptics';
+  static const _kLiteDice = 'lite_dice';
   static const _kRules = 'seen_rules';
   static const _kName = 'player_name';
 
@@ -88,6 +95,7 @@ class SettingsNotifier extends Notifier<GameSettings> {
     return GameSettings(
       sfxEnabled: prefs.getBool(_kSfx) ?? true,
       hapticsEnabled: prefs.getBool(_kHaptics) ?? true,
+      liteDice: prefs.getBool(_kLiteDice) ?? false,
       seenRules: prefs.getBool(_kRules) ?? false,
       playerName: (raw != null && raw.isNotEmpty) ? raw : 'You',
       hasUsername: hasName && raw != null && raw.isNotEmpty,
@@ -109,6 +117,14 @@ class SettingsNotifier extends Notifier<GameSettings> {
     state = state.copyWith(hapticsEnabled: v);
     await (_prefs ?? await SharedPreferences.getInstance()).setBool(
       _kHaptics,
+      v,
+    );
+  }
+
+  Future<void> setLiteDice(bool v) async {
+    state = state.copyWith(liteDice: v);
+    await (_prefs ?? await SharedPreferences.getInstance()).setBool(
+      _kLiteDice,
       v,
     );
   }

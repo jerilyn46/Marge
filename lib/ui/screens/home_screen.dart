@@ -12,6 +12,7 @@ import '../../services/settings_service.dart';
 import '../../startup_log.dart';
 import '../match_provider.dart';
 import '../theme/marge_theme.dart';
+import '../visuals/pot_of_gems.dart' show GemArt;
 import '../widgets/daily_gems_ready_prompt.dart';
 import '../widgets/felt_hero_backdrop.dart';
 import '../widgets/gem_bank_sheet.dart';
@@ -75,7 +76,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         },
                       ),
                       const Spacer(),
-                      _GemJewelTray(
+                      GemJewelTray(
                         gems: gemBank,
                         onTap: () => showGemBankSheet(context, ref),
                       ),
@@ -285,8 +286,10 @@ class _MiniDiePainter extends CustomPainter {
       oldDelegate.value != value;
 }
 
-class _GemJewelTray extends StatelessWidget {
-  const _GemJewelTray({required this.gems, required this.onTap});
+/// Home's gem bank badge: a ruby (Designer gem art, same as the table's gem
+/// bank readout) and the bank total. No coin-like disc.
+class GemJewelTray extends StatelessWidget {
+  const GemJewelTray({super.key, required this.gems, required this.onTap});
 
   final int gems;
   final VoidCallback onTap;
@@ -314,7 +317,13 @@ class _GemJewelTray extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const GemChipAccent(size: 16),
+              Image.asset(
+                GemArt.gem(0), // gem_ruby.png
+                key: const ValueKey('home-gem-ruby'),
+                width: 18,
+                height: 18,
+                gaplessPlayback: true,
+              ),
               const SizedBox(width: 8),
               Text(
                 gemCount(gems),

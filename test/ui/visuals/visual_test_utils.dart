@@ -36,3 +36,13 @@ Widget feltHost(Widget child, {bool reduceMotion = false, Size? size}) {
     ),
   );
 }
+
+/// Let freshly mounted Image widgets receive their (already decoded)
+/// frames without advancing fake time, so a mid-animation golden shows the
+/// sprites at exactly the pumped moment.
+Future<void> settleImages(WidgetTester tester) async {
+  await tester.runAsync(
+    () => Future<void>.delayed(const Duration(milliseconds: 50)),
+  );
+  await tester.pump();
+}
