@@ -398,8 +398,11 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
                                           padding: const EdgeInsets.symmetric(
                                             horizontal: 16,
                                           ),
-                                          child: PayoutBanner(
-                                            event: snap.lastPayout!,
+                                          child: _ShownReporter(
+                                            payout: snap.lastPayout!,
+                                            child: PayoutBanner(
+                                              event: snap.lastPayout!,
+                                            ),
                                           ),
                                         ),
                                       ],
@@ -731,6 +734,22 @@ class _TurnActions extends StatelessWidget {
   }
 }
 
+/// Tells the provider the payout banner is on screen (bots wait on it).
+class _ShownReporter extends ConsumerWidget {
+  const _ShownReporter({required this.payout, required this.child});
+  final PayoutEvent payout;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!context.mounted) return;
+      ref.read(matchProvider.notifier).bannerShown(payout);
+    });
+    return child;
+  }
+}
+
 class _TurnBanner extends StatelessWidget {
   const _TurnBanner({
     required this.snapshot,
@@ -757,8 +776,10 @@ class _TurnBanner extends StatelessWidget {
       title =
           '${player.profile.avatarEmoji} ${player.profile.name} is rolling…';
     } else if (player.profile.isHuman) {
-      final rollBit = turn != null && turn.hasRolled
-          ? (turn.setNumber > 1
+      final rollBit = turn != null && (turn.hasRolled || turn.setNumber > 1)
+          ? (turn.setNumber > 1 && !turn.hasRolled
+                ? ' · set ${turn.setNumber}'
+                : turn.setNumber > 1
                 ? ' · set ${turn.setNumber} · roll ${turn.rollNumber}/3'
                 : ' · roll ${turn.rollNumber}/3')
           : '';

@@ -8,6 +8,7 @@ import 'package:marge/engine/match_checkpoint.dart';
 import 'package:marge/engine/match_controller.dart';
 import 'package:marge/ui/match_provider.dart';
 import 'package:marge/ui/screens/match_screen.dart';
+import 'package:marge/ui/screens/rules_screen.dart';
 import 'package:marge/ui/theme/marge_theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -251,5 +252,29 @@ void main() {
     await show(tester, c);
     expect(find.textContaining('hits three 4s'), findsNothing);
     expect(find.textContaining('roll 2/3'), findsOneWidget);
+  });
+
+  testWidgets('screen: "set 2" shows right after the winning Bank', (
+    tester,
+  ) async {
+    final d = _Dice(straight);
+    final c = _game(d);
+    c.roll();
+    c.bank();
+    expect(c.snapshot.turn!.hasRolled, isFalse);
+    await show(tester, c);
+    expect(find.textContaining("Jerilyn's turn · set 2"), findsOneWidget);
+    expect(find.textContaining('roll 0/3'), findsNothing);
+    expect(find.textContaining('nails a straight'), findsOneWidget);
+  });
+
+  testWidgets('Rules card: bots pay what they have', (tester) async {
+    await tester.pumpWidget(
+      const ProviderScope(child: MaterialApp(home: RulesScreen())),
+    );
+    await tester.pump();
+    final card = find.textContaining('bots pay what they have');
+    await tester.scrollUntilVisible(card, 200);
+    expect(card, findsOneWidget);
   });
 }

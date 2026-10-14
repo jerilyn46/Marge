@@ -672,7 +672,40 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     _publish();
   }
 
+  /// How long a bot's payout banner stays readable before its next roll,
+  /// counted from when the banner first shows (after the dice settle).
+  static const botBannerHold = Duration(milliseconds: 1600);
+
+  /// If the screen never reports the banner (no screen), go on after this.
+  static const _botBannerFallback = Duration(milliseconds: 4600);
+
+  PayoutEvent? _bannerWait;
+
+  void _holdBotsForBanner(PayoutEvent payout) {
+    _botTimer?.cancel();
+    _bannerWait = payout;
+    _botTimer = Timer(_botBannerFallback, () {
+      if (!identical(_bannerWait, payout)) return;
+      _bannerWait = null;
+      _scheduleBots();
+    });
+  }
+
+  /// The screen calls this when a payout banner is on screen. While a bot
+  /// waits on that banner, its next roll comes [botBannerHold] later.
+  void bannerShown(PayoutEvent payout) {
+    if (!identical(_bannerWait, payout)) return;
+    _bannerWait = null;
+    _botTimer?.cancel();
+    // _scheduleBots adds its own 700 ms think time.
+    _botTimer = Timer(botBannerHold - const Duration(milliseconds: 700), () {
+      if (_controller == null) return;
+      _scheduleBots();
+    });
+  }
+
   void _scheduleBots() {
+    _bannerWait = null;
     _botTimer?.cancel();
     final c = _controller;
     if (c == null) return;
@@ -754,6 +787,14 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       if (_controller!.snapshot.phase == MatchPhase.awaitingHandoff ||
           _controller!.snapshot.phase == MatchPhase.awaitingShortfall) {
         if (state != null) state = state!.copyWith(busyBot: false);
+        return;
+      }
+      if (after != null &&
+          after != before &&
+          after.kind != ScoreKind.none &&
+          _controller!.snapshot.currentPlayer.profile.isBot) {
+        // A bot won: let people read the banner before it rolls again.
+        _holdBotsForBanner(after);
         return;
       }
       _scheduleBots();
