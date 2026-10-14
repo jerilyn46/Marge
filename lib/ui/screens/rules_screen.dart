@@ -50,7 +50,9 @@ class RulesScreen extends ConsumerWidget {
             title: 'Triple ones — first roll',
             body:
                 'Three 1s on the first roll of a set: every other player pays you 10 gems, '
-                'you take the entire pot, and you win the match.',
+                'you take the entire pot, and you win the match. '
+                'A player short of 10 can add gems or pay what they have and leave; '
+                'bots pay what they have.',
           ),
           _RuleCard(
             emoji: '💰',
