@@ -219,6 +219,19 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
   /// seen, gems lift out of the bowl, fly to the winner's seat, then on into
   /// the Bank flow (the gem readout) when a person at this device won.
   /// Reduce Motion: nothing flies; the numbers just change.
+  /// A first-roll triple-1s win ends the match: keep the table up while the
+  /// pot flies to the winner, then show the results.
+  bool _potFlightHold = false;
+
+  void _endFlightHold() {
+    if (!_potFlightHold || _flights.isNotEmpty) return;
+    if (mounted) {
+      setState(() => _potFlightHold = false);
+    } else {
+      _potFlightHold = false;
+    }
+  }
+
   void _launchPotWinFlight(MatchSnapshot snap, PayoutEvent payout) {
     if (!mounted) return;
     if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) return;
@@ -226,6 +239,7 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
     final potBox = _potKey.currentContext?.findRenderObject() as RenderBox?;
     if (overlay == null || potBox == null || !potBox.hasSize) {
       _readoutKey.currentState?.cancel();
+      _endFlightHold();
       return;
     }
     final s = potBox.size.width / PotOfGems.canvas.width;
@@ -262,6 +276,7 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
         onDone: () {
           _flights.remove(entry);
           if (entry.mounted) entry.remove();
+          _endFlightHold();
         },
       ),
     );
@@ -293,6 +308,7 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
           credited: true,
         );
       }
+      _potFlightHold = true;
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _launchPotWinFlight(snap, payout),
       );
@@ -320,7 +336,10 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
     }
     final snap = view.snapshot;
 
-    if (snap.phase == MatchPhase.matchEnd) {
+    // Hold the table (dice + pot) through a pot-win reveal, then results.
+    if (snap.phase == MatchPhase.matchEnd &&
+        !view.revealingRoll &&
+        !_potFlightHold) {
       return _MatchEndView(snapshot: snap);
     }
 
@@ -1053,6 +1072,42 @@ class _MatchEndView extends ConsumerStatefulWidget {
 class _MatchEndViewState extends ConsumerState<_MatchEndView> {
   var _breakHandled = false;
 
+  /// Hotseat: each human answers "play another game?" in turn. Bots always
+  /// say yes. Index into [_humans]; answers collected in [_quit].
+  var _asking = 0;
+  final _quit = <String>{};
+
+  List<PlayerState> get _humans => [
+    for (final p in widget.snapshot.players)
+      if (p.profile.isHuman && p.profile.participates && !p.eliminated) p,
+  ];
+
+  bool get _hotseat => _humans.length > 1;
+
+  Future<void> _answer(bool again) async {
+    final humans = _humans;
+    final who = humans[_asking];
+    if (!again) _quit.add(who.profile.id);
+    final local = who.profile.name == widget.snapshot.config.localPlayerName;
+    if (!again && local) {
+      await _leaveQuiet(); // the phone's owner is done: back to Home
+      return;
+    }
+    if (_asking + 1 < humans.length) {
+      setState(() => _asking++);
+      return;
+    }
+    final cfg = widget.snapshot.config;
+    final others = humans.length - 1 - _quit.length;
+    if (others + cfg.botCount < 1) {
+      await _leaveQuiet(); // nobody left to play with
+      return;
+    }
+    await _adAfterUserAction();
+    if (!mounted) return;
+    ref.read(matchProvider.notifier).rematch(otherHumanCount: others);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1100,7 +1155,15 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
         snapshot.players.where((p) => p.profile.participates).toList()
           ..sort((a, b) => b.bankCents.compareTo(a.bankCents));
     final waiting = snapshot.players.where((p) => p.profile.isWaiting).toList();
-    final winner = ranked.isEmpty ? snapshot.players.first : ranked.first;
+    final byId = snapshot.winnerId == null
+        ? null
+        : snapshot.players
+              .where((p) => p.profile.id == snapshot.winnerId)
+              .firstOrNull;
+    final winner =
+        byId ?? (ranked.isEmpty ? snapshot.players.first : ranked.first);
+    final humans = _humans;
+    final asked = _hotseat && _asking < humans.length ? humans[_asking] : null;
 
     return Scaffold(
       body: Container(
@@ -1126,8 +1189,10 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '${winner.profile.avatarEmoji} ${winner.profile.name} '
-                  'wins with ${gemCount(winner.bankCents)}',
+                  snapshot.endMessage ??
+                      '${winner.profile.avatarEmoji} ${winner.profile.name} '
+                          'wins with ${gemCount(winner.bankCents)}',
+                  key: const ValueKey('match-end-message'),
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     fontSize: 18,
@@ -1168,7 +1233,11 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Continue playing or quit?',
+                  asked != null
+                      ? '${asked.profile.avatarEmoji} ${asked.profile.name}, '
+                            'play another game?'
+                      : 'Continue playing or quit?',
+                  key: const ValueKey('play-again-prompt'),
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: MargeColors.cream.withValues(alpha: 0.85),
@@ -1178,14 +1247,17 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
                 ),
                 const SizedBox(height: 12),
                 FilledButton.icon(
-                  onPressed: _rematch,
+                  onPressed: asked != null ? () => _answer(true) : _rematch,
                   icon: const Icon(Icons.replay_rounded),
                   label: const Text('Continue playing'),
                 ),
                 const SizedBox(height: 10),
                 const GetMoreGemsButton(),
                 const SizedBox(height: 10),
-                TextButton(onPressed: _leaveQuiet, child: const Text('Quit')),
+                TextButton(
+                  onPressed: asked != null ? () => _answer(false) : _leaveQuiet,
+                  child: const Text('Quit'),
+                ),
               ],
             ),
           ),

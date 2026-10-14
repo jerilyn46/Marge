@@ -242,7 +242,11 @@ class MatchSnapshot {
     this.handoff,
     this.pendingShortfall,
     this.bankGems = 0,
+    this.endMessage,
   });
+
+  /// Why the match ended, when a rule ended it (e.g. first-roll triple 1s).
+  final String? endMessage;
 
   final MatchPhase phase;
   final List<PlayerState> players;
@@ -293,6 +297,7 @@ class MatchController {
   final List<String> _log = [];
   PayoutEvent? _lastPayout;
   String? _winnerId;
+  String? _endMessage;
   HandoffState? _handoff;
   GemShortfall? _shortfall;
   int _tripsCollected = 0;
@@ -311,6 +316,7 @@ class MatchController {
     config: config,
     handoff: _handoff,
     bankGems: bankGemsPreview,
+    endMessage: _endMessage,
   );
 
   /// What [bank] would pay the current seat right now, without changing
@@ -364,6 +370,7 @@ class MatchController {
     _log.clear();
     _lastPayout = null;
     _winnerId = null;
+    _endMessage = null;
     _phase = MatchPhase.ante;
     final waiting = _players.where((p) => p.profile.isWaiting).length;
     final waitingBit = waiting > 0
@@ -744,23 +751,7 @@ class MatchController {
     final player = _players[_seat];
 
     if (score.kind == ScoreKind.tripleOnesPotWin) {
-      final won = _pot;
-      _credit(_seat, won);
-      _pot = 0;
-      _lastPayout = PayoutEvent(
-        message:
-            '${player.profile.name} hit TRIPLE ONES on first roll '
-            'and sweeps the pot (+$won gems)!',
-        kind: ScoreKind.tripleOnesPotWin,
-        amountCents: won,
-        celebratory: true,
-        diceValues: List<int>.unmodifiable(t.dice.values),
-        seatIndex: _seat,
-      );
-      _log.add(_lastPayout!.message);
-      // First-roll triple ones: take the pot, end the round, re-ante, then
-      // the same winner starts a fresh 3 rolls. Do not pass the seat.
-      _continueSameSeatAfterWin(restartRound: true);
+      _resolveFirstRollTripleOnes();
       return;
     }
 
@@ -800,6 +791,93 @@ class MatchController {
     }
 
     _enterHandoff(restartsRound: false);
+  }
+
+  /// Gems each other seated player pays for first-roll triple 1s.
+  static const firstRollOnesEach = 10;
+
+  /// First-roll triple 1s: every other seated player pays the roller
+  /// [firstRollOnesEach] gems (shortfall flow for humans who can't; bots pay
+  /// what they can), then the roller wins the whole pot and the match ends.
+  void _resolveFirstRollTripleOnes() {
+    const due = firstRollOnesEach;
+    final roller = _seat;
+    _tripsCollected = 0;
+    final humansShort = <int>[];
+    for (var i = 0; i < _players.length; i++) {
+      if (i == roller || !_plays(_players[i])) continue;
+      final p = _players[i];
+      if (p.bankCents >= due) {
+        final paid = _takeFromBank(i, due, soft: false);
+        _tripsCollected += paid;
+        _credit(roller, paid);
+        continue;
+      }
+      if (p.profile.isBot) {
+        _payWhatTheyHaveAndQuit(i, roller);
+        continue;
+      }
+      humansShort.add(i);
+    }
+    final name = _players[roller].profile.name;
+    if (humansShort.isNotEmpty) {
+      _lastPayout = PayoutEvent(
+        message:
+            '$name rolled three 1s on the first roll! Each other seated '
+            'player owes ${gemCount(due)}. Collected '
+            '${gemCount(_tripsCollected)} so far.',
+        kind: ScoreKind.tripleOnesPotWin,
+        amountCents: _tripsCollected,
+        celebratory: true,
+        diceValues: List<int>.unmodifiable(_turn!.dice.values),
+        seatIndex: roller,
+      );
+      _shortfall = GemShortfall(
+        payerSeatIndex: humansShort.first,
+        rollerSeatIndex: roller,
+        dueGems: due,
+        face: 1,
+        queuedSeatIndexes: humansShort.skip(1).toList(),
+      );
+      _phase = MatchPhase.awaitingShortfall;
+      final payer = _players[humansShort.first];
+      _log.add(
+        '${payer.profile.name} cannot cover ${gemCount(due)} for three 1s. '
+        'Choose: cover with bank gems, or spend '
+        '${gemCount(payer.bankCents)} and quit this game.',
+      );
+      return;
+    }
+    _finishFirstRollTripleOnes();
+  }
+
+  /// Everyone has paid (or left): the roller takes the pot; match over.
+  void _finishFirstRollTripleOnes() {
+    final roller = _seat;
+    final name = _players[roller].profile.name;
+    final pot = _pot;
+    _credit(roller, pot);
+    _pot = 0;
+    final collected = _tripsCollected;
+    final message =
+        '$name rolled three 1s on the first roll! '
+        'Everyone pays ${gemCount(firstRollOnesEach)} and $name wins the pot.';
+    _lastPayout = PayoutEvent(
+      message: message,
+      kind: ScoreKind.tripleOnesPotWin,
+      amountCents: pot + collected,
+      celebratory: true,
+      diceValues: List<int>.unmodifiable(_turn!.dice.values),
+      seatIndex: roller,
+    );
+    _log.add(
+      '$message (+${gemCount(collected)} paid, '
+      '+${gemCount(pot)} pot)',
+    );
+    final winnerId = _players[roller].profile.id;
+    _endMatch();
+    _winnerId = winnerId;
+    _endMessage = message;
   }
 
   /// After a scoring bank: keep this seat and start a fresh 3-roll set.
@@ -941,6 +1019,10 @@ class MatchController {
     if (pending.queuedSeatIndexes.isEmpty) {
       _shortfall = null;
       final score = _turn?.lastScore;
+      if (score != null && score.kind == ScoreKind.tripleOnesPotWin) {
+        _finishFirstRollTripleOnes();
+        return;
+      }
       if (score != null && score.isFirstRollTripsPay) {
         _noteTripsPayout(score, waiting: false);
       }

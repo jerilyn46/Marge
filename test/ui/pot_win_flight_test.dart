@@ -148,7 +148,11 @@ void main() {
     );
     await tester.pump();
     expect(find.byType(PotWinFlight), findsNothing);
-    expect(count(), '$after');
+    // First-roll triple 1s ends the match: once the gems have landed, the
+    // results (winner message + play again) replace the table.
+    await tester.pump();
+    expect(find.byKey(const ValueKey('match-end-message')), findsOneWidget);
+    expect(snap.players[0].bankCents, after);
   });
 
   testWidgets('Reduce Motion: a pot win flies nothing', (tester) async {
@@ -162,10 +166,8 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(find.byType(PotWinFlight), findsNothing);
-    expect(
-      tester.widget<Text>(find.byKey(const ValueKey('gem-bank-count'))).data,
-      '${snap.players[0].bankCents}',
-    );
+    // Nothing to wait for: straight to the results.
+    expect(find.byKey(const ValueKey('match-end-message')), findsOneWidget);
   });
 
   test('sprites: one per ante unit, 4..12', () {
