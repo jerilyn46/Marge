@@ -58,34 +58,39 @@ class PlayerChip extends StatelessWidget {
               style: TextStyle(fontSize: compact ? 18 : 22),
             ),
             const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  player.profile.name,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: compact ? 12 : 14,
-                    color: player.eliminated || waiting
-                        ? Colors.white70
-                        : MargeColors.cream,
-                    decoration: player.eliminated
-                        ? TextDecoration.lineThrough
-                        : null,
+            // Long names / large text wrap instead of overflowing the row.
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    player.profile.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: compact ? 12 : 14,
+                      color: player.eliminated || waiting
+                          ? Colors.white70
+                          : MargeColors.cream,
+                      decoration: player.eliminated
+                          ? TextDecoration.lineThrough
+                          : null,
+                    ),
                   ),
-                ),
-                Text(
-                  player.coinTotalLabel,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: compact ? 11 : 13,
-                    color: waiting && player.profile.name == WaitingSeat.name
-                        ? MargeColors.cream
-                        : MargeColors.gold,
+                  Text(
+                    player.coinTotalLabel,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: compact ? 11 : 13,
+                      color: waiting && player.profile.name == WaitingSeat.name
+                          ? MargeColors.cream
+                          : MargeColors.gold,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
             if (player.usedHouseStake) ...[
               const SizedBox(width: 6),
