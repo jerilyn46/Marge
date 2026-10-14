@@ -758,7 +758,9 @@ class _TurnBanner extends StatelessWidget {
           '${player.profile.avatarEmoji} ${player.profile.name} is rolling…';
     } else if (player.profile.isHuman) {
       final rollBit = turn != null && turn.hasRolled
-          ? ' · roll ${turn.rollNumber}/3'
+          ? (turn.setNumber > 1
+                ? ' · set ${turn.setNumber} · roll ${turn.rollNumber}/3'
+                : ' · roll ${turn.rollNumber}/3')
           : '';
       title =
           '${player.profile.avatarEmoji} ${player.profile.name}\'s turn$rollBit';
