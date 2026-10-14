@@ -227,6 +227,7 @@ class MatchCheckpoint {
     'values': t.dice.values,
     'kept': t.dice.keptFlags,
     'score': _scoreToJson(t.lastScore),
+    'set': t.setNumber,
   };
 
   static TurnState? _turnFromJson(Object? raw) {
@@ -253,6 +254,7 @@ class MatchCheckpoint {
       dice: dice,
       hasRolled: raw['hasRolled'] == true,
       lastScore: _scoreFromJson(raw['score']) ?? ScoreResult.none,
+      setNumber: (_asInt(raw['set']) ?? 1).clamp(1, 999),
     );
   }
 

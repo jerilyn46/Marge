@@ -544,9 +544,8 @@ class MatchController {
 
   void _beginRound() {
     _round++;
-    if (_lastPayout?.celebratory != true) {
-      _lastPayout = null;
-    }
+    // New round: no banner from the last one (celebratory or not).
+    _lastPayout = null;
     _log.add('— Round $_round — ante ${config.anteCents} gems —');
 
     // Collect ante from each seated player. Waiting chairs do not ante.
@@ -637,9 +636,9 @@ class MatchController {
   void _startTurn() {
     final p = _players[_seat];
     _turn = TurnState.start(p.profile.id);
-    if (_lastPayout?.celebratory != true) {
-      _lastPayout = null;
-    }
+    // New turn / set: the previous payout banner is stale. (A same-seat
+    // win re-sets it right after this, so it shows on the winning roll.)
+    _lastPayout = null;
     _log.add("${p.profile.name}'s turn.");
     _phase = MatchPhase.playing;
   }
@@ -680,6 +679,9 @@ class MatchController {
     final t = _turn;
     if (t == null) return;
     if (t.rollNumber >= 3) return;
+
+    // A new roll starts: the previous hand's payout banner is stale now.
+    _lastPayout = null;
 
     late DiceSet nextDice;
     final nextRoll = t.rollNumber + 1;
@@ -1075,7 +1077,9 @@ class MatchController {
         _seat = _firstActiveSeat(from: seat);
       }
     }
+    final prevSet = _turn?.setNumber ?? 1;
     _startTurn();
+    if (!restartRound) _turn = _turn!.copyWith(setNumber: prevSet + 1);
     _lastPayout = payout;
     _log.add('${_players[_seat].profile.name} keeps the seat — fresh 3 rolls.');
   }
