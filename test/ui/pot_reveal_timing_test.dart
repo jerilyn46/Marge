@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:marge/engine/hand_evaluator.dart';
+import 'package:marge/engine/match_controller.dart';
 import 'package:marge/services/coin_ledger.dart';
 import 'package:marge/services/saved_games.dart';
 import 'package:marge/services/settings_service.dart';
@@ -97,8 +98,9 @@ void main() {
     final mid = container.read(matchProvider)!;
     expect(mid.snapshot.lastPayout?.kind, ScoreKind.tripleOnesPotWin);
     expect(mid.revealingRoll, isTrue);
-    // Engine already swept + re-anted (rule unchanged): live pot is 20...
-    expect(mid.snapshot.potCents, 20);
+    // Engine already paid out and ended the match: live pot is 0...
+    expect(mid.snapshot.potCents, 0);
+    expect(mid.snapshot.phase, MatchPhase.matchEnd);
     expect(mid.snapshot.potCents, isNot(potBefore));
     // ...but the table still shows the pre-sweep 50, and no banner yet.
     expect(shownPot(), potBefore);
@@ -119,22 +121,19 @@ void main() {
       expect(find.textContaining('sweeps the pot'), findsNothing);
     }
 
-    // After the 1.2 s pause: banner and pot change land together.
+    // After the 1.2 s pause: the results screen names the winner.
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pump();
     final after = container.read(matchProvider)!;
     expect(after.revealingRoll, isFalse);
-    expect(shownPot(), 20);
-    expect(shownPot(), after.snapshot.potCents);
-    // The readout also waits for the 3D dice to settle. On a device they
-    // start one 16 ms frame after the throw and settle at ~1.04 s, inside
-    // the pause; this fake-time test only ticks them from the 300 ms pump,
-    // so allow the remaining ~120 ms here.
     await tester.pump(const Duration(milliseconds: 150));
-    expect(find.textContaining('sweeps the pot'), findsOneWidget);
-    // The plate drains from 50 to 20 after the pause, never before.
-    await tester.pump(const Duration(milliseconds: 600));
-    expect(plate(), 'Pot · 20');
+    expect(find.byType(PotOfGems), findsNothing);
+    expect(
+      tester.widget<Text>(find.byKey(const ValueKey('match-end-message'))).data,
+      'You rolled three 1s on the first roll! '
+      'Everyone pays 10 gems and You wins the pot.',
+    );
+    expect(find.text('Continue playing'), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 3));
     await rolling;

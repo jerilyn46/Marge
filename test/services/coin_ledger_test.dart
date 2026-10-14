@@ -108,9 +108,9 @@ void main() {
       expect(c.snapshot.potCents, 20);
       c.roll();
       expect(c.snapshot.lastPayout?.kind, ScoreKind.tripleOnesPotWin);
-      // 90 + pot 20 - new ante 10.
-      expect(c.snapshot.players.first.bankCents, 100);
-      expect(ledger.savedCents('You', bot: false), 100);
+      // 90 + 10 from Spike + pot 20; the match ends (no new ante).
+      expect(c.snapshot.players.first.bankCents, 120);
+      expect(ledger.savedCents('You', bot: false), 120);
       expect(ledger.savedCents('Spike', bot: true), 80);
     });
 

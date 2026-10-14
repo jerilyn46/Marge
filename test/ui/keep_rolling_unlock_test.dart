@@ -36,10 +36,12 @@ class _Live extends MatchNotifier {
 (MatchViewState, MatchViewState) _tables() {
   final c = MatchController(
     config: const MatchConfig(botCount: 1),
-    rng: _Scripted([0, 0, 0, 2, 2, 0]),
+    rng: _Scripted([2, 2, 0, 0, 0, 0, 2, 2, 0]),
   );
   c.startMatch();
-  c.roll(); // 1,1,1 first roll: pot sweep, same seat, fresh 3 rolls
+  c.roll(); // 3,3,1
+  c.roll(); // 1,1,1 on roll 2: triple-ones pay (celebratory)
+  c.bank(); // same seat, fresh 3 rolls
   final before = c.snapshot;
   expect(before.lastPayout?.celebratory, isTrue);
   expect(before.turn!.hasRolled, isFalse);

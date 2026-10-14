@@ -219,7 +219,8 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     _scheduleBots();
   }
 
-  void rematch() {
+  /// [otherHumanCount] overrides the hotseat seats (players who quit leave).
+  void rematch({int? otherHumanCount}) {
     final c = _controller;
     final cfg = c?.config;
     final name = ref.read(settingsProvider).playerName;
@@ -231,7 +232,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     start(
       carryPotGems: carry,
       botCount: cfg?.botCount ?? 3,
-      otherHumanCount: cfg?.otherHumanCount ?? 0,
+      otherHumanCount: otherHumanCount ?? cfg?.otherHumanCount ?? 0,
       onlinePlayerCount: cfg?.onlinePlayerCount ?? 0,
       friendNames: cfg?.friendNames ?? const [],
       playerName: name,

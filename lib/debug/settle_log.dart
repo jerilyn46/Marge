@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 /// App version shown in Settings (kept in step with pubspec by a test).
-const kAppVersion = '0.1.24+24';
+const kAppVersion = '0.1.25+25';
 
 /// One breadcrumb for the dice "settling" input lock. Ids and counters only:
 /// nothing personal (no names, gems or device ids).
@@ -35,7 +35,7 @@ class SettleLog {
     final e = SettleEvent(_clock.elapsed, event, serial, roll, reason);
     if (_ring.length >= capacity) _ring.removeAt(0);
     _ring.add(e);
-    debugPrint('[settle] $e');
+    if (kDebugMode) debugPrint('[settle] $e');
   }
 
   @visibleForTesting

@@ -77,7 +77,8 @@ Future<ProviderContainer> _boot(WidgetTester tester, List<int> seq) async {
     hapticsEnabled: hapticDelayMs > 0,
   );
   SavedGameStore.bootstrap = SavedGameStore(loaded: true, prefs: prefs);
-  MatchNotifier.rngFactory = () => _Scripted(seq);
+  final shared = _Scripted(seq); // one stream across rematches
+  MatchNotifier.rngFactory = () => shared;
   addTearDown(() {
     MatchNotifier.rngFactory = Random.new;
     PlayerCoinLedger.bootstrap = null;
@@ -166,7 +167,17 @@ void _suite(int haptic) {
       await _tap(tester, onRoll == 1 ? 'ROLL' : 'KEEP ROLLING');
       final s = c.read(matchProvider)!.snapshot;
       debugPrint('after ones: ${_dbg(c)}');
-      if (s.turn!.hasRolled && s.turn!.canBank) {
+      if (onRoll == 1) {
+        // First-roll triple 1s ends the match: winner message, then
+        // "Continue playing" starts the next game.
+        expect(s.phase, MatchPhase.matchEnd);
+        await _settle(tester);
+        expect(
+          find.textContaining('rolled three 1s on the first roll'),
+          findsOneWidget,
+        );
+        await _tap(tester, 'Continue playing');
+      } else if (s.turn!.hasRolled && s.turn!.canBank) {
         final bank = find.byKey(const ValueKey('bank-only'));
         expect(bank, findsOneWidget, reason: 'Bank shown');
         expect((tester.widget(bank) as dynamic).enabled, isTrue);
