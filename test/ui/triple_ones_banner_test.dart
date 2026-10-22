@@ -277,4 +277,15 @@ void main() {
     await tester.scrollUntilVisible(card, 200);
     expect(card, findsOneWidget);
   });
+
+  testWidgets('Rules card: missed triple ones costs 10 gems', (tester) async {
+    await tester.pumpWidget(
+      const ProviderScope(child: MaterialApp(home: RulesScreen())),
+    );
+    await tester.pump();
+    final card = find.textContaining('Missed triple ones: if you hold two 1s');
+    await tester.scrollUntilVisible(card, 200);
+    expect(card, findsOneWidget);
+    expect(find.textContaining('put 10 gems in the pot'), findsOneWidget);
+  });
 }

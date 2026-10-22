@@ -235,4 +235,60 @@ void main() {
       });
     }
   }
+
+  // Missed triple ones: the result strip label fits at large text.
+  for (final (name, dp, dpr, scale) in endCases) {
+    testWidgets('$name text x$scale [missed triple ones strip]: fits', (
+      tester,
+    ) async {
+      tester.view.devicePixelRatio = dpr;
+      tester.view.physicalSize = dp * dpr;
+      final pad = FakeViewPadding(top: 28 * dpr, bottom: 24 * dpr);
+      tester.view.padding = pad;
+      tester.view.viewPadding = pad;
+      tester.platformDispatcher.textScaleFactorTestValue = scale;
+      addTearDown(tester.view.reset);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final rng = _Scripted([0, 0, 2, 2, 3]);
+      final c = MatchController(
+        config: const MatchConfig(botCount: 1),
+        rng: rng,
+      )..startMatch();
+      c.roll(); // 1,1,3
+      c.toggleKeep(0);
+      c.toggleKeep(1);
+      c.roll(); // 1,1,3
+      c.roll(); // 1,1,4
+      expect(c.snapshot.handoff!.outcomeText, 'Missed triple ones');
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            matchProvider.overrideWith(
+              () => _Live(MatchViewState(snapshot: c.snapshot, rollSerial: 1)),
+            ),
+          ],
+          child: MaterialApp(
+            theme: buildMargeTheme(),
+            home: const MatchScreen(),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(seconds: 4));
+      expect(tester.takeException(), isNull, reason: 'no overflow');
+      final usable = Rect.fromLTRB(0, 28, dp.width, dp.height - 24);
+      for (final text in ['Missed triple ones', '-10 gems']) {
+        final f = find.text(text);
+        expect(f, findsOneWidget, reason: text);
+        final r = tester.getRect(f);
+        expect(
+          r.top >= usable.top - 0.5 &&
+              r.bottom <= usable.bottom + 0.5 &&
+              r.left >= -0.5 &&
+              r.right <= usable.right + 0.5,
+          isTrue,
+          reason: '$text $r in $usable',
+        );
+      }
+    });
+  }
 }
