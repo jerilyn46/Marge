@@ -672,6 +672,9 @@ class MatchController {
       // Win banks, then this seat starts a fresh 3 rolls. Do not hand off.
       _continueSameSeatAfterWin(restartRound: false);
       return;
+    } else if (t.rollNumber >= 3 && t.wentForTripleOnes) {
+      _resolveMissedTripleOnes();
+      return;
     } else if (t.rollNumber >= 3) {
       // Bust: put 2 gems in pot.
       final pen = HandEvaluator.bustPenalty.potPenaltyCents;
@@ -847,14 +850,73 @@ class MatchController {
     _log.add(message);
   }
 
+  /// Gems into the pot when a player held two 1s for the 3rd roll and missed.
+  static const missedOnesPenalty = 10;
+
+  /// Missed triple ones: [missedOnesPenalty] into the pot instead of the
+  /// normal bust. A hard take (like other 10-gem payments), so the House
+  /// stake is not drawn; a human who is short gets the add-gems-or-leave
+  /// choice, a bot pays what it has and is knocked out.
+  void _resolveMissedTripleOnes() {
+    const due = missedOnesPenalty;
+    final p = _players[_seat];
+    _tripsCollected = 0;
+    if (p.bankCents >= due) {
+      _pot += _takeFromBank(_seat, due, soft: false);
+      _finishMissedTripleOnes(due);
+      return;
+    }
+    if (p.profile.isBot) {
+      final paid = p.bankCents;
+      _payWhatTheyHaveAndQuit(_seat, _seat, toPot: true);
+      _finishMissedTripleOnes(paid);
+      return;
+    }
+    _shortfall = GemShortfall(
+      payerSeatIndex: _seat,
+      rollerSeatIndex: _seat,
+      dueGems: due,
+      face: 1,
+      toPot: true,
+    );
+    _phase = MatchPhase.awaitingShortfall;
+    _log.add(
+      '${p.profile.name} missed triple ones and cannot cover '
+      '${gemCount(due)} for the pot. Choose: cover with bank gems, or spend '
+      '${gemCount(p.bankCents)} and quit this game.',
+    );
+  }
+
+  void _finishMissedTripleOnes(int paid) {
+    final name = _players[_seat].profile.name;
+    _lastPayout = PayoutEvent(
+      message: '$name missed triple ones — ${gemCount(paid)} to the pot.',
+      kind: ScoreKind.none,
+      amountCents: paid,
+      missedTripleOnes: true,
+    );
+    _log.add(_lastPayout!.message);
+    if (_playableCount <= 1) {
+      _turn = null;
+      _endMatch();
+      return;
+    }
+    _enterHandoff(restartsRound: false);
+  }
+
   /// Take this table's gems only. Leftover at this table is 0. Quit the game.
-  void _payWhatTheyHaveAndQuit(int payer, int roller) {
+  /// [toPot]: the gems go into the pot instead of to [roller].
+  void _payWhatTheyHaveAndQuit(int payer, int roller, {bool toPot = false}) {
     final p = _players[payer];
     final paid = p.bankCents;
     if (paid > 0) {
       _players[payer] = p.copyWith(bankCents: 0);
       _remember(payer);
-      _credit(roller, paid);
+      if (toPot) {
+        _pot += paid;
+      } else {
+        _credit(roller, paid);
+      }
       _tripsCollected += paid;
     } else {
       _players[payer] = p.copyWith(bankCents: 0);
@@ -871,7 +933,11 @@ class MatchController {
   void quitShortfall() {
     final pending = _shortfall;
     if (pending == null || _phase != MatchPhase.awaitingShortfall) return;
-    _payWhatTheyHaveAndQuit(pending.payerSeatIndex, pending.rollerSeatIndex);
+    _payWhatTheyHaveAndQuit(
+      pending.payerSeatIndex,
+      pending.rollerSeatIndex,
+      toPot: pending.toPot,
+    );
     _advanceShortfall(pending);
   }
 
@@ -888,7 +954,11 @@ class MatchController {
       soft: false,
     );
     if (paid < pending.dueGems) return false;
-    _credit(pending.rollerSeatIndex, paid);
+    if (pending.toPot) {
+      _pot += paid;
+    } else {
+      _credit(pending.rollerSeatIndex, paid);
+    }
     _tripsCollected += paid;
     _log.add('${payer.profile.name} pays ${gemCount(paid)} in full.');
     _advanceShortfall(pending);
@@ -898,6 +968,10 @@ class MatchController {
   void _advanceShortfall(GemShortfall pending) {
     if (pending.queuedSeatIndexes.isEmpty) {
       _shortfall = null;
+      if (pending.toPot) {
+        _finishMissedTripleOnes(_tripsCollected);
+        return;
+      }
       final score = _turn?.lastScore;
       if (score != null && score.kind == ScoreKind.tripleOnesPotWin) {
         _finishFirstRollTripleOnes();
@@ -1063,7 +1137,7 @@ class MatchController {
       case ScoreKind.straight:
         return 'Straight';
       case ScoreKind.none:
-        return 'Bust';
+        return payout.missedTripleOnes ? 'Missed triple ones' : 'Bust';
     }
   }
 

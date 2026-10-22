@@ -47,6 +47,16 @@ class TurnState {
 
   bool get isFirstRollComplete => rollNumber == 1;
 
+  /// "Going for three 1s": the 3rd roll of a set was taken with exactly two
+  /// dice held, both showing 1, and the third die re-rolled. (Held dice keep
+  /// [Die.kept]; re-rolled dice come back unkept.) Only meaningful once the
+  /// 3rd roll has happened.
+  bool get wentForTripleOnes {
+    if (rollNumber != 3) return false;
+    final held = dice.dice.where((d) => d.kept).toList();
+    return held.length == 2 && held.every((d) => d.value == 1);
+  }
+
   TurnState copyWith({
     String? playerId,
     int? rollNumber,
@@ -80,7 +90,11 @@ class PayoutEvent {
     this.celebratory = false,
     this.diceValues,
     this.seatIndex,
+    this.missedTripleOnes = false,
   });
+
+  /// A bust after holding two 1s for the 3rd roll (10 gems to the pot).
+  final bool missedTripleOnes;
 
   final String message;
   final ScoreKind kind;

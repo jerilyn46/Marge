@@ -61,7 +61,10 @@ class RulesScreen extends ConsumerWidget {
                 'Triple ones on roll 2/3: each other player pays you 10 gems.\n'
                 'Three 2s-6s on the first roll: each other pays 2x the face. Later three-of-a-kind pays the face value.\n'
                 'Straight (123/234/345/456): each other pays 5 gems.\n'
-                'No score after 3 rolls: put 2 gems in the pot.',
+                'No score after 3 rolls: put 2 gems in the pot.\n'
+                'Missed triple ones: if you hold two 1s for your 3rd roll and miss, '
+                'put 10 gems in the pot instead (short? add gems or pay what you have '
+                'and leave; bots pay what they have).',
           ),
           _RuleCard(
             emoji: '🏠',
