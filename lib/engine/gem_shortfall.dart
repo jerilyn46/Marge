@@ -10,7 +10,11 @@ class GemShortfall {
     required this.dueGems,
     required this.face,
     this.queuedSeatIndexes = const [],
+    this.toPot = false,
   });
+
+  /// Owed to the pot (missed triple ones), not to [rollerSeatIndex].
+  final bool toPot;
 
   final int payerSeatIndex;
   final int rollerSeatIndex;
@@ -24,6 +28,7 @@ class GemShortfall {
     'dueGems': dueGems,
     'face': face,
     'queuedSeatIndexes': queuedSeatIndexes,
+    if (toPot) 'toPot': true,
   };
 
   static GemShortfall? fromJson(Object? raw) {
@@ -41,6 +46,7 @@ class GemShortfall {
       rollerSeatIndex: roller,
       dueGems: due,
       face: face,
+      toPot: raw['toPot'] == true,
       queuedSeatIndexes: queuedRaw is List
           ? [
               for (final v in queuedRaw)

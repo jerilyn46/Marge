@@ -44,7 +44,8 @@ class GemShortfallDialog extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              '${payer.profile.name} owes ${gemCount(due)} for three ${pending.face}s on the first roll. '
+              '${payer.profile.name} owes ${gemCount(due)} '
+              '${pending.toPot ? 'to the pot for missing triple ones' : 'for three ${pending.face}s on the first roll'}. '
               'This table has ${gemCount(table)}. Gem bank has ${gemCount(bank)}.',
             ),
             const SizedBox(height: 12),

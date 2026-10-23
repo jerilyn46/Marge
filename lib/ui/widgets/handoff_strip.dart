@@ -62,12 +62,19 @@ class HandoffStrip extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          handoff.outcomeText,
-                          style: const TextStyle(
-                            color: MargeColors.cream,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 16,
+                        // One line, scaled down if needed (long labels such
+                        // as "Missed triple ones" at large text sizes).
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            handoff.outcomeText,
+                            maxLines: 1,
+                            style: const TextStyle(
+                              color: MargeColors.cream,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 16,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 2),

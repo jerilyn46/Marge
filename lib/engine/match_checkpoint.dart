@@ -296,6 +296,7 @@ class MatchCheckpoint {
     'kind': p.kind.name,
     'amountCents': p.amountCents,
     'celebratory': p.celebratory,
+    if (p.missedTripleOnes) 'missedTripleOnes': true,
     if (p.diceValues != null) 'diceValues': p.diceValues,
     if (p.seatIndex != null) 'seatIndex': p.seatIndex,
   };
@@ -310,6 +311,7 @@ class MatchCheckpoint {
       kind: kind,
       amountCents: _asInt(raw['amountCents']) ?? 0,
       celebratory: raw['celebratory'] == true,
+      missedTripleOnes: raw['missedTripleOnes'] == true,
       diceValues: _diceFromJson(raw['diceValues']),
       seatIndex: _asInt(raw['seatIndex']),
     );
