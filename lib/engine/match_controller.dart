@@ -589,11 +589,18 @@ class MatchController {
     }
 
     final score = HandEvaluator.evaluate(nextDice, rollNumber: nextRoll);
+    // Snapshot which dice were carried into the final roll (and their faces)
+    // before anything else can touch hold state.
+    final carried = nextRoll == 3
+        ? [for (final d in t.dice.dice) d.kept ? d.value : null]
+        : null;
     _turn = t.copyWith(
       rollNumber: nextRoll,
       dice: nextDice,
       hasRolled: true,
       lastScore: score,
+      carriedIntoFinal: carried,
+      clearCarried: carried == null,
     );
 
     _log.add(

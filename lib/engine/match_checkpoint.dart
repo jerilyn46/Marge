@@ -228,6 +228,7 @@ class MatchCheckpoint {
     'kept': t.dice.keptFlags,
     'score': _scoreToJson(t.lastScore),
     'set': t.setNumber,
+    if (t.carriedIntoFinal != null) 'carried': t.carriedIntoFinal,
   };
 
   static TurnState? _turnFromJson(Object? raw) {
@@ -255,6 +256,10 @@ class MatchCheckpoint {
       hasRolled: raw['hasRolled'] == true,
       lastScore: _scoreFromJson(raw['score']) ?? ScoreResult.none,
       setNumber: (_asInt(raw['set']) ?? 1).clamp(1, 999),
+      carriedIntoFinal:
+          raw['carried'] is List && (raw['carried'] as List).length == 3
+          ? [for (final v in raw['carried'] as List) _asInt(v)]
+          : null,
     );
   }
 
