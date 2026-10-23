@@ -530,7 +530,14 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     }
   }
 
+  /// True from the moment a human throw starts until the controller has
+  /// rolled. Holds are frozen in that window (the roll sound / haptic is
+  /// awaited first, and on a device that takes long enough for a stray tap
+  /// on a die, or a second Roll tap, to land before the dice actually move).
+  bool _throwInFlight = false;
+
   void toggleKeep(int index) {
+    if (_throwInFlight) return;
     _controller?.toggleKeep(index);
     _publish();
   }
@@ -543,9 +550,25 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       return;
     }
     if (c.snapshot.currentPlayer.profile.isBot) return;
+    if (_throwInFlight) return;
     final seat = c.snapshot.currentSeatIndex;
-    _syncSettings();
-    await _sfx.roll();
+    // Freeze the holds the player saw when they tapped Roll.
+    final heldAtTap = c.snapshot.turn?.dice.keptFlags;
+    _throwInFlight = true;
+    try {
+      _syncSettings();
+      await _sfx.roll();
+    } finally {
+      _throwInFlight = false;
+    }
+    if (_controller != c) return;
+    final t0 = c.snapshot.turn;
+    if (heldAtTap != null &&
+        t0 != null &&
+        t0.hasRolled &&
+        !listEquals(t0.dice.keptFlags, heldAtTap)) {
+      c.setKeeps(heldAtTap);
+    }
     final potBefore = c.snapshot.potCents;
     c.roll();
     _rollSerial++;

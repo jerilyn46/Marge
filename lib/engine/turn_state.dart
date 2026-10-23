@@ -10,7 +10,15 @@ class TurnState {
     required this.hasRolled,
     this.lastScore = ScoreResult.none,
     this.setNumber = 1,
+    this.carriedIntoFinal,
   });
+
+  /// Faces of the dice carried (held) from roll 2 into roll 3, captured at
+  /// the instant roll 3 was thrown: one entry per die, null where the die
+  /// was re-rolled. Detection reads this snapshot, never the live
+  /// [Die.kept] flags after the throw, so a reset or re-read of hold state
+  /// around the throw animation can't change the outcome.
+  final List<int?>? carriedIntoFinal;
 
   /// Which set of 3 rolls this is within the seat's turn: 1, then +1 each
   /// time a winning hand is banked and the same player keeps the seat.
@@ -53,8 +61,15 @@ class TurnState {
   /// 3rd roll has happened.
   bool get wentForTripleOnes {
     if (rollNumber != 3) return false;
-    final held = dice.dice.where((d) => d.kept).toList();
-    return held.length == 2 && held.every((d) => d.value == 1);
+    if (dice.values.every((v) => v == 1)) return false; // that's a pot win
+    final carried = carriedIntoFinal;
+    final List<int> held = carried != null
+        ? [for (final v in carried) ?v]
+        : [
+            for (final d in dice.dice)
+              if (d.kept) d.value,
+          ];
+    return held.length == 2 && held.every((v) => v == 1);
   }
 
   TurnState copyWith({
@@ -64,6 +79,8 @@ class TurnState {
     bool? hasRolled,
     ScoreResult? lastScore,
     int? setNumber,
+    List<int?>? carriedIntoFinal,
+    bool clearCarried = false,
   }) => TurnState(
     playerId: playerId ?? this.playerId,
     rollNumber: rollNumber ?? this.rollNumber,
@@ -71,6 +88,9 @@ class TurnState {
     hasRolled: hasRolled ?? this.hasRolled,
     lastScore: lastScore ?? this.lastScore,
     setNumber: setNumber ?? this.setNumber,
+    carriedIntoFinal: clearCarried
+        ? null
+        : (carriedIntoFinal ?? this.carriedIntoFinal),
   );
 
   factory TurnState.start(String playerId) => TurnState(
