@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -17,6 +16,7 @@ import 'ui/match_provider.dart';
 import 'startup_log.dart';
 import 'ui/screens/home_screen.dart';
 import 'ui/screens/username_screen.dart';
+import 'ui/system_ui.dart';
 import 'ui/theme/marge_theme.dart';
 
 Future<void> main() async {
@@ -65,20 +65,7 @@ Future<void> main() async {
   // transparent system bars; screens keep controls inside SafeArea so the
   // status bar, gesture bar, Flip cover cutout and hinge never clip them.
   // After runApp (nothing native before the first frame); failures ignored.
-  unawaited(
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge)
-        .catchError((Object e) => debugPrint('main: edge-to-edge failed: $e')),
-  );
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      systemNavigationBarColor: Colors.transparent,
-      systemNavigationBarDividerColor: Colors.transparent,
-      systemNavigationBarContrastEnforced: false,
-      statusBarIconBrightness: Brightness.light,
-      systemNavigationBarIconBrightness: Brightness.light,
-    ),
-  );
+  unawaited(applyEdgeToEdge());
 
   WidgetsBinding.instance.addPostFrameCallback((_) {
     unawaited(StartupLog.mark('first-frame'));
