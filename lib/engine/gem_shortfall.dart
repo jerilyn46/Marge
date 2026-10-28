@@ -1,3 +1,15 @@
+/// Where play resumes after an Out of gems (zeroBank) choice.
+enum ZeroBankThen {
+  /// Roller keeps the seat (after a win paid by others).
+  sameSeat,
+
+  /// The roller zeroed themselves (bust): hand off to the next seat.
+  handoff,
+
+  /// A seat zeroed paying the ante: start the turn at [_seat].
+  startTurn,
+}
+
 /// A seated player cannot cover a first-roll trips payment (2s–6s).
 ///
 /// They must add virtual gems and pay the full amount, or pay what
@@ -12,7 +24,11 @@ class GemShortfall {
     this.queuedSeatIndexes = const [],
     this.toPot = false,
     this.zeroBank = false,
+    this.zeroBankThen = ZeroBankThen.sameSeat,
   });
+
+  /// What happens after a [zeroBank] stay-in (or a quit that leaves 2+).
+  final ZeroBankThen zeroBankThen;
 
   /// A human a payout left at 0 gems: nothing is owed. They add gems
   /// ([dueGems] = enough to keep playing) or quit; if they quit and only
@@ -36,6 +52,8 @@ class GemShortfall {
     'queuedSeatIndexes': queuedSeatIndexes,
     if (toPot) 'toPot': true,
     if (zeroBank) 'zeroBank': true,
+    if (zeroBankThen != ZeroBankThen.sameSeat)
+      'zeroBankThen': zeroBankThen.name,
   };
 
   static GemShortfall? fromJson(Object? raw) {
@@ -55,6 +73,10 @@ class GemShortfall {
       face: face,
       toPot: raw['toPot'] == true,
       zeroBank: raw['zeroBank'] == true,
+      zeroBankThen: ZeroBankThen.values.firstWhere(
+        (v) => v.name == raw['zeroBankThen'],
+        orElse: () => ZeroBankThen.sameSeat,
+      ),
       queuedSeatIndexes: queuedRaw is List
           ? [
               for (final v in queuedRaw)
