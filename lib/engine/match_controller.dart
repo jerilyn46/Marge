@@ -525,10 +525,33 @@ class MatchController {
         _log.add('${p.profile.name} ante short ($paid gems).');
       }
     }
+    if (_kickAfterAnte()) return;
 
     _seat = _firstActiveSeat(from: 0);
+    // A human the ante left at exactly 0 gets Out of gems (add 10 / quit).
+    if (_offerZeroBankChoice(
+      includeRoller: true,
+      then: ZeroBankThen.startTurn,
+    )) {
+      return;
+    }
     _phase = MatchPhase.playing;
     _startTurn();
+  }
+
+  /// Jerilyn: bots are kicked any time they hit 0, including paying the
+  /// ante. If that leaves one player, they take the pot. Returns true when
+  /// the match ended.
+  bool _kickAfterAnte() {
+    final seated = [
+      for (var i = 0; i < _players.length; i++)
+        if (_plays(_players[i])) i,
+    ];
+    final kicked = _kickZeroedPayers(seated);
+    if (kicked.isEmpty || _playableCount != 1) return false;
+    final names = kicked.map((i) => _players[i].profile.name).join(', ');
+    _sweepPotToLastPlayer(names, reason: 'paid the ante');
+    return true;
   }
 
   int _firstActiveSeat({required int from}) {
@@ -727,6 +750,13 @@ class MatchController {
       if (_playableCount <= 1) {
         _turn = null;
         _endMatch();
+        return;
+      }
+      // A human who busts to exactly 0 gets Out of gems (add 10 / quit).
+      if (_offerZeroBankChoice(
+        includeRoller: true,
+        then: ZeroBankThen.handoff,
+      )) {
         return;
       }
     } else {
@@ -1108,13 +1138,27 @@ class MatchController {
         return;
       }
       if (pending.zeroBank) {
+        final quitter = _players[pending.payerSeatIndex].profile.name;
         if (_playableCount <= 1) {
-          _sweepPotToRoller(
-            '${_players[pending.payerSeatIndex].profile.name} quits',
-          );
+          if (_plays(_players[_seat])) {
+            _sweepPotToRoller('$quitter quits');
+          } else {
+            // The roller (or an ante payer) quit: the other player takes it.
+            _sweepPotToLastPlayer(quitter, reason: 'quits');
+          }
           return;
         }
-        _continueSameSeatAfterWin(restartRound: false);
+        switch (pending.zeroBankThen) {
+          case ZeroBankThen.handoff:
+            _enterHandoff(restartsRound: false);
+          case ZeroBankThen.startTurn:
+            if (!_plays(_players[_seat])) {
+              _seat = _firstActiveSeat(from: _seat);
+            }
+            _startTurn();
+          case ZeroBankThen.sameSeat:
+            _continueSameSeatAfterWin(restartRound: false);
+        }
         return;
       }
       final score = _turn?.lastScore;
@@ -1138,6 +1182,7 @@ class MatchController {
       face: pending.face,
       queuedSeatIndexes: pending.queuedSeatIndexes.skip(1).toList(),
       zeroBank: pending.zeroBank,
+      zeroBankThen: pending.zeroBankThen,
     );
     _phase = MatchPhase.awaitingShortfall;
     final payer = _players[next];
@@ -1175,8 +1220,17 @@ class MatchController {
         final paid = _takeFromBank(i, config.anteCents, soft: true);
         _pot += paid;
       }
+      if (_kickAfterAnte()) return;
       if (_players[seat].eliminated) {
         _seat = _firstActiveSeat(from: seat);
+      }
+      // A human the ante left at exactly 0 gets Out of gems (add 10 / quit).
+      if (_offerZeroBankChoice(
+        includeRoller: true,
+        then: ZeroBankThen.startTurn,
+      )) {
+        _lastPayout = payout;
+        return;
       }
     }
     final prevSet = _turn?.setNumber ?? 1;
@@ -1275,10 +1329,13 @@ class MatchController {
   /// Humans (other than the roller) a payout left at exactly 0 gems get the
   /// existing shortfall dialog in "buy more gems or quit" mode. Returns true
   /// when the match now waits on that choice.
-  bool _offerZeroBankChoice() {
+  bool _offerZeroBankChoice({
+    bool includeRoller = false,
+    ZeroBankThen then = ZeroBankThen.sameSeat,
+  }) {
     final zero = [
       for (var i = 0; i < _players.length; i++)
-        if (i != _seat &&
+        if ((includeRoller || i != _seat) &&
             _plays(_players[i]) &&
             !_players[i].profile.isBot &&
             _players[i].bankCents == 0)
@@ -1292,6 +1349,7 @@ class MatchController {
       face: 0,
       queuedSeatIndexes: zero.skip(1).toList(),
       zeroBank: true,
+      zeroBankThen: then,
     );
     _phase = MatchPhase.awaitingShortfall;
     _log.add(
