@@ -114,4 +114,28 @@ void main() {
     await tester.pumpWidget(_host(const ReservedBannerStrip()));
     expect(find.text('Evening table'), findsOneWidget);
   });
+
+  testWidgets('ads-off build: Settings keeps Restore, More row hidden', (
+    tester,
+  ) async {
+    RemoveAds.debugOffersEnabled = false;
+    await tester.pumpWidget(
+      _host(
+        const Column(
+          children: [
+            RemoveAdsSettingsRow(restoreInAdsOffBuild: true),
+            RemoveAdsSettingsRow(), // More
+            RemoveAdsBannerLink(),
+          ],
+        ),
+      ),
+    );
+    expect(
+      find.byKey(const ValueKey('remove-ads-restore-row')),
+      findsOneWidget,
+    );
+    expect(find.text('Restore purchase'), findsOneWidget);
+    expect(find.byKey(const ValueKey('remove-ads-settings')), findsNothing);
+    expect(find.byKey(const ValueKey('remove-ads-banner-link')), findsNothing);
+  });
 }

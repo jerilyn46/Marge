@@ -75,7 +75,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               onChanged: (v) => n.setHaptics(v),
             ),
             const Divider(height: 32),
-            const RemoveAdsSettingsRow(),
+            const RemoveAdsSettingsRow(restoreInAdsOffBuild: true),
             ListTile(
               leading: const Icon(Icons.menu_book_rounded),
               title: const Text('Reset rules onboarding'),

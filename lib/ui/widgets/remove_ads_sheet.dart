@@ -289,12 +289,40 @@ class RemoveAdsBannerLink extends ConsumerWidget {
 /// Settings / More row. Shows ownership once bought; opens the sheet
 /// (with "Restore purchase") otherwise.
 class RemoveAdsSettingsRow extends ConsumerWidget {
-  const RemoveAdsSettingsRow({super.key});
+  const RemoveAdsSettingsRow({super.key, this.restoreInAdsOffBuild = false});
+
+  /// Settings sets this: keep a "Restore purchase" row even when this build
+  /// serves no ads. More leaves it off (buy entry only).
+  final bool restoreInAdsOffBuild;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (!RemoveAds.offersEnabled) return const SizedBox.shrink();
+    if (!RemoveAds.offersEnabled && !restoreInAdsOffBuild) {
+      return const SizedBox.shrink();
+    }
     final owned = ref.watch(removeAdsOwnedProvider);
+    if (!RemoveAds.offersEnabled && !owned) {
+      // Ads-off build: no buy entry, but owners can still restore.
+      return ListTile(
+        key: const ValueKey('remove-ads-restore-row'),
+        leading: const Icon(Icons.restore_rounded, color: MargeColors.gold),
+        title: const Text('Restore purchase'),
+        subtitle: const Text('Remove Ads bought on Google Play'),
+        onTap: () async {
+          final ok = await ref.read(gemIapProvider.notifier).restore();
+          if (!context.mounted) return;
+          ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+            SnackBar(
+              content: Text(
+                ok
+                    ? 'Checking Google Play for your purchase…'
+                    : (ref.read(gemIapProvider).lastError ?? 'Restore failed.'),
+              ),
+            ),
+          );
+        },
+      );
+    }
     return ListTile(
       key: const ValueKey('remove-ads-settings'),
       leading: Icon(

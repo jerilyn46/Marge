@@ -58,6 +58,17 @@ class RemoveAds {
     }
   }
 
+  /// Clear ownership (refund / revoke: Play no longer returns the product).
+  static Future<void> revoke({SharedPreferences? prefs}) async {
+    owned.value = false;
+    try {
+      final store = prefs ?? await SharedPreferences.getInstance();
+      await store.remove(prefsKey);
+    } catch (e, st) {
+      debugPrint('RemoveAds: revoke persist failed: $e\n$st');
+    }
+  }
+
   @visibleForTesting
   static void debugReset() {
     owned.value = false;

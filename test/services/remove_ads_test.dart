@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:in_app_purchase_android/billing_client_wrappers.dart';
+import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 import 'package:marge/ads/ads_service.dart';
 import 'package:marge/services/gem_iap.dart';
 import 'package:marge/services/remove_ads.dart';
@@ -123,5 +125,89 @@ void main() {
     await RemoveAds.grant();
     final ads = AdsService()..notifyMatchCompleted();
     expect(await ads.maybeShowInterstitialAtBreak(), isFalse);
+  });
+
+  group('restore snapshot reconciles (refund revokes)', () {
+    late ProviderContainer c;
+    setUp(() {
+      GemIapNotifier.debugSkipBootstrap = true;
+      c = ProviderContainer();
+    });
+    tearDown(() {
+      c.dispose();
+      GemIapNotifier.debugSkipBootstrap = false;
+    });
+
+    test('empty snapshot revokes a cached owned flag', () async {
+      await RemoveAds.grant();
+      final n = c.read(gemIapProvider.notifier)..debugExpectRestoreSnapshot();
+      await n.debugOnPurchases(const []);
+      expect(RemoveAds.owned.value, isFalse);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool(RemoveAds.prefsKey), isNull);
+    });
+
+    test('snapshot with the product keeps / grants ownership', () async {
+      final n = c.read(gemIapProvider.notifier)..debugExpectRestoreSnapshot();
+      await n.debugOnPurchases([_p(PurchaseStatus.restored, pending: false)]);
+      expect(RemoveAds.owned.value, isTrue);
+    });
+
+    test('snapshot of other products only (gem pack) still revokes', () async {
+      await RemoveAds.grant();
+      final other = PurchaseDetails(
+        purchaseID: 'GPA.gems',
+        productID: 'marge_gems_small',
+        verificationData: PurchaseVerificationData(
+          localVerificationData: '',
+          serverVerificationData: '',
+          source: 'google_play',
+        ),
+        transactionDate: '0',
+        status: PurchaseStatus.restored,
+      );
+      final n = c.read(gemIapProvider.notifier)..debugExpectRestoreSnapshot();
+      await n.debugOnPurchases([other]);
+      expect(RemoveAds.owned.value, isFalse);
+    });
+
+    test('no restore in flight: ordinary update never revokes', () async {
+      await RemoveAds.grant();
+      await c.read(gemIapProvider.notifier).debugOnPurchases(const []);
+      expect(RemoveAds.owned.value, isTrue);
+    });
+
+    test(
+      'a purchase batch during restore is not treated as snapshot',
+      () async {
+        await RemoveAds.grant();
+        final n = c.read(gemIapProvider.notifier)..debugExpectRestoreSnapshot();
+        await n.debugOnPurchases([_p(PurchaseStatus.canceled, pending: false)]);
+        expect(RemoveAds.owned.value, isTrue);
+        // The real snapshot still arrives afterwards and is reconciled.
+        await n.debugOnPurchases([_p(PurchaseStatus.restored, pending: false)]);
+        expect(RemoveAds.owned.value, isTrue);
+      },
+    );
+
+    test('Play-pending (pay later) restored purchase does not grant', () async {
+      final pending = GooglePlayPurchaseDetails.fromPurchase(
+        const PurchaseWrapper(
+          orderId: 'o',
+          packageName: 'p',
+          purchaseTime: 0,
+          purchaseToken: 't',
+          signature: 's',
+          products: [RemoveAds.productId],
+          isAutoRenewing: false,
+          originalJson: '{}',
+          isAcknowledged: false,
+          purchaseState: PurchaseStateWrapper.pending,
+        ),
+      ).single..status = PurchaseStatus.restored;
+      expect(GemIapNotifier.isPendingOnPlay(pending), isTrue);
+      await GemIapNotifier.reconcileRemoveAds([pending]);
+      expect(RemoveAds.owned.value, isFalse);
+    });
   });
 }
