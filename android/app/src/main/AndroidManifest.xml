@@ -43,6 +43,10 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Diagnostic: disable Impeller (Skia) — Flip 7 cold-start “keeps stopping” A/B -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false" />
         <!-- Daily free-gems reminder (flutter_local_notifications zonedSchedule).
              Not exported; no extra permission. Nothing runs at app start. -->
         <receiver
