@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -59,6 +60,25 @@ Future<void> main() async {
     UncontrolledProviderScope(container: container, child: const MargeApp()),
   );
   unawaited(StartupLog.mark('runApp-returned'));
+
+  // Edge-to-edge (Android 15 enforces it at targetSdk 35): draw behind
+  // transparent system bars; screens keep controls inside SafeArea so the
+  // status bar, gesture bar, Flip cover cutout and hinge never clip them.
+  // After runApp (nothing native before the first frame); failures ignored.
+  unawaited(
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge)
+        .catchError((Object e) => debugPrint('main: edge-to-edge failed: $e')),
+  );
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarDividerColor: Colors.transparent,
+      systemNavigationBarContrastEnforced: false,
+      statusBarIconBrightness: Brightness.light,
+      systemNavigationBarIconBrightness: Brightness.light,
+    ),
+  );
 
   WidgetsBinding.instance.addPostFrameCallback((_) {
     unawaited(StartupLog.mark('first-frame'));
@@ -137,9 +157,7 @@ class _MargeAppState extends ConsumerState<MargeApp>
     final settings = ref.watch(settingsProvider);
     final Widget home;
     if (!settings.loaded) {
-      home = const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      home = const Scaffold(body: Center(child: CircularProgressIndicator()));
     } else if (!settings.hasUsername) {
       home = const UsernameScreen();
     } else {
