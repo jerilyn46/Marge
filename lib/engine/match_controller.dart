@@ -717,6 +717,18 @@ class MatchController {
         amountCents: paid,
       );
       _log.add(_lastPayout!.message);
+      // Jerilyn: bots are kicked any time they hit 0, including a
+      // no-score payment into the pot.
+      final kicked = _kickZeroedPayers([_seat]);
+      if (kicked.isNotEmpty && _playableCount == 1) {
+        _sweepPotToLastPlayer(player.profile.name, reason: 'whiffs');
+        return;
+      }
+      if (_playableCount <= 1) {
+        _turn = null;
+        _endMatch();
+        return;
+      }
     } else {
       // Guard: never advance on a no-score hand while rolls remain.
       _log.add('${player.profile.name} still has rolls left — keep rolling.');
@@ -993,7 +1005,10 @@ class MatchController {
 
   /// A bot paying a missed roll into the pot hit 0 and was kicked, leaving
   /// one player: that player takes the pot and the match ends.
-  void _sweepPotToLastPlayer(String outName) {
+  void _sweepPotToLastPlayer(
+    String outName, {
+    String reason = 'missed triple ones',
+  }) {
     final winner = _players.indexWhere(
       (p) => p.profile.participates && !p.eliminated,
     );
@@ -1002,7 +1017,7 @@ class MatchController {
     _credit(winner, pot);
     _pot = 0;
     final message =
-        '$outName missed triple ones and is out of gems — '
+        '$outName $reason and is out of gems — '
         '$name wins the pot (${gemCount(pot)}).';
     _lastPayout = PayoutEvent(
       message: message,
