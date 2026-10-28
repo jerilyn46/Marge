@@ -37,40 +37,39 @@ class GemShortfallDialog extends ConsumerWidget {
     final canCover = table + bank >= due;
 
     return AlertDialog(
+      // Title + body scroll together so cover screens / large text fit.
+      scrollable: true,
       title: Text(pending.zeroBank ? 'Out of gems' : 'Need more gems'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (pending.zeroBank)
-              Text(
-                'You paid out everything you had at this table. '
-                'Add 10 gems to stay in, or quit — if you’re the last one '
-                'out, the other player takes the pot. '
-                'Gem bank has ${gemCount(bank)}.',
-              )
-            else
-              Text(
-                '${payer.profile.name} owes ${gemCount(due)} '
-                '${pending.toPot ? 'to the pot for missing triple ones' : 'for three ${pending.face}s on the first roll'}. '
-                'This table has ${gemCount(table)}. Gem bank has ${gemCount(bank)}.',
-              ),
-            const SizedBox(height: 12),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (pending.zeroBank)
             Text(
-              'Virtual gems (not real money). Daily drip, gem packs, '
-              'or a rewarded ad — not an unlimited free mint.',
-              style: TextStyle(
-                color: MargeColors.cream.withValues(alpha: 0.75),
-                fontSize: 12,
-              ),
+              'You paid out everything you had at this table. '
+              'Add 10 gems to stay in, or quit — if you’re the last one '
+              'out, the other player takes the pot.',
+            )
+          else
+            Text(
+              '${payer.profile.name} owes ${gemCount(due)} '
+              '${pending.toPot ? 'to the pot for missing triple ones' : 'for three ${pending.face}s on the first roll'}. '
+              'This table has ${gemCount(table)}. Gem bank has ${gemCount(bank)}.',
             ),
-            const SizedBox(height: 10),
-            const DailyDripCard(compact: true),
-            const SizedBox(height: 8),
-            const GetMoreGemsButton(compact: true),
-          ],
-        ),
+          const SizedBox(height: 12),
+          Text(
+            'Virtual gems (not real money). Daily drip, gem packs, '
+            'or a rewarded ad — not an unlimited free mint.',
+            style: TextStyle(
+              color: MargeColors.cream.withValues(alpha: 0.75),
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 10),
+          const DailyDripCard(compact: true),
+          const SizedBox(height: 8),
+          const GetMoreGemsButton(compact: true),
+        ],
       ),
       actions: [
         TextButton(
@@ -93,7 +92,7 @@ class GemShortfallDialog extends ConsumerWidget {
               : null,
           child: Text(
             pending.zeroBank
-                ? 'Add ${gemCount(due)} and keep playing'
+                ? 'Add $due and keep playing'
                 : 'Cover ${gemCount(due)}',
           ),
         ),

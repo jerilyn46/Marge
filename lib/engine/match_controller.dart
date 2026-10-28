@@ -943,6 +943,9 @@ class MatchController {
     _tripsCollected = 0;
     if (p.bankCents >= due) {
       _pot += _takeFromBank(_seat, due, soft: false);
+      // Jerilyn: bots are kicked any time they hit 0, including paying
+      // a missed roll into the pot.
+      _kickZeroedPayers([_seat]);
       _finishMissedTripleOnes(due);
       return;
     }
@@ -976,12 +979,44 @@ class MatchController {
       missedTripleOnes: true,
     );
     _log.add(_lastPayout!.message);
+    if (_players[_seat].eliminated && _playableCount == 1) {
+      _sweepPotToLastPlayer(name);
+      return;
+    }
     if (_playableCount <= 1) {
       _turn = null;
       _endMatch();
       return;
     }
     _enterHandoff(restartsRound: false);
+  }
+
+  /// A bot paying a missed roll into the pot hit 0 and was kicked, leaving
+  /// one player: that player takes the pot and the match ends.
+  void _sweepPotToLastPlayer(String outName) {
+    final winner = _players.indexWhere(
+      (p) => p.profile.participates && !p.eliminated,
+    );
+    final name = _players[winner].profile.name;
+    final pot = _pot;
+    _credit(winner, pot);
+    _pot = 0;
+    final message =
+        '$outName missed triple ones and is out of gems — '
+        '$name wins the pot (${gemCount(pot)}).';
+    _lastPayout = PayoutEvent(
+      message: message,
+      kind: ScoreKind.tripleOnesPotWin,
+      amountCents: pot,
+      celebratory: true,
+      seatIndex: winner,
+    );
+    _log.add(message);
+    final winnerId = _players[winner].profile.id;
+    _turn = null;
+    _endMatch();
+    _winnerId = winnerId;
+    _endMessage = message;
   }
 
   /// Take this table's gems only. Leftover at this table is 0. Quit the game.

@@ -310,4 +310,54 @@ void main() {
     expect(c2.snapshot.phase, MatchPhase.awaitingShortfall);
     expect(c2.snapshot.players[0].usedHouseStake, isFalse);
   });
+
+  group('bot zeroed by missed-roll pot payment is kicked', () {
+    MatchController botMisses(_Dice d, int bots, int start) {
+      final c = _game(
+        d,
+        config: MatchConfig(botCount: bots, startBankCents: start),
+      );
+      c.roll();
+      c.roll();
+      c.roll();
+      c.confirmHandoff();
+      d.next([0, 0, 2]);
+      c.tickBot();
+      d.next([2]);
+      c.tickBot();
+      d.next([3]);
+      c.tickBot();
+      return c;
+    }
+
+    test('pays exactly 10 to 0 → kicked, game continues', () {
+      final d = _Dice(miss);
+      final c = botMisses(d, 2, 20);
+      final s = c.snapshot;
+      expect(s.players[1].bankCents, 0);
+      expect(s.players[1].eliminated, isTrue);
+      expect(s.phase, MatchPhase.awaitingHandoff);
+      c.confirmHandoff();
+      expect(c.snapshot.currentSeatIndex, 2);
+    });
+
+    test('last opponent kicked at 0 → other player sweeps the pot', () {
+      final d = _Dice(miss);
+      final c = botMisses(d, 1, 20);
+      final s = c.snapshot;
+      expect(s.players[1].eliminated, isTrue);
+      expect(s.phase, MatchPhase.matchEnd);
+      expect(s.potCents, 0);
+      expect(s.lastPayout!.message, contains('wins the pot'));
+    });
+
+    test('short bot, last opponent → other player sweeps the pot', () {
+      final d = _Dice(miss);
+      final c = botMisses(d, 1, 15);
+      final s = c.snapshot;
+      expect(s.players[1].eliminated, isTrue);
+      expect(s.phase, MatchPhase.matchEnd);
+      expect(s.potCents, 0);
+    });
+  });
 }
