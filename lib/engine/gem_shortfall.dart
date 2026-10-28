@@ -11,7 +11,13 @@ class GemShortfall {
     required this.face,
     this.queuedSeatIndexes = const [],
     this.toPot = false,
+    this.zeroBank = false,
   });
+
+  /// A human a payout left at 0 gems: nothing is owed. They add gems
+  /// ([dueGems] = enough to keep playing) or quit; if they quit and only
+  /// the roller is left, the roller takes the pot.
+  final bool zeroBank;
 
   /// Owed to the pot (missed triple ones), not to [rollerSeatIndex].
   final bool toPot;
@@ -29,6 +35,7 @@ class GemShortfall {
     'face': face,
     'queuedSeatIndexes': queuedSeatIndexes,
     if (toPot) 'toPot': true,
+    if (zeroBank) 'zeroBank': true,
   };
 
   static GemShortfall? fromJson(Object? raw) {
@@ -47,6 +54,7 @@ class GemShortfall {
       dueGems: due,
       face: face,
       toPot: raw['toPot'] == true,
+      zeroBank: raw['zeroBank'] == true,
       queuedSeatIndexes: queuedRaw is List
           ? [
               for (final v in queuedRaw)

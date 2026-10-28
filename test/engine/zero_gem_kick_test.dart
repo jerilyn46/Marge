@@ -36,7 +36,7 @@ int _humanSeat(MatchController c) =>
 
 void main() {
   test(
-    'Jerilyn screenshot: Spike short 8 of 10 → kicked, Jerilyn sweeps pot',
+    'Jerilyn screenshot: bot Spike short 8 of 10 → kicked, Jerilyn sweeps pot',
     () {
       final d = _Dice(miss);
       final c = _start(d);
@@ -127,5 +127,93 @@ void main() {
       MatchController.payoutBreakdown(10, {'A': 10, 'Spike': 0}),
       '10 gems each from one player; Spike had only 0 of 10',
     );
+  });
+
+  MatchController hotseat(_Dice d, {int bots = 0}) => MatchController(
+    config: MatchConfig(
+      botCount: bots,
+      otherHumanCount: 1,
+      localPlayerName: 'Jerilyn',
+    ),
+    rng: d,
+  )..startMatch();
+
+  int otherHuman(MatchController c) => c.snapshot.players.indexWhere(
+    (p) =>
+        !p.profile.isBot && p.profile.id != 'human_0' && p.profile.participates,
+  );
+
+  MatchController humanAtZero({int bots = 0}) {
+    final d = _Dice(miss);
+    final c = hotseat(d, bots: bots);
+    expect(c.snapshot.currentSeatIndex, _humanSeat(c));
+    c.debugSetBank(otherHuman(c), 8);
+    c.roll();
+    d.next(ones);
+    c.roll(); // triple ones roll 2 → 10 each
+    if (c.snapshot.phase != MatchPhase.awaitingShortfall) c.bank();
+    return c;
+  }
+
+  test('human at 0 is NOT auto-kicked: buy-more-or-quit dialog', () {
+    final c = humanAtZero();
+    final s = c.snapshot;
+    final h = otherHuman(c);
+    expect(s.players[h].bankCents, 0);
+    expect(s.players[h].eliminated, isFalse);
+    expect(s.phase, MatchPhase.awaitingShortfall);
+    expect(s.pendingShortfall!.zeroBank, isTrue);
+    expect(s.pendingShortfall!.payerSeatIndex, h);
+    expect(s.lastPayout!.message, contains('had only 8 of 10'));
+    expect(s.lastPayout!.message, contains('buy more gems or quit'));
+  });
+
+  test('human at 0 quits → the other player gets the pot', () {
+    final c = humanAtZero();
+    final me = _humanSeat(c);
+    final pot = c.snapshot.potCents;
+    final before = c.snapshot.players[me].bankCents;
+    c.quitShortfall();
+    final s = c.snapshot;
+    expect(s.players[otherHuman(c)].eliminated, isTrue);
+    expect(s.phase, MatchPhase.matchEnd);
+    expect(s.potCents, 0);
+    expect(s.players[me].bankCents, before + pot);
+    expect(s.winnerId, 'human_0');
+    expect(s.lastPayout!.message, contains('wins the pot'));
+  });
+
+  test('human at 0 buys more gems → stays in, play continues', () {
+    final c = humanAtZero();
+    final h = otherHuman(c);
+    final pot = c.snapshot.potCents;
+    expect(c.coverShortfall(), isFalse); // nothing added yet
+    c.addTableGems(h, 10);
+    expect(c.coverShortfall(), isTrue);
+    final s = c.snapshot;
+    expect(s.players[h].eliminated, isFalse);
+    expect(s.players[h].bankCents, 10);
+    expect(s.phase, isNot(MatchPhase.matchEnd));
+    expect(s.pendingShortfall, isNull);
+    expect(s.potCents, pot);
+  });
+
+  test('mix: bot at 0 kicked, human at 0 gets the choice', () {
+    final d = _Dice(straight);
+    final c = hotseat(d, bots: 1);
+    final bot = c.snapshot.players.indexWhere((p) => p.profile.isBot);
+    final h = otherHuman(c);
+    c.debugSetBank(bot, 3);
+    c.debugSetBank(h, 5);
+    c.roll(); // straight → 5 each
+    c.bank();
+    final s = c.snapshot;
+    expect(s.players[bot].eliminated, isTrue);
+    expect(s.players[h].eliminated, isFalse);
+    expect(s.phase, MatchPhase.awaitingShortfall);
+    expect(s.pendingShortfall!.zeroBank, isTrue);
+    c.quitShortfall();
+    expect(c.snapshot.phase, MatchPhase.matchEnd);
+    expect(c.snapshot.winnerId, 'human_0');
   });
 }
