@@ -525,10 +525,26 @@ class MatchController {
         _log.add('${p.profile.name} ante short ($paid gems).');
       }
     }
+    if (_kickAfterAnte()) return;
 
     _seat = _firstActiveSeat(from: 0);
     _phase = MatchPhase.playing;
     _startTurn();
+  }
+
+  /// Jerilyn: bots are kicked any time they hit 0, including paying the
+  /// ante. If that leaves one player, they take the pot. Returns true when
+  /// the match ended.
+  bool _kickAfterAnte() {
+    final seated = [
+      for (var i = 0; i < _players.length; i++)
+        if (_plays(_players[i])) i,
+    ];
+    final kicked = _kickZeroedPayers(seated);
+    if (kicked.isEmpty || _playableCount != 1) return false;
+    final names = kicked.map((i) => _players[i].profile.name).join(', ');
+    _sweepPotToLastPlayer(names, reason: 'paid the ante');
+    return true;
   }
 
   int _firstActiveSeat({required int from}) {
@@ -1175,6 +1191,7 @@ class MatchController {
         final paid = _takeFromBank(i, config.anteCents, soft: true);
         _pot += paid;
       }
+      if (_kickAfterAnte()) return;
       if (_players[seat].eliminated) {
         _seat = _firstActiveSeat(from: seat);
       }
