@@ -10,6 +10,7 @@ import 'services/coin_ledger.dart';
 import 'services/daily_gems_reminder.dart';
 import 'services/friends_service.dart';
 import 'services/gem_iap.dart';
+import 'services/remove_ads.dart';
 import 'services/saved_games.dart';
 import 'services/settings_service.dart';
 import 'ui/match_provider.dart';
@@ -49,6 +50,10 @@ Future<void> main() async {
   } catch (e, st) {
     debugPrint('main: settings load failed (defaults): $e\n$st');
   }
+
+  // Remove Ads flag before the lobby paints so an owner never sees a banner
+  // flash. Play restore re-confirms it after billing starts.
+  await RemoveAds.load();
 
   final container = ProviderContainer();
 

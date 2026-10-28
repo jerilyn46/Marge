@@ -12,6 +12,7 @@ import '../../services/settings_service.dart';
 import '../theme/marge_theme.dart';
 import '../widgets/daily_drip_card.dart';
 import '../widgets/die_widget.dart';
+import '../widgets/remove_ads_sheet.dart';
 
 /// Virtual gems shop: daily drip, Play Billing packs, rewarded ads, skins.
 ///
@@ -88,6 +89,7 @@ class ShopScreen extends ConsumerWidget {
               const SizedBox(height: 14),
               const DailyDripCard(),
               const SizedBox(height: 14),
+              const RemoveAdsTile(),
               const _SectionTitle('Gem packs'),
               const SizedBox(height: 4),
               Text(
