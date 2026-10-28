@@ -41,131 +41,134 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          TextField(
-            controller: _nameCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Display name',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.person),
+      body: SafeArea(
+        top: false,
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            TextField(
+              controller: _nameCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Display name',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.person),
+              ),
+              onSubmitted: (v) =>
+                  n.setPlayerName(v.trim().isEmpty ? 'You' : v.trim()),
+              onChanged: (v) =>
+                  n.setPlayerName(v.trim().isEmpty ? 'You' : v.trim()),
             ),
-            onSubmitted: (v) =>
-                n.setPlayerName(v.trim().isEmpty ? 'You' : v.trim()),
-            onChanged: (v) =>
-                n.setPlayerName(v.trim().isEmpty ? 'You' : v.trim()),
-          ),
-          const SizedBox(height: 16),
-          SwitchListTile(
-            title: const Text('Sound effects'),
-            subtitle: const Text('Dice and table sounds'),
-            value: s.sfxEnabled,
-            activeThumbColor: MargeColors.gold,
-            onChanged: (v) => n.setSfx(v),
-          ),
-          SwitchListTile(
-            title: const Text('Haptics'),
-            subtitle: const Text('Vibrate on rolls and wins'),
-            value: s.hapticsEnabled,
-            activeThumbColor: MargeColors.gold,
-            onChanged: (v) => n.setHaptics(v),
-          ),
-          const Divider(height: 32),
-          ListTile(
-            leading: const Icon(Icons.menu_book_rounded),
-            title: const Text('Reset rules onboarding'),
-            onTap: () async {
-              await n.setSeenRules(false);
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Rules tip will show next play'),
-                  ),
-                );
-              }
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.privacy_tip_outlined),
-            title: const Text('Privacy / ad consent'),
-            subtitle: const Text(
-              'UMP privacy options (EU/EEA/UK when required)',
+            const SizedBox(height: 16),
+            SwitchListTile(
+              title: const Text('Sound effects'),
+              subtitle: const Text('Dice and table sounds'),
+              value: s.sfxEnabled,
+              activeThumbColor: MargeColors.gold,
+              onChanged: (v) => n.setSfx(v),
             ),
-            onTap: () async {
-              final ads = ref.read(adsServiceProvider);
-              final required = await ads.isPrivacyOptionsRequired();
-              if (!context.mounted) return;
-              if (required) {
-                await ads.showPrivacyOptions();
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Privacy options not required in this region '
-                      '(or ads unavailable on this platform).',
+            SwitchListTile(
+              title: const Text('Haptics'),
+              subtitle: const Text('Vibrate on rolls and wins'),
+              value: s.hapticsEnabled,
+              activeThumbColor: MargeColors.gold,
+              onChanged: (v) => n.setHaptics(v),
+            ),
+            const Divider(height: 32),
+            ListTile(
+              leading: const Icon(Icons.menu_book_rounded),
+              title: const Text('Reset rules onboarding'),
+              onTap: () async {
+                await n.setSeenRules(false);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Rules tip will show next play'),
                     ),
-                  ),
-                );
-              }
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.policy_outlined),
-            title: const Text('Privacy policy'),
-            subtitle: const Text('jerilyn46.github.io/Marge/privacy-policy'),
-            trailing: const Icon(Icons.open_in_new_rounded, size: 18),
-            onTap: () => LegalLinks.open(
-              context,
-              LegalLinks.privacyPolicyUri,
-              fallback: LegalLinks.privacyPolicyUrl,
+                  );
+                }
+              },
             ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.gavel_rounded),
-            title: const Text('Terms of Use'),
-            trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const TermsScreen()),
+            ListTile(
+              leading: const Icon(Icons.privacy_tip_outlined),
+              title: const Text('Privacy / ad consent'),
+              subtitle: const Text(
+                'UMP privacy options (EU/EEA/UK when required)',
+              ),
+              onTap: () async {
+                final ads = ref.read(adsServiceProvider);
+                final required = await ads.isPrivacyOptionsRequired();
+                if (!context.mounted) return;
+                if (required) {
+                  await ads.showPrivacyOptions();
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Privacy options not required in this region '
+                        '(or ads unavailable on this platform).',
+                      ),
+                    ),
+                  );
+                }
+              },
             ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.mail_outline_rounded),
-            title: const Text('Contact support'),
-            subtitle: const Text(LegalLinks.supportEmail),
-            onTap: () => LegalLinks.open(
-              context,
-              LegalLinks.supportMailUri,
-              fallback: LegalLinks.supportEmail,
+            ListTile(
+              leading: const Icon(Icons.policy_outlined),
+              title: const Text('Privacy policy'),
+              subtitle: const Text('jerilyn46.github.io/Marge/privacy-policy'),
+              trailing: const Icon(Icons.open_in_new_rounded, size: 18),
+              onTap: () => LegalLinks.open(
+                context,
+                LegalLinks.privacyPolicyUri,
+                fallback: LegalLinks.privacyPolicyUrl,
+              ),
             ),
-          ),
-          const SizedBox(height: 24),
-          // Long-press the version for the dice-lock breadcrumbs (support).
-          GestureDetector(
-            key: const ValueKey('settings-version'),
-            onLongPress: () => showDialog<void>(
-              context: context,
-              builder: (_) => const SettleLogDialog(),
+            ListTile(
+              leading: const Icon(Icons.gavel_rounded),
+              title: const Text('Terms of Use'),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const TermsScreen()),
+              ),
             ),
-            child: Text(
-              'Version $kAppVersion',
+            ListTile(
+              leading: const Icon(Icons.mail_outline_rounded),
+              title: const Text('Contact support'),
+              subtitle: const Text(LegalLinks.supportEmail),
+              onTap: () => LegalLinks.open(
+                context,
+                LegalLinks.supportMailUri,
+                fallback: LegalLinks.supportEmail,
+              ),
+            ),
+            const SizedBox(height: 24),
+            // Long-press the version for the dice-lock breadcrumbs (support).
+            GestureDetector(
+              key: const ValueKey('settings-version'),
+              onLongPress: () => showDialog<void>(
+                context: context,
+                builder: (_) => const SettleLogDialog(),
+              ),
+              child: Text(
+                'Version $kAppVersion',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: MargeColors.cream.withValues(alpha: 0.55),
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Marge Dice Game · com.jerilynroberts.marge\nVirtual gems only — no real money.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: MargeColors.cream.withValues(alpha: 0.55),
                 fontSize: 12,
               ),
             ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Marge Dice Game · com.jerilynroberts.marge\nVirtual gems only — no real money.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: MargeColors.cream.withValues(alpha: 0.55),
-              fontSize: 12,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

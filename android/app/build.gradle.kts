@@ -103,8 +103,14 @@ android {
             // Always the upload key. No debug-keystore fallback: a release
             // build without android/key.properties fails (see check below).
             signingConfig = signingConfigs.getByName("release")
-            isMinifyEnabled = false
-            isShrinkResources = false
+            // R8: shrink + obfuscate Java/Kotlin, drop unused resources.
+            // Flutter's own keep rules are added by the Flutter Gradle plugin.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }

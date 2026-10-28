@@ -62,60 +62,63 @@ class ShopScreen extends ConsumerWidget {
             colors: [MargeColors.velvet, Color(0xFF243528), MargeColors.felt],
           ),
         ),
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-          children: [
-            Text(
-              'Play gems — not real money',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: MargeColors.cream.withValues(alpha: 0.85),
-                fontWeight: FontWeight.w800,
-                fontSize: 14,
+        child: SafeArea(
+          top: false,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+            children: [
+              Text(
+                'Play gems — not real money',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: MargeColors.cream.withValues(alpha: 0.85),
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14,
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Virtual gems only, no real money',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: MargeColors.cream.withValues(alpha: 0.65),
-                fontSize: 12,
+              const SizedBox(height: 4),
+              Text(
+                'Virtual gems only, no real money',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: MargeColors.cream.withValues(alpha: 0.65),
+                  fontSize: 12,
+                ),
               ),
-            ),
-            const SizedBox(height: 14),
-            const DailyDripCard(),
-            const SizedBox(height: 14),
-            const _SectionTitle('Gem packs'),
-            const SizedBox(height: 4),
-            Text(
-              'Paid packs credit your gem bank. Separate from the free daily drip.',
-              style: TextStyle(
-                color: MargeColors.cream.withValues(alpha: 0.7),
-                fontSize: 12,
+              const SizedBox(height: 14),
+              const DailyDripCard(),
+              const SizedBox(height: 14),
+              const _SectionTitle('Gem packs'),
+              const SizedBox(height: 4),
+              Text(
+                'Paid packs credit your gem bank. Separate from the free daily drip.',
+                style: TextStyle(
+                  color: MargeColors.cream.withValues(alpha: 0.7),
+                  fontSize: 12,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            const _GemPackList(),
-            const SizedBox(height: 6),
-            if (kAdmobEnabled) const _RewardedGemsCard(),
-            const SizedBox(height: 18),
-            const _SectionTitle('Designer Collection'),
-            const SizedBox(height: 4),
-            Text(
-              'Dice cosmetics unlocked with virtual gems or play milestones. '
-              'Skin wallet: ${gemCount(cos.walletCents)}.',
-              style: TextStyle(
-                color: MargeColors.cream.withValues(alpha: 0.7),
-                fontSize: 12,
+              const SizedBox(height: 8),
+              const _GemPackList(),
+              const SizedBox(height: 6),
+              if (kAdmobEnabled) const _RewardedGemsCard(),
+              const SizedBox(height: 18),
+              const _SectionTitle('Designer Collection'),
+              const SizedBox(height: 4),
+              Text(
+                'Dice cosmetics unlocked with virtual gems or play milestones. '
+                'Skin wallet: ${gemCount(cos.walletCents)}.',
+                style: TextStyle(
+                  color: MargeColors.cream.withValues(alpha: 0.7),
+                  fontSize: 12,
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-            for (var i = 0; i < DiceSkinCatalog.all.length; i++) ...[
-              if (i > 0) const SizedBox(height: 12),
-              _SkinTile(def: DiceSkinCatalog.all[i], cos: cos),
+              const SizedBox(height: 10),
+              for (var i = 0; i < DiceSkinCatalog.all.length; i++) ...[
+                if (i > 0) const SizedBox(height: 12),
+                _SkinTile(def: DiceSkinCatalog.all[i], cos: cos),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -220,8 +223,9 @@ class _IapPackTile extends ConsumerWidget {
             : FilledButton(
                 onPressed: enabled
                     ? () async {
-                        final ok =
-                            await ref.read(gemIapProvider.notifier).buy(pack);
+                        final ok = await ref
+                            .read(gemIapProvider.notifier)
+                            .buy(pack);
                         if (!context.mounted) return;
                         final err = ref.read(gemIapProvider).lastError;
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -466,9 +470,7 @@ class _SkinTile extends ConsumerWidget {
                                   }
                                 }
                               : null,
-                          child: Text(
-                            'Spend ${gemCount(def.priceCents)}',
-                          ),
+                          child: Text('Spend ${gemCount(def.priceCents)}'),
                         ),
                     ],
                   ),

@@ -42,25 +42,28 @@ class TermsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Terms of Use')),
-      body: FutureBuilder<String>(
-        future: (bundle ?? rootBundle).loadString(assetPath),
-        builder: (context, snap) {
-          if (snap.hasError) {
-            return const Center(child: Text('Terms could not be loaded.'));
-          }
-          final raw = snap.data;
-          if (raw == null) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final text = render(
-            raw,
-            effectiveDate: effectiveDate ?? kTermsEffectiveDate,
-          );
-          return ListView(
-            padding: const EdgeInsets.all(20),
-            children: [for (final line in text.split('\n')) _line(line)],
-          );
-        },
+      body: SafeArea(
+        top: false,
+        child: FutureBuilder<String>(
+          future: (bundle ?? rootBundle).loadString(assetPath),
+          builder: (context, snap) {
+            if (snap.hasError) {
+              return const Center(child: Text('Terms could not be loaded.'));
+            }
+            final raw = snap.data;
+            if (raw == null) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final text = render(
+              raw,
+              effectiveDate: effectiveDate ?? kTermsEffectiveDate,
+            );
+            return ListView(
+              padding: const EdgeInsets.all(20),
+              children: [for (final line in text.split('\n')) _line(line)],
+            );
+          },
+        ),
       ),
     );
   }
