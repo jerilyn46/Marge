@@ -16,10 +16,8 @@ class FriendEntry {
   final String name;
   final bool seated;
 
-  FriendEntry copyWith({String? name, bool? seated}) => FriendEntry(
-    name: name ?? this.name,
-    seated: seated ?? this.seated,
-  );
+  FriendEntry copyWith({String? name, bool? seated}) =>
+      FriendEntry(name: name ?? this.name, seated: seated ?? this.seated);
 
   Map<String, Object> toJson() => {'name': name, 'seated': seated};
 
@@ -32,10 +30,7 @@ class FriendEntry {
     if (raw is! Map) return null;
     final name = raw['name'];
     if (name is! String || name.trim().isEmpty) return null;
-    return FriendEntry(
-      name: name.trim(),
-      seated: raw['seated'] != false,
-    );
+    return FriendEntry(name: name.trim(), seated: raw['seated'] != false);
   }
 }
 
@@ -88,7 +83,10 @@ class FriendsLogic {
       return (friends: friends, error: 'The group is full (7 friends)');
     }
     return (
-      friends: [...friends, FriendEntry(name: name)],
+      friends: [
+        ...friends,
+        FriendEntry(name: name),
+      ],
       error: null,
     );
   }
@@ -175,9 +173,8 @@ class FriendsNotifier extends Notifier<FriendsState> {
     await prefs.setString(prefsKey, encode(state));
   }
 
-  static String encode(FriendsState state) => jsonEncode(
-    state.friends.map((f) => f.toJson()).toList(),
-  );
+  static String encode(FriendsState state) =>
+      jsonEncode(state.friends.map((f) => f.toJson()).toList());
 
   static FriendsState decode(String? raw) {
     if (raw == null || raw.isEmpty) {

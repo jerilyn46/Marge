@@ -5,7 +5,7 @@
 /// invoke at natural breaks — match end / quiet leave).
 class InterstitialGate {
   InterstitialGate({int initialMatchesRequired = 1})
-      : _matchesRequired = initialMatchesRequired.clamp(1, 1);
+    : _matchesRequired = initialMatchesRequired.clamp(1, 1);
 
   int _completedSinceLastShow = 0;
   int _matchesRequired;

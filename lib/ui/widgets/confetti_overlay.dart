@@ -105,7 +105,11 @@ class _ConfettiPainter extends CustomPainter {
       final paint = Paint()..color = p.color.withValues(alpha: 1 - progress);
       canvas.drawRRect(
         RRect.fromRectAndRadius(
-          Rect.fromCenter(center: Offset(x, y), width: p.size, height: p.size * 0.6),
+          Rect.fromCenter(
+            center: Offset(x, y),
+            width: p.size,
+            height: p.size * 0.6,
+          ),
           const Radius.circular(2),
         ),
         paint,

@@ -1,14 +1,7 @@
 import 'package:flutter/material.dart';
 
 /// Catalog id for a dice cosmetic skin.
-enum DiceSkinId {
-  classic,
-  gold,
-  neon,
-  midnight,
-  candy,
-  luckyBones,
-}
+enum DiceSkinId { classic, gold, neon, midnight, candy, luckyBones }
 
 /// How a locked skin can be earned (shop purchase is always available too
 /// except Classic which is free).
@@ -30,13 +23,7 @@ enum SkinUnlockRule {
 }
 
 /// Visual pattern overlay on die faces.
-enum DiceSkinPattern {
-  none,
-  stripes,
-  sparkle,
-  dots,
-  bones,
-}
+enum DiceSkinPattern { none, stripes, sparkle, dots, bones }
 
 /// Colors + pattern applied by [DieWidget].
 @immutable

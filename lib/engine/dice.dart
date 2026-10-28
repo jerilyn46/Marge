@@ -2,8 +2,7 @@ import 'dart:math';
 
 /// A single die face 1–6.
 class Die {
-  const Die(this.value, {this.kept = false})
-      : assert(value >= 1 && value <= 6);
+  const Die(this.value, {this.kept = false}) : assert(value >= 1 && value <= 6);
 
   final int value;
   final bool kept;
@@ -27,17 +26,15 @@ class Die {
 /// Three dice used in a turn.
 class DiceSet {
   DiceSet(List<Die> dice)
-      : assert(dice.length == 3),
-        dice = List.unmodifiable(dice);
+    : assert(dice.length == 3),
+      dice = List.unmodifiable(dice);
 
-  factory DiceSet.blank() =>
-      DiceSet(const [Die(1), Die(1), Die(1)]);
+  factory DiceSet.blank() => DiceSet(const [Die(1), Die(1), Die(1)]);
 
   factory DiceSet.fromValues(List<int> values, {List<bool>? kept}) {
     assert(values.length == 3);
     return DiceSet([
-      for (var i = 0; i < 3; i++)
-        Die(values[i], kept: kept?[i] ?? false),
+      for (var i = 0; i < 3; i++) Die(values[i], kept: kept?[i] ?? false),
     ]);
   }
 
@@ -71,17 +68,16 @@ class DiceSet {
   /// Roll non-kept dice; kept dice stay.
   DiceSet roll(Random rng) {
     return DiceSet([
-      for (final d in dice)
-        d.kept ? d : Die(rng.nextInt(6) + 1, kept: false),
+      for (final d in dice) d.kept ? d : Die(rng.nextInt(6) + 1, kept: false),
     ]);
   }
 
   /// Fresh roll of all three (first roll of a turn).
   factory DiceSet.rollAll(Random rng) => DiceSet([
-        Die(rng.nextInt(6) + 1),
-        Die(rng.nextInt(6) + 1),
-        Die(rng.nextInt(6) + 1),
-      ]);
+    Die(rng.nextInt(6) + 1),
+    Die(rng.nextInt(6) + 1),
+    Die(rng.nextInt(6) + 1),
+  ]);
 
   @override
   String toString() => 'DiceSet(${dice.join(', ')})';

@@ -37,17 +37,25 @@ class GemShortfallDialog extends ConsumerWidget {
     final canCover = table + bank >= due;
 
     return AlertDialog(
-      title: const Text('Need more gems'),
+      title: Text(pending.zeroBank ? 'Out of gems' : 'Need more gems'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              '${payer.profile.name} owes ${gemCount(due)} '
-              '${pending.toPot ? 'to the pot for missing triple ones' : 'for three ${pending.face}s on the first roll'}. '
-              'This table has ${gemCount(table)}. Gem bank has ${gemCount(bank)}.',
-            ),
+            if (pending.zeroBank)
+              Text(
+                '${payer.profile.name} is out of gems at this table. '
+                'Buy more gems to keep playing (at least ${gemCount(due)}), '
+                'or quit — if only one player is left, they win the pot. '
+                'Gem bank has ${gemCount(bank)}.',
+              )
+            else
+              Text(
+                '${payer.profile.name} owes ${gemCount(due)} '
+                '${pending.toPot ? 'to the pot for missing triple ones' : 'for three ${pending.face}s on the first roll'}. '
+                'This table has ${gemCount(table)}. Gem bank has ${gemCount(bank)}.',
+              ),
             const SizedBox(height: 12),
             Text(
               'Virtual gems (not real money). Daily drip, gem packs, '
@@ -70,7 +78,11 @@ class GemShortfallDialog extends ConsumerWidget {
             ref.read(matchProvider.notifier).quitShortfall();
             Navigator.of(context).pop();
           },
-          child: Text('Spend ${gemCount(table)} and quit this game'),
+          child: Text(
+            pending.zeroBank
+                ? 'Quit this game'
+                : 'Spend ${gemCount(table)} and quit this game',
+          ),
         ),
         FilledButton(
           onPressed: canCover
@@ -79,7 +91,11 @@ class GemShortfallDialog extends ConsumerWidget {
                   if (ok && context.mounted) Navigator.of(context).pop();
                 }
               : null,
-          child: Text('Cover ${gemCount(due)}'),
+          child: Text(
+            pending.zeroBank
+                ? 'Add ${gemCount(due)} and keep playing'
+                : 'Cover ${gemCount(due)}',
+          ),
         ),
       ],
     );

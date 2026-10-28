@@ -13,8 +13,8 @@ class PayoutBanner extends StatelessWidget {
     final bg = event.celebratory
         ? MargeColors.gold
         : event.amountCents > 0 && event.kind.name != 'none'
-            ? MargeColors.sky
-            : MargeColors.chipBlue;
+        ? MargeColors.sky
+        : MargeColors.chipBlue;
 
     final fg = event.celebratory ? MargeColors.velvet : MargeColors.cream;
 

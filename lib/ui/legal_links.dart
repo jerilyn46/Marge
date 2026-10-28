@@ -38,8 +38,7 @@ class LegalLinks {
     if (ok || !context.mounted) return;
     await Clipboard.setData(ClipboardData(text: fallback));
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Copied $fallback')),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('Copied $fallback')));
   }
 }

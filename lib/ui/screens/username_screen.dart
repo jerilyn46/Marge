@@ -51,19 +51,19 @@ class _UsernameScreenState extends ConsumerState<UsernameScreen> {
                   'Marge',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: MargeColors.lamp,
-                        letterSpacing: 2,
-                      ),
+                    fontWeight: FontWeight.w900,
+                    color: MargeColors.lamp,
+                    letterSpacing: 2,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'What should we call you at the table?',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: MargeColors.cream.withValues(alpha: 0.9),
-                        fontWeight: FontWeight.w600,
-                      ),
+                    color: MargeColors.cream.withValues(alpha: 0.9),
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: 28),
                 TextField(
