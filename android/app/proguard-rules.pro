@@ -36,3 +36,14 @@
 
 # App code (MainActivity etc.).
 -keep class com.jerilynroberts.marge.** { *; }
+
+# kotlinx.coroutines: ServiceLoader looks up these by name via
+# META-INF/services; R8 must not rename/strip them (Dispatchers.Main).
+-keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
+-keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
+-keep class * implements kotlinx.coroutines.internal.MainDispatcherFactory { <init>(); }
+-keep class * implements kotlinx.coroutines.CoroutineExceptionHandler { <init>(); }
+-keep class kotlinx.coroutines.android.AndroidDispatcherFactory { *; }
+-keep class kotlinx.coroutines.android.AndroidExceptionPreHandler { *; }
+-keepclassmembers class kotlinx.coroutines.** { volatile <fields>; }
+-dontwarn kotlinx.coroutines.**
