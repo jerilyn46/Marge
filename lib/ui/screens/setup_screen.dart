@@ -126,7 +126,8 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
                         onDecrement: _otherHumans > 0
                             ? () => _setOthers(_otherHumans - 1)
                             : null,
-                        onIncrement: MatchConfig.canIncrementOthers(
+                        onIncrement:
+                            MatchConfig.canIncrementOthers(
                               _bots,
                               _otherHumans,
                               _online,
@@ -144,7 +145,8 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
                         onDecrement: _online > 0
                             ? () => _setOnline(_online - 1)
                             : null,
-                        onIncrement: MatchConfig.canIncrementOnline(
+                        onIncrement:
+                            MatchConfig.canIncrementOnline(
                               _bots,
                               _otherHumans,
                               _online,
@@ -158,9 +160,11 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
                         label: 'Bots',
                         subtitle: 'Fill leftover seats only',
                         value: _bots,
-                        onDecrement:
-                            _bots > 0 ? () => _setBots(_bots - 1) : null,
-                        onIncrement: MatchConfig.canIncrementBots(
+                        onDecrement: _bots > 0
+                            ? () => _setBots(_bots - 1)
+                            : null,
+                        onIncrement:
+                            MatchConfig.canIncrementBots(
                               _bots,
                               _otherHumans,
                               _online,
@@ -176,7 +180,10 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
               const SizedBox(height: 12),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   color: MargeColors.velvet.withValues(alpha: 0.45),
                   borderRadius: BorderRadius.circular(16),
@@ -255,7 +262,9 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
               ElevatedButton(
                 onPressed: canStart
                     ? () {
-                        ref.read(matchProvider.notifier).start(
+                        ref
+                            .read(matchProvider.notifier)
+                            .start(
                               botCount: _bots,
                               otherHumanCount: _otherHumans,
                               onlinePlayerCount: _online,

@@ -52,7 +52,13 @@ class DenverTime {
   }
 
   /// Convert a Denver local midnight (or any civil time) to UTC.
-  static DateTime localToUtc(int year, int month, int day, [int hour = 0, int minute = 0]) {
+  static DateTime localToUtc(
+    int year,
+    int month,
+    int day, [
+    int hour = 0,
+    int minute = 0,
+  ]) {
     final naive = DateTime.utc(year, month, day, hour, minute);
     final asMst = naive.subtract(mst);
     if (offsetAt(asMst) == mst) return asMst;

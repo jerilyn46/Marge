@@ -12,10 +12,7 @@ class FeltHeroBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: const _FeltTablePainter(),
-      child: child,
-    );
+    return CustomPaint(painter: const _FeltTablePainter(), child: child);
   }
 }
 
@@ -29,11 +26,7 @@ class _FeltTablePainter extends CustomPainter {
       ..shader = const LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
-        colors: [
-          Color(0xFF2A2118),
-          MargeColors.velvet,
-          Color(0xFF14100C),
-        ],
+        colors: [Color(0xFF2A2118), MargeColors.velvet, Color(0xFF14100C)],
       ).createShader(rect);
     canvas.drawRect(rect, bg);
 
@@ -86,10 +79,7 @@ class _FeltTablePainter extends CustomPainter {
       ..shader = RadialGradient(
         center: Alignment.center,
         radius: 1.05,
-        colors: [
-          Colors.transparent,
-          Colors.black.withValues(alpha: 0.35),
-        ],
+        colors: [Colors.transparent, Colors.black.withValues(alpha: 0.35)],
       ).createShader(rect);
     canvas.drawRect(rect, vignette);
   }
@@ -100,7 +90,11 @@ class _FeltTablePainter extends CustomPainter {
 
 /// Tiny painted gem chip accent (playful chip, not cash).
 class GemChipAccent extends StatelessWidget {
-  const GemChipAccent({super.key, this.size = 18, this.color = MargeColors.gold});
+  const GemChipAccent({
+    super.key,
+    this.size = 18,
+    this.color = MargeColors.gold,
+  });
 
   final double size;
   final Color color;

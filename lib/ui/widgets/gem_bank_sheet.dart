@@ -27,8 +27,9 @@ class _GemBankSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
-    final gemBank =
-        ref.watch(coinLedgerProvider).availableHumanGems(settings.playerName);
+    final gemBank = ref
+        .watch(coinLedgerProvider)
+        .availableHumanGems(settings.playerName);
 
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -52,17 +53,14 @@ class _GemBankSheet extends ConsumerWidget {
           Text(
             'Gem bank',
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  color: MargeColors.gold,
-                ),
+              fontWeight: FontWeight.w900,
+              color: MargeColors.gold,
+            ),
           ),
           const SizedBox(height: 6),
           Text(
             '${gemCount(gemBank)} available',
-            style: const TextStyle(
-              fontWeight: FontWeight.w800,
-              fontSize: 18,
-            ),
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
           ),
           const SizedBox(height: 4),
           Text(

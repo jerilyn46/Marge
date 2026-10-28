@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
-
 /// One local "free gems are ready" reminder, on the existing daily-drip clock.
 ///
 /// - Scheduled only when the app goes to the background and the drip is
@@ -60,7 +59,9 @@ class DailyGemsReminder {
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       );
     } catch (e, st) {
-      debugPrint('DailyGemsReminder: schedule failed (in-app prompt only): $e\n$st');
+      debugPrint(
+        'DailyGemsReminder: schedule failed (in-app prompt only): $e\n$st',
+      );
     }
   }
 

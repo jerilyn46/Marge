@@ -46,10 +46,7 @@ class DieWidget extends StatelessWidget {
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: border,
-            width: kept ? 3 : 1.5,
-          ),
+          border: Border.all(color: border, width: kept ? 3 : 1.5),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.35),
@@ -128,8 +125,7 @@ class _DieFacePainter extends CustomPainter {
     _paintPattern(canvas, size);
     final paint = Paint()..color = pipColor;
     final r = size.shortestSide * 0.09;
-    Offset p(double x, double y) =>
-        Offset(size.width * x, size.height * y);
+    Offset p(double x, double y) => Offset(size.width * x, size.height * y);
 
     final map = <int, List<Offset>>{
       1: [p(0.5, 0.5)],

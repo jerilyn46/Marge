@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import 'dart:math';
 
 import 'bot_ai.dart';
@@ -396,6 +398,15 @@ class MatchController {
     return next;
   }
 
+  /// Tests only: force a seat's table gems (and House-stake flag).
+  @visibleForTesting
+  void debugSetBank(int seatIndex, int gems, {bool usedHouseStake = true}) {
+    _players[seatIndex] = _players[seatIndex].copyWith(
+      bankCents: gems,
+      usedHouseStake: usedHouseStake,
+    );
+  }
+
   /// Move virtual gems onto a seated human at this table only.
   int? addTableGems(int seatIndex, int gems) {
     if (gems <= 0 || seatIndex < 0 || seatIndex >= _players.length) return null;
@@ -667,10 +678,22 @@ class MatchController {
     }
 
     if (score.isScoring) {
-      final paidTotal = _collectFromOthers(score.perOpponentCents);
+      final paid = _collectFromOthers(score.perOpponentCents);
+      final paidTotal = paid.values.fold<int>(0, (a, b) => a + b);
       _credit(_seat, paidTotal);
+      final kicked = _kickZeroedPayers(paid.keys);
+      if (kicked.isNotEmpty && _playableCount <= 1) {
+        _sweepPotAfterKick(score, paid, kicked);
+        return;
+      }
       _lastPayout = PayoutEvent(
-        message: _describeScore(player.profile.name, score, paidTotal),
+        message: _describeScore(
+          player.profile.name,
+          score,
+          paidTotal,
+          paid: paid,
+          kicked: kicked,
+        ),
         kind: score.kind,
         amountCents: paidTotal,
         celebratory: score.kind == ScoreKind.tripleOnesPay,
@@ -818,6 +841,7 @@ class MatchController {
 
     _noteTripsPayout(score, waiting: humansShort.isNotEmpty);
     if (humansShort.isEmpty) {
+      if (_kickAfterFirstRollTrips(score)) return;
       _continueSameSeatAfterWin(restartRound: false);
       return;
     }
@@ -835,6 +859,53 @@ class MatchController {
       'for three ${face}s. Choose: cover with bank gems, '
       'or spend ${gemCount(payer.bankCents)} and quit this game.',
     );
+  }
+
+  /// First-roll trips paid in full can still leave a payer at exactly 0:
+  /// kick them; if nobody else is left, the roller sweeps the pot.
+  bool _kickAfterFirstRollTrips(ScoreResult score) {
+    final others = [
+      for (var i = 0; i < _players.length; i++)
+        if (i != _seat &&
+            _players[i].profile.participates &&
+            !_players[i].eliminated)
+          i,
+    ];
+    final kicked = _kickZeroedPayers(others);
+    if (kicked.isEmpty) return false;
+    final names = kicked.map((i) => _players[i].profile.name).join(', ');
+    if (_playableCount <= 1) {
+      final roller = _seat;
+      final name = _players[roller].profile.name;
+      final pot = _pot;
+      _credit(roller, pot);
+      _pot = 0;
+      final message =
+          '${_lastPayout?.message ?? ''} $names is out of gems — '
+          '$name wins the pot (${gemCount(pot)}).';
+      _lastPayout = PayoutEvent(
+        message: message.trim(),
+        kind: ScoreKind.tripleOnesPotWin,
+        amountCents: pot + _tripsCollected,
+        celebratory: true,
+        diceValues: List<int>.unmodifiable(_turn!.dice.values),
+        seatIndex: roller,
+      );
+      _log.add(message);
+      final winnerId = _players[roller].profile.id;
+      _endMatch();
+      _winnerId = winnerId;
+      _endMessage = message.trim();
+      return true;
+    }
+    final prev = _lastPayout!;
+    _lastPayout = PayoutEvent(
+      message: '${prev.message} $names is out of gems and out of the game.',
+      kind: prev.kind,
+      amountCents: prev.amountCents,
+      celebratory: prev.celebratory,
+    );
+    return false;
   }
 
   void _noteTripsPayout(ScoreResult score, {required bool waiting}) {
@@ -986,6 +1057,7 @@ class MatchController {
       }
       if (score != null && score.isFirstRollTripsPay) {
         _noteTripsPayout(score, waiting: false);
+        if (_kickAfterFirstRollTrips(score)) return;
       }
       _continueSameSeatAfterWin(restartRound: false);
       return;
@@ -1041,16 +1113,29 @@ class MatchController {
     _log.add('${_players[_seat].profile.name} keeps the seat — fresh 3 rolls.');
   }
 
-  String _describeScore(String name, ScoreResult score, int total) {
+  String _describeScore(
+    String name,
+    ScoreResult score,
+    int total, {
+    Map<int, int> paid = const {},
+    List<int> kicked = const [],
+  }) {
+    final each = payoutBreakdown(score.perOpponentCents, {
+      for (final e in paid.entries) _players[e.key].profile.name: e.value,
+    });
+    final out = kicked.isEmpty
+        ? ''
+        : ' ${kicked.map((i) => _players[i].profile.name).join(', ')} '
+              '${kicked.length == 1 ? 'is' : 'are'} out of gems and out of '
+              'the game.';
     switch (score.kind) {
       case ScoreKind.tripleOnesPay:
-        return '$name rolls triple ones! Collects $total gems '
-            '(${score.perOpponentCents} gems each).';
+        return '$name rolls triple ones! Collects $total gems ($each).$out';
       case ScoreKind.threeOfAKind:
         return '$name hits three ${score.faceValue}s! '
-            'Collects $total gems (${score.perOpponentCents} gems each).';
+            'Collects $total gems ($each).$out';
       case ScoreKind.straight:
-        return '$name nails a straight! Collects $total gems (5 gems each).';
+        return '$name nails a straight! Collects $total gems ($each).$out';
       case ScoreKind.tripleOnesPotWin:
         return '$name sweeps the pot!';
       case ScoreKind.none:
@@ -1058,15 +1143,79 @@ class MatchController {
     }
   }
 
-  int _collectFromOthers(int eachCents) {
-    if (eachCents <= 0) return 0;
-    var total = 0;
+  /// "10 gems each" when every payer covered [each]; otherwise names who
+  /// paid short so the parenthetical always adds up to the collected total.
+  static String payoutBreakdown(int each, Map<String, int> paidByName) {
+    final short = paidByName.entries.where((e) => e.value < each).toList();
+    if (short.isEmpty) return '$each gems each';
+    final full = paidByName.length - short.length;
+    final parts = <String>[
+      if (full > 0)
+        '$each gems each from ${full == 1 ? 'one player' : '$full players'}',
+      for (final e in short) '${e.key} had only ${e.value} of $each',
+    ];
+    return parts.join('; ');
+  }
+
+  /// Seat index → gems actually paid, for every other seated player.
+  Map<int, int> _collectFromOthers(int eachCents) {
+    final out = <int, int>{};
+    if (eachCents <= 0) return out;
     for (var i = 0; i < _players.length; i++) {
       if (i == _seat || !_plays(_players[i])) continue;
-      final paid = _takeFromBank(i, eachCents, soft: true);
-      total += paid;
+      out[i] = _takeFromBank(i, eachCents, soft: true);
     }
-    return total;
+    return out;
+  }
+
+  /// Jerilyn's rule: a payout that leaves a player at 0 gems kicks them
+  /// out of the game. Returns the seats kicked.
+  List<int> _kickZeroedPayers(Iterable<int> payers) {
+    final kicked = <int>[];
+    for (final i in payers) {
+      final p = _players[i];
+      if (!p.profile.participates || p.bankCents > 0) continue;
+      if (!p.eliminated) {
+        _players[i] = p.copyWith(eliminated: true);
+        _remember(i);
+        _log.add('${p.profile.name} is at 0 gems — out of the game.');
+      }
+      kicked.add(i);
+    }
+    return kicked;
+  }
+
+  /// The last opponent was kicked by a payout: roller takes the pot and
+  /// the match ends (same end path as a first-roll triple-ones sweep).
+  void _sweepPotAfterKick(
+    ScoreResult score,
+    Map<int, int> paid,
+    List<int> kicked,
+  ) {
+    final roller = _seat;
+    final name = _players[roller].profile.name;
+    final collected = paid.values.fold<int>(0, (a, b) => a + b);
+    final pot = _pot;
+    _credit(roller, pot);
+    _pot = 0;
+    final scoreLine = _describeScore(name, score, collected, paid: paid);
+    final out = kicked.map((i) => _players[i].profile.name).join(', ');
+    final message =
+        '$scoreLine $out is out of gems — $name wins the pot '
+        '(${gemCount(pot)}).';
+    _lastPayout = PayoutEvent(
+      message: message,
+      kind: ScoreKind.tripleOnesPotWin,
+      amountCents: pot + collected,
+      celebratory: true,
+      diceValues: List<int>.unmodifiable(_turn!.dice.values),
+      seatIndex: roller,
+    );
+    _log.add(message);
+    final winnerId = _players[roller].profile.id;
+    _endMatch();
+    _winnerId = winnerId;
+    _endMessage = message;
   }
 
   void _credit(int index, int cents) {

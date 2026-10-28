@@ -23,16 +23,17 @@ class GetMoreGemsButton extends StatelessWidget {
   static Future<void> openShop(BuildContext context) async {
     MatchNotifier? match;
     try {
-      match = ProviderScope.containerOf(context, listen: false)
-          .read(matchProvider.notifier);
+      match = ProviderScope.containerOf(
+        context,
+        listen: false,
+      ).read(matchProvider.notifier);
     } catch (_) {
       match = null;
     }
     match?.suspendForShop();
     try {
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const ShopScreen()),
-      );
+      await Navigator.of(context)
+          .push(MaterialPageRoute<void>(builder: (_) => const ShopScreen()));
     } finally {
       match?.resumeAfterShop();
     }
