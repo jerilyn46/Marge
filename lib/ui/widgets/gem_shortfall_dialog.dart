@@ -45,9 +45,9 @@ class GemShortfallDialog extends ConsumerWidget {
           children: [
             if (pending.zeroBank)
               Text(
-                '${payer.profile.name} is out of gems at this table. '
-                'Buy more gems to keep playing (at least ${gemCount(due)}), '
-                'or quit — if only one player is left, they win the pot. '
+                'You paid out everything you had at this table. '
+                'Add 10 gems to stay in, or quit — if you’re the last one '
+                'out, the other player takes the pot. '
                 'Gem bank has ${gemCount(bank)}.',
               )
             else
