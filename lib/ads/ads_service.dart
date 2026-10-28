@@ -7,6 +7,7 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'ad_ids.dart';
 import 'interstitial_gate.dart';
+import '../services/remove_ads.dart';
 
 /// Whether this build can host AdMob (mobile native only; not web/desktop).
 ///
@@ -235,6 +236,7 @@ class AdsService {
 
   Future<void> preloadInterstitial() async {
     if (_loadingInterstitial || _interstitial != null) return;
+    if (RemoveAds.owned.value) return; // Remove Ads owned: no interstitials.
     if (!await _adsAllowed()) return;
     _loadingInterstitial = true;
     await InterstitialAd.load(
@@ -297,6 +299,8 @@ class AdsService {
   /// Returns true if an ad was presented.
   Future<bool> maybeShowInterstitialAtBreak() async {
     if (!kAdmobEnabled) return false;
+    // Remove Ads owned: never an interstitial (rewarded stays opt-in).
+    if (RemoveAds.owned.value) return false;
     if (!interstitialGate.canShow) return false;
     if (!await _adsAllowed()) return false;
 

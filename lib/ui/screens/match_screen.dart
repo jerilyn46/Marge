@@ -16,6 +16,7 @@ import '../theme/marge_theme.dart';
 import '../visuals/bank_button.dart';
 import '../visuals/dice_3d.dart';
 import '../visuals/pot_of_gems.dart';
+import '../widgets/remove_ads_sheet.dart';
 import '../widgets/confetti_overlay.dart';
 import '../widgets/daily_drip_card.dart';
 import '../widgets/get_more_gems_button.dart';
@@ -1096,6 +1097,9 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
                       ),
                       const SizedBox(height: 12),
                       const Center(child: GetMoreGemsButton()),
+                      // Soft, dismissible, once per session; results only.
+                      const SizedBox(height: 8),
+                      const RemoveAdsMatchEndOffer(),
                     ],
                   ),
                 ),

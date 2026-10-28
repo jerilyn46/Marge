@@ -1,20 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../ads/ad_ids.dart';
 import '../../ads/ads_service.dart';
 import '../../ads/banner_ad_widget.dart';
+import '../../services/remove_ads.dart';
 import '../theme/marge_theme.dart';
 
 /// Lobby reserved band: AdMob banner when ads are enabled and ready;
 /// quiet house art otherwise (fail closed — never crashes the lobby).
+/// Remove Ads owned → always the house art, no banner request at all.
 ///
 /// Never place on [MatchScreen] or over Roll / Keep.
-class ReservedBannerStrip extends StatelessWidget {
+class ReservedBannerStrip extends ConsumerWidget {
   const ReservedBannerStrip({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    if (kAdmobEnabled && adsPlatformSupported) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final adsRemoved = ref.watch(removeAdsOwnedProvider);
+    if (kAdmobEnabled && adsPlatformSupported && !adsRemoved) {
       return Semantics(
         label: 'Lobby advertisement',
         child: const ColoredBox(

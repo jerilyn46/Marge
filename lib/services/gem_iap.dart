@@ -3,8 +3,11 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:in_app_purchase_android/billing_client_wrappers.dart';
+import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 
 import '../ui/legal_links.dart';
+import 'remove_ads.dart';
 import 'coin_ledger.dart';
 import 'settings_service.dart';
 
@@ -81,21 +84,23 @@ class GemIapState {
     bool clearError = false,
     String? purchasingId,
     bool clearPurchasing = false,
-  }) =>
-      GemIapState(
-        available: available ?? this.available,
-        loading: loading ?? this.loading,
-        products: products ?? this.products,
-        lastError: clearError ? null : (lastError ?? this.lastError),
-        purchasingId:
-            clearPurchasing ? null : (purchasingId ?? this.purchasingId),
-      );
+  }) => GemIapState(
+    available: available ?? this.available,
+    loading: loading ?? this.loading,
+    products: products ?? this.products,
+    lastError: clearError ? null : (lastError ?? this.lastError),
+    purchasingId: clearPurchasing ? null : (purchasingId ?? this.purchasingId),
+  );
 }
 
 /// Thin Play Billing wrapper. Credits [PlayerCoinLedger] only — never cash-out.
 class GemIapNotifier extends Notifier<GemIapState> {
   StreamSubscription<List<PurchaseDetails>>? _sub;
   final Set<String> _handledPurchaseIds = {};
+
+  /// True between a successful restorePurchases() call and the snapshot
+  /// batch it emits (the full list of what Play says is owned).
+  bool _restoreSnapshotPending = false;
 
   InAppPurchase get _iap => InAppPurchase.instance;
 
@@ -107,9 +112,14 @@ class GemIapNotifier extends Notifier<GemIapState> {
     });
     // Errors inside the microtask are caught in [_bootstrap]; never thrown
     // into the app zone.
+    if (debugSkipBootstrap) return const GemIapState(available: true);
     Future.microtask(_bootstrap);
     return const GemIapState(loading: true);
   }
+
+  /// Test hook: do not touch the Billing plugin.
+  @visibleForTesting
+  static bool debugSkipBootstrap = false;
 
   /// Max wait for Play Billing to report availability.
   static Duration billingTimeout = const Duration(seconds: 10);
@@ -153,7 +163,7 @@ class GemIapNotifier extends Notifier<GemIapState> {
       // of being auto-refunded by Play after 3 days. Consumed packs are not
       // returned, so this cannot double-credit a finished purchase.
       try {
-        await _iap.restorePurchases();
+        await _restoreWithSnapshot();
       } catch (e, st) {
         debugPrint('GemIap: restorePurchases failed (non-fatal): $e\n$st');
       }
@@ -171,7 +181,7 @@ class GemIapNotifier extends Notifier<GemIapState> {
     state = state.copyWith(loading: true, clearError: true);
     try {
       final response = await _iap
-          .queryProductDetails(GemPack.productIds)
+          .queryProductDetails({...GemPack.productIds, RemoveAds.productId})
           .timeout(billingTimeout);
       if (response.error != null) {
         debugPrint('GemIap: query error ${response.error}');
@@ -230,13 +240,109 @@ class GemIapNotifier extends Notifier<GemIapState> {
     }
   }
 
-  Future<void> _onPurchases(List<PurchaseDetails> purchases) async {
-    for (final purchase in purchases) {
-      await _handlePurchase(purchase);
+  /// Start the Remove Ads **non-consumable** purchase. Never consumed:
+  /// [completePurchase] only acknowledges it, so Play keeps it owned and
+  /// returns it from [restore] after a reinstall.
+  Future<bool> buyRemoveAds() async {
+    if (RemoveAds.owned.value) return false;
+    final details = state.products[RemoveAds.productId];
+    if (details == null) {
+      state = state.copyWith(lastError: 'Remove ads is not available yet.');
+      return false;
+    }
+    if (state.purchasingId != null) return false;
+    state = state.copyWith(purchasingId: RemoveAds.productId, clearError: true);
+    try {
+      final param = PurchaseParam(productDetails: details);
+      final started = await _iap.buyNonConsumable(purchaseParam: param);
+      if (!started) {
+        state = state.copyWith(
+          clearPurchasing: true,
+          lastError: 'Purchase did not start.',
+        );
+      }
+      return started;
+    } catch (e, st) {
+      debugPrint('GemIap: remove-ads buy failed: $e\n$st');
+      state = state.copyWith(
+        clearPurchasing: true,
+        lastError: 'Purchase failed — no charge applied.',
+      );
+      return false;
     }
   }
 
+  /// "Restore purchase": asks Play to re-deliver owned non-consumables.
+  /// Restored items arrive on the purchase stream as [PurchaseStatus.restored].
+  Future<bool> restore() async {
+    try {
+      await _restoreWithSnapshot().timeout(billingTimeout);
+      return true;
+    } catch (e, st) {
+      debugPrint('GemIap: restore failed: $e\n$st');
+      state = state.copyWith(lastError: 'Could not reach Google Play.');
+      return false;
+    }
+  }
+
+  /// restorePurchases() throws on any Billing error (then nothing is
+  /// emitted and ownership is left alone). On success it emits ONE batch of
+  /// every owned purchase, all [PurchaseStatus.restored] — possibly empty.
+  Future<void> _restoreWithSnapshot() async {
+    _restoreSnapshotPending = true;
+    try {
+      await _iap.restorePurchases();
+    } catch (_) {
+      _restoreSnapshotPending = false;
+      rethrow;
+    }
+  }
+
+  @visibleForTesting
+  void debugExpectRestoreSnapshot() => _restoreSnapshotPending = true;
+
+  @visibleForTesting
+  Future<void> debugOnPurchases(List<PurchaseDetails> purchases) =>
+      _onPurchases(purchases);
+
+  Future<void> _onPurchases(List<PurchaseDetails> purchases) async {
+    final snapshot =
+        _restoreSnapshotPending &&
+        purchases.every((p) => p.status == PurchaseStatus.restored);
+    if (snapshot) _restoreSnapshotPending = false;
+    for (final purchase in purchases) {
+      await _handlePurchase(purchase);
+    }
+    if (snapshot) await reconcileRemoveAds(purchases);
+  }
+
+  /// Play's restore snapshot is the source of truth: a restore can grant,
+  /// and absence revokes (refund / chargeback / revoked in Play Console).
+  @visibleForTesting
+  static Future<void> reconcileRemoveAds(List<PurchaseDetails> snapshot) async {
+    final ownedOnPlay = snapshot.any(
+      (p) => p.productID == RemoveAds.productId && !isPendingOnPlay(p),
+    );
+    if (!ownedOnPlay && RemoveAds.owned.value) {
+      debugPrint('GemIap: marge_remove_ads not owned on Play — revoking');
+      await RemoveAds.revoke();
+    }
+  }
+
+  /// The Android plugin reports every queried purchase as `restored`, even
+  /// ones still awaiting payment (e.g. cash). Those must not grant.
+  static bool isPendingOnPlay(PurchaseDetails p) =>
+      p is GooglePlayPurchaseDetails &&
+      p.billingClientPurchase.purchaseState == PurchaseStateWrapper.pending;
+
   Future<void> _handlePurchase(PurchaseDetails purchase) async {
+    if (purchase.productID == RemoveAds.productId) {
+      await handleRemoveAdsPurchase(
+        purchase,
+        complete: (p) => _iap.completePurchase(p),
+      );
+      return;
+    }
     final pack = GemPack.byId(purchase.productID);
     if (pack == null) {
       if (purchase.pendingCompletePurchase) {
@@ -270,7 +376,8 @@ class GemIapNotifier extends Notifier<GemIapState> {
         break;
     }
 
-    final dedupe = purchase.purchaseID ??
+    final dedupe =
+        purchase.purchaseID ??
         '${purchase.productID}:${purchase.transactionDate}';
     if (_handledPurchaseIds.contains(dedupe)) {
       if (purchase.pendingCompletePurchase) {
@@ -301,6 +408,50 @@ class GemIapNotifier extends Notifier<GemIapState> {
         await _iap.completePurchase(purchase);
       } catch (e, st) {
         debugPrint('GemIap: completePurchase failed: $e\n$st');
+      }
+    }
+  }
+
+  /// Remove Ads (non-consumable) purchase update. Visible for tests.
+  @visibleForTesting
+  Future<void> handleRemoveAdsPurchase(
+    PurchaseDetails purchase, {
+    required Future<void> Function(PurchaseDetails) complete,
+  }) async {
+    switch (purchase.status) {
+      case PurchaseStatus.pending:
+        state = state.copyWith(purchasingId: RemoveAds.productId);
+        return;
+      case PurchaseStatus.error:
+        debugPrint('GemIap: remove-ads error ${purchase.error}');
+        state = state.copyWith(
+          clearPurchasing: true,
+          lastError: 'Purchase error — ads unchanged, no charge applied.',
+        );
+        break;
+      case PurchaseStatus.canceled:
+        state = state.copyWith(clearPurchasing: true, clearError: true);
+        break;
+      case PurchaseStatus.purchased:
+      case PurchaseStatus.restored:
+        if (isPendingOnPlay(purchase)) {
+          // Paid-later purchase not settled yet: no grant, no acknowledge.
+          state = state.copyWith(purchasingId: RemoveAds.productId);
+          return;
+        }
+        // Unlike gem packs, a restore MUST grant again (reinstall / new
+        // device). Granting is idempotent, so no purchaseID de-dupe.
+        await RemoveAds.grant();
+        state = state.copyWith(clearPurchasing: true, clearError: true);
+        break;
+    }
+    if (purchase.pendingCompletePurchase) {
+      // Acknowledge only. Bought with buyNonConsumable, so the plugin never
+      // consumes it and Play keeps it owned for restore.
+      try {
+        await complete(purchase);
+      } catch (e, st) {
+        debugPrint('GemIap: remove-ads acknowledge failed: $e\n$st');
       }
     }
   }

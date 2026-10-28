@@ -9,6 +9,7 @@ import '../../services/settings_service.dart';
 import '../legal_links.dart';
 import '../theme/marge_theme.dart';
 import 'terms_screen.dart';
+import '../widgets/remove_ads_sheet.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -74,6 +75,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               onChanged: (v) => n.setHaptics(v),
             ),
             const Divider(height: 32),
+            const RemoveAdsSettingsRow(restoreInAdsOffBuild: true),
             ListTile(
               leading: const Icon(Icons.menu_book_rounded),
               title: const Text('Reset rules onboarding'),

@@ -5,6 +5,7 @@ import '../theme/marge_theme.dart';
 import 'rules_screen.dart';
 import 'settings_screen.dart';
 import 'terms_screen.dart';
+import '../widgets/remove_ads_sheet.dart';
 
 /// Settings, rules, and quiet legal hooks — off the home lobby.
 class MoreScreen extends ConsumerWidget {
@@ -50,6 +51,7 @@ class MoreScreen extends ConsumerWidget {
                       },
                     ),
                     const Divider(height: 1),
+                    const RemoveAdsSettingsRow(),
                     ListTile(
                       leading: const Icon(
                         Icons.menu_book_rounded,

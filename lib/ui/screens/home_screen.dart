@@ -16,6 +16,7 @@ import '../widgets/daily_gems_ready_prompt.dart';
 import '../widgets/felt_hero_backdrop.dart';
 import '../widgets/gem_bank_sheet.dart';
 import '../widgets/get_more_gems_button.dart';
+import '../widgets/remove_ads_sheet.dart';
 import '../widgets/reserved_banner_strip.dart';
 import 'friends_screen.dart';
 import 'match_screen.dart';
@@ -203,6 +204,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         const SizedBox(height: 18),
                         // Reserved lobby strip — AdMob banner when enabled, else house art.
                         const ReservedBannerStrip(),
+                        const Center(child: RemoveAdsBannerLink()),
                         const SizedBox(height: 12),
                       ],
                     ),
