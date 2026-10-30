@@ -695,11 +695,6 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       await _sfx.bust();
     }
     c.bank();
-    if (t.lastScore.isScoring) {
-      ref
-          .read(coinLedgerProvider.notifier)
-          .completeGoal(DailyGoal.bankScoringHand);
-    }
     final payout = c.snapshot.lastPayout;
     if (payout?.celebratory == true &&
         c.snapshot.phase == MatchPhase.awaitingHandoff) {

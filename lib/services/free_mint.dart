@@ -2,8 +2,8 @@ import 'denver_time.dart';
 
 /// Daily goals that pay free gems (inside the free-mint caps).
 enum DailyGoal {
-  /// Bank a scoring hand (any winning hand you bank yourself).
-  bankScoringHand(id: 'bank_hand', title: 'Bank a scoring hand', gems: 15),
+  /// Growth lock: earn gems from a rewarded ad, or open the Shop screen.
+  watchOrShop(id: 'watch_or_shop', title: 'Watch an ad or open Shop', gems: 15),
 
   /// Play a match through to the final results.
   finishMatch(id: 'finish_match', title: 'Finish a match', gems: 20);

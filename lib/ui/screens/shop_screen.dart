@@ -8,6 +8,7 @@ import '../../cosmetics/table_felt.dart';
 import '../../engine/gem_label.dart';
 import '../../services/coin_ledger.dart';
 import '../../services/gem_iap.dart';
+import '../../services/free_mint.dart';
 import '../../services/settings_service.dart';
 import '../theme/marge_theme.dart';
 import '../widgets/rewarded_gems_button.dart';
@@ -19,11 +20,27 @@ import '../widgets/remove_ads_sheet.dart';
 /// Virtual gems shop: daily drip, Play Billing packs, rewarded ads, skins.
 ///
 /// Gems are virtual only — never real currency, never cash-out.
-class ShopScreen extends ConsumerWidget {
+class ShopScreen extends ConsumerStatefulWidget {
   const ShopScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ShopScreen> createState() => _ShopScreenState();
+}
+
+class _ShopScreenState extends ConsumerState<ShopScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Daily goal (Growth lock): opening the Shop completes "Watch an ad or
+    // open Shop" (15 gems, claim once per Denver day, inside free-mint caps).
+    Future.microtask(() {
+      if (!mounted) return;
+      ref.read(coinLedgerProvider.notifier).completeGoal(DailyGoal.watchOrShop);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final cos = ref.watch(cosmeticsProvider);
     final name = ref.watch(settingsProvider).playerName;
     final bank = ref.watch(coinLedgerProvider).availableHumanGems(name);

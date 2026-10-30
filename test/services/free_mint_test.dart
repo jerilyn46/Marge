@@ -1,3 +1,4 @@
+import 'package:marge/ads/ads_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:marge/services/coin_ledger.dart';
 import 'package:marge/services/free_mint.dart';
@@ -56,15 +57,49 @@ void main() {
       final l = PlayerCoinLedger();
       expect(l.claimGoal('You', DailyGoal.finishMatch, utcNow: wed), isNull);
       l.completeGoal(DailyGoal.finishMatch, utcNow: wed);
-      l.completeGoal(DailyGoal.bankScoringHand, utcNow: wed);
+      l.completeGoal(DailyGoal.watchOrShop, utcNow: wed);
       expect(l.claimGoal('You', DailyGoal.finishMatch, utcNow: wed), 20);
       expect(l.claimGoal('You', DailyGoal.finishMatch, utcNow: wed), isNull);
-      expect(l.claimGoal('You', DailyGoal.bankScoringHand, utcNow: wed), 15);
+      expect(l.claimGoal('You', DailyGoal.watchOrShop, utcNow: wed), 15);
       expect(l.availableHumanGems('You'), 135);
       // Next day: goals reset to not-done.
       expect(l.claimGoal('You', DailyGoal.finishMatch, utcNow: day(1)), isNull);
       l.completeGoal(DailyGoal.finishMatch, utcNow: day(1));
       expect(l.claimGoal('You', DailyGoal.finishMatch, utcNow: day(1)), 20);
+    });
+  });
+
+  group('watch-or-shop goal (15)', () {
+    test('open Shop completes once per day; claim 15 once', () {
+      final l = PlayerCoinLedger();
+      expect(DailyGoal.watchOrShop.gems, 15);
+      expect(l.claimGoal('You', DailyGoal.watchOrShop, utcNow: wed), isNull);
+      expect(l.completeGoal(DailyGoal.watchOrShop, utcNow: wed), isTrue);
+      // Second Shop open / rewarded earn same day: no-op.
+      expect(l.completeGoal(DailyGoal.watchOrShop, utcNow: wed), isFalse);
+      expect(l.claimGoal('You', DailyGoal.watchOrShop, utcNow: wed), 15);
+      expect(l.claimGoal('You', DailyGoal.watchOrShop, utcNow: wed), isNull);
+      expect(l.completeGoal(DailyGoal.watchOrShop, utcNow: day(1)), isTrue);
+      expect(l.claimGoal('You', DailyGoal.watchOrShop, utcNow: day(1)), 15);
+    });
+
+    test('claim clamps under free-mint caps', () {
+      final l = PlayerCoinLedger();
+      l.freeMint.mint(80, wed);
+      l.completeGoal(DailyGoal.watchOrShop, utcNow: wed);
+      expect(l.claimGoal('You', DailyGoal.watchOrShop, utcNow: wed), 5);
+      expect(l.freeMint.remaining(wed), 0);
+    });
+
+    test('rewarded earn hook completes the goal', () async {
+      final l = PlayerCoinLedger();
+      final ads = AdsService(
+        onRewardedEarned: () =>
+            l.completeGoal(DailyGoal.watchOrShop, utcNow: wed),
+      );
+      ads.onRewardedEarned!();
+      expect(l.freeMint.goalDone(DailyGoal.watchOrShop, wed), isTrue);
+      expect(l.claimGoal('You', DailyGoal.watchOrShop, utcNow: wed), 15);
     });
   });
 

@@ -7,6 +7,8 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'ad_ids.dart';
 import 'interstitial_gate.dart';
+import '../services/coin_ledger.dart';
+import '../services/free_mint.dart';
 import '../services/remove_ads.dart';
 import '../services/rewarded_quota.dart';
 
@@ -28,7 +30,10 @@ bool get adsPlatformSupported =>
 ///
 /// Fail closed: consent / SDK errors leave ads off. Never mid-roll.
 class AdsService {
-  AdsService();
+  AdsService({this.onRewardedEarned});
+
+  /// Called after a rewarded watch is earned and gems granted (daily goal hook).
+  final void Function()? onRewardedEarned;
 
   final InterstitialGate interstitialGate = InterstitialGate();
 
@@ -334,6 +339,7 @@ class AdsService {
     Future<void> grant() async {
       await RewardedQuota.consume();
       await onReward(amount);
+      onRewardedEarned?.call();
     }
 
     if (!await _adsAllowed()) {
@@ -394,7 +400,11 @@ class AdsService {
 
 /// Process-wide ads service (bootstrapped from [main] after first frame).
 final adsServiceProvider = Provider<AdsService>((ref) {
-  final service = AdsService();
+  final service = AdsService(
+    onRewardedEarned: () => ref
+        .read(coinLedgerProvider.notifier)
+        .completeGoal(DailyGoal.watchOrShop),
+  );
   ref.onDispose(service.dispose);
   return service;
 });
