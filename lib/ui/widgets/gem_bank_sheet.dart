@@ -7,6 +7,7 @@ import '../../services/settings_service.dart';
 import '../theme/marge_theme.dart';
 import 'daily_drip_card.dart';
 import 'get_more_gems_button.dart';
+import 'rewarded_gems_button.dart';
 
 /// Jewel-tray detail for the gem bank — virtual gems only (not real money).
 Future<void> showGemBankSheet(BuildContext context, WidgetRef ref) {
@@ -75,6 +76,8 @@ class _GemBankSheet extends ConsumerWidget {
           const DailyDripCard(compact: true),
           const SizedBox(height: 10),
           const GetMoreGemsButton(),
+          const SizedBox(height: 6),
+          const RewardedShortfallButton(compact: true),
           const SizedBox(height: 8),
         ],
       ),

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../ads/ad_ids.dart';
-import '../../ads/ads_service.dart';
 import '../../cosmetics/dice_skin.dart';
 import '../../cosmetics/skins_service.dart';
 import '../../engine/gem_label.dart';
@@ -10,6 +9,7 @@ import '../../services/coin_ledger.dart';
 import '../../services/gem_iap.dart';
 import '../../services/settings_service.dart';
 import '../theme/marge_theme.dart';
+import '../widgets/rewarded_gems_button.dart';
 import '../widgets/daily_drip_card.dart';
 import '../widgets/die_widget.dart';
 import '../widgets/remove_ads_sheet.dart';
@@ -256,39 +256,8 @@ class _RewardedGemsCard extends ConsumerStatefulWidget {
 }
 
 class _RewardedGemsCardState extends ConsumerState<_RewardedGemsCard> {
-  var _busy = false;
-
-  Future<void> _watch() async {
-    if (_busy) return;
-    setState(() => _busy = true);
-    try {
-      final ads = ref.read(adsServiceProvider);
-      final name = ref.read(settingsProvider).playerName;
-      final earned = await ads.showRewardedForVirtualChips(
-        onReward: (amount) async {
-          ref
-              .read(coinLedgerProvider.notifier)
-              .grantHumanPlayCoins(name, cents: amount);
-        },
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            earned
-                ? 'Earned ${gemCount(AdIds.rewardedChipGrant)} virtual gems. Not real money.'
-                : 'Ad unavailable — try again later.',
-          ),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final adsOn = kAdmobEnabled;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -301,27 +270,16 @@ class _RewardedGemsCardState extends ConsumerState<_RewardedGemsCard> {
             ),
             const SizedBox(height: 4),
             Text(
-              'A short video for +${AdIds.rewardedChipGrant} gems in your '
-              'gem bank. Virtual gems only — not real money.',
+              'A short video for +${AdIds.rewardedShortfallGrant} gems in your '
+              'gem bank (up to ${AdIds.rewardedDailyCap} videos a day, shared '
+              'with the post-match double). Virtual gems only — not real money.',
               style: TextStyle(
                 color: MargeColors.cream.withValues(alpha: 0.8),
                 fontSize: 13,
               ),
             ),
             const SizedBox(height: 10),
-            FilledButton.icon(
-              onPressed: (_busy || !adsOn) ? null : _watch,
-              icon: _busy
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.ondemand_video_rounded),
-              label: Text(
-                _busy ? 'Loading…' : 'Watch for +${AdIds.rewardedChipGrant}',
-              ),
-            ),
+            const RewardedShortfallButton(),
           ],
         ),
       ),

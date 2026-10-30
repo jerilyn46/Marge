@@ -3,12 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../ads/ad_ids.dart';
 import '../../ads/ads_service.dart';
 import '../../debug/settle_log.dart';
 import '../../cosmetics/skins_service.dart';
 import '../../engine/engine.dart';
 import '../../engine/gem_label.dart';
 import '../../services/coin_ledger.dart';
+import '../../services/rewarded_quota.dart';
 import '../../services/settings_service.dart';
 import '../../services/sfx_service.dart';
 import '../match_provider.dart';
@@ -1096,6 +1098,7 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
                         ),
                       ),
                       const SizedBox(height: 12),
+                      const _DoubleGemsOffer(),
                       const Center(child: GetMoreGemsButton()),
                       // Soft, dismissible, once per session; results only.
                       const SizedBox(height: 8),
@@ -1147,6 +1150,82 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Post-match rewarded "double your winnings" — once per match, only when
+/// the local player won gems, shares the 3/day rewarded quota. Hidden in
+/// ads-off builds or when the quota is spent.
+class _DoubleGemsOffer extends ConsumerStatefulWidget {
+  const _DoubleGemsOffer();
+
+  @override
+  ConsumerState<_DoubleGemsOffer> createState() => _DoubleGemsOfferState();
+}
+
+class _DoubleGemsOfferState extends ConsumerState<_DoubleGemsOffer> {
+  var _busy = false;
+  var _done = false;
+
+  Future<void> _watch() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final match = ref.read(matchProvider.notifier);
+      final won = match.localMatchWinnings();
+      final earned = await ref
+          .read(adsServiceProvider)
+          .showRewardedForVirtualChips(
+            amount: won,
+            onReward: (_) async {
+              match.claimDoubleWinnings();
+            },
+          );
+      if (!mounted) return;
+      if (earned) setState(() => _done = true);
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(
+          content: Text(
+            earned
+                ? 'Doubled! +${gemCount(won)} to your gem bank. Virtual gems only.'
+                : 'Ad unavailable — try again later.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!kAdmobEnabled) return const SizedBox.shrink();
+    ref.watch(matchProvider);
+    final match = ref.read(matchProvider.notifier);
+    if (_done || !match.canOfferDouble) return const SizedBox.shrink();
+    final won = match.localMatchWinnings();
+    return ValueListenableBuilder<int>(
+      valueListenable: RewardedQuota.remainingNotifier,
+      builder: (context, _, _) {
+        final left = RewardedQuota.remaining();
+        if (left <= 0) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Center(
+            child: FilledButton.icon(
+              key: const ValueKey('match-end-double'),
+              onPressed: _busy ? null : _watch,
+              icon: const Icon(Icons.ondemand_video_rounded),
+              label: Text(
+                _busy
+                    ? 'Loading…'
+                    : 'Watch to double +${gemCount(won)} ($left left today)',
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

@@ -8,6 +8,7 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'ad_ids.dart';
 import 'interstitial_gate.dart';
 import '../services/remove_ads.dart';
+import '../services/rewarded_quota.dart';
 
 /// Whether this build can host AdMob (mobile native only; not web/desktop).
 ///
@@ -319,15 +320,27 @@ class AdsService {
 
   /// Show a rewarded ad. On earn reward, invokes [onReward] (grant virtual chips).
   /// Returns true if the user earned the reward.
+  ///
+  /// Shared daily quota ([RewardedQuota], 3 per Denver day): refuses when
+  /// exhausted and consumes one watch only when the reward is earned.
+  /// Remove Ads ownership does not block rewarded (it stays opt-in).
+  /// Rewarded grants bypass any free-mint caps.
   Future<bool> showRewardedForVirtualChips({
     required FutureOr<void> Function(int amount) onReward,
+    int amount = AdIds.rewardedShortfallGrant,
   }) async {
     if (!kAdmobEnabled) return false;
+    if (!RewardedQuota.canWatch()) return false;
+    Future<void> grant() async {
+      await RewardedQuota.consume();
+      await onReward(amount);
+    }
+
     if (!await _adsAllowed()) {
       // Test / unsupported: still allow a local grant in debug when using
       // test IDs so UI wiring can be verified without a device ad fill.
       if (kDebugMode && !adsPlatformSupported) {
-        await onReward(AdIds.rewardedChipGrant);
+        await grant();
         return true;
       }
       return false;
@@ -360,8 +373,9 @@ class AdsService {
     _rewarded = null;
     await ad.show(
       onUserEarnedReward: (AdWithoutView unused, RewardItem reward) async {
-        await onReward(AdIds.rewardedChipGrant);
-        if (!earned.isCompleted) earned.complete(true);
+        if (earned.isCompleted) return;
+        earned.complete(true);
+        await grant();
       },
     );
     return earned.future.timeout(
