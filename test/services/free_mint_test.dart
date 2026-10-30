@@ -129,4 +129,22 @@ void main() {
       expect(back.freeMint.remaining(wed), 0);
     });
   });
+
+  test('prevDay handles valid and malformed keys without throwing', () {
+    expect(FreeMintLedger.prevDayForTest('2026-03-01'), '2026-02-28');
+    expect(FreeMintLedger.prevDayForTest('garbage'), 'garbage');
+    expect(FreeMintLedger.prevDayForTest('2026-xx-01'), '2026-xx-01');
+    expect(FreeMintLedger.prevDayForTest(''), '');
+  });
+
+  test('corrupt freeMint / ledger json decodes without throwing', () {
+    for (final raw in [
+      '{"freeMint":{"lastStreakDay":"bad-key","streakLength":"x","goalsDone":5}}',
+      '{"freeMint":"nope","balances":[1]}',
+      '[]',
+      '{not json',
+    ]) {
+      expect(() => PlayerCoinLedger.decode(raw), returnsNormally);
+    }
+  });
 }

@@ -96,6 +96,12 @@ class GemPack {
   }
 
   static Set<String> get productIds => {for (final p in all) p.productId};
+
+  /// SKUs queried at IAP bootstrap (cold start). Excludes [weekend]: querying
+  /// it at launch crashed Flip 7 on 0.1.43. The weekend SKU is queried lazily
+  /// by [GemIapNotifier.loadWeekendProduct] when the Shop opens.
+  static Set<String> get bootstrapProductIds =>
+      {for (final p in all) if (p.productId != weekend.productId) p.productId};
 }
 
 /// Purchase / store readiness for the Shop UI.
@@ -219,7 +225,8 @@ class GemIapNotifier extends Notifier<GemIapState> {
     state = state.copyWith(loading: true, clearError: true);
     try {
       final response = await _iap
-          .queryProductDetails({...GemPack.productIds, RemoveAds.productId})
+          .queryProductDetails(
+              {...GemPack.bootstrapProductIds, RemoveAds.productId})
           .timeout(billingTimeout);
       if (response.error != null) {
         debugPrint('GemIap: query error ${response.error}');
@@ -246,6 +253,28 @@ class GemIapNotifier extends Notifier<GemIapState> {
         loading: false,
         lastError: 'Could not load gem packs.',
       );
+    }
+  }
+
+  /// Lazily query the weekend SKU (Shop open). Never throws; merges into
+  /// existing products on success.
+  Future<void> loadWeekendProduct() async {
+    if (state.products.containsKey(GemPack.weekend.productId)) return;
+    try {
+      final response = await _iap
+          .queryProductDetails({GemPack.weekend.productId})
+          .timeout(billingTimeout);
+      if (response.error != null) {
+        debugPrint('GemIap: weekend query error ${response.error}');
+        return;
+      }
+      final extra = <String, ProductDetails>{
+        for (final p in response.productDetails) p.id: p,
+      };
+      if (extra.isEmpty) return;
+      state = state.copyWith(products: {...state.products, ...extra});
+    } catch (e, st) {
+      debugPrint('GemIap: loadWeekendProduct failed (non-fatal): $e\n$st');
     }
   }
 
@@ -353,9 +382,22 @@ class GemIapNotifier extends Notifier<GemIapState> {
         purchases.every((p) => p.status == PurchaseStatus.restored);
     if (snapshot) _restoreSnapshotPending = false;
     for (final purchase in purchases) {
-      await _handlePurchase(purchase);
+      try {
+        await _handlePurchase(purchase);
+      } catch (e, st) {
+        // Fail closed: an unexpected purchase (e.g. weekend SKU arriving in an
+        // upgrade restore before its details were queried) must never kill
+        // the app. Not completed here, so Play re-delivers it next launch.
+        debugPrint('GemIap: handle ${purchase.productID} failed: $e\n$st');
+      }
     }
-    if (snapshot) await reconcileRemoveAds(purchases);
+    if (snapshot) {
+      try {
+        await reconcileRemoveAds(purchases);
+      } catch (e, st) {
+        debugPrint('GemIap: reconcileRemoveAds failed: $e\n$st');
+      }
+    }
   }
 
   /// Play's restore snapshot is the source of truth: a restore can grant,

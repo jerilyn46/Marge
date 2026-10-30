@@ -108,4 +108,10 @@ void main() {
   test('dice skins untouched', () {
     expect(DiceSkinCatalog.all, isNotEmpty);
   });
+
+  test('byId resolves every felt id without throwing', () {
+    for (final id in TableFeltId.values) {
+      expect(TableFeltCatalog.byId(id).id, id);
+    }
+  });
 }

@@ -14,6 +14,12 @@ void main() {
       expect(GemPack.productIds, contains('marge_gems_weekend'));
     });
 
+    test('weekend SKU is not queried at cold-start bootstrap', () {
+      expect(GemPack.bootstrapProductIds, isNot(contains('marge_gems_weekend')));
+      expect(GemPack.bootstrapProductIds,
+          {'marge_gems_small', 'marge_gems_medium', 'marge_gems_large'});
+    });
+
     // Oct 2026 (MDT, UTC-6): Mon 26 .. Sun Nov 1.
     test('offered Friday–Sunday Denver', () {
       // Fri Oct 30 00:00 MDT = 06:00Z

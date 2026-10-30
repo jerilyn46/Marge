@@ -36,6 +36,12 @@ class _ShopScreenState extends ConsumerState<ShopScreen> {
     Future.microtask(() {
       if (!mounted) return;
       ref.read(coinLedgerProvider.notifier).completeGoal(DailyGoal.watchOrShop);
+      // Weekend SKU is queried lazily here, not at cold-start bootstrap.
+      try {
+        ref.read(gemIapProvider.notifier).loadWeekendProduct();
+      } catch (e) {
+        debugPrint('Shop: weekend load skipped: $e');
+      }
     });
   }
 
