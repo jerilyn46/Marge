@@ -41,10 +41,7 @@ void main() {
     expect(first.snapshot.config.botCount, 2);
 
     match.endMatch();
-    expect(
-      container.read(matchProvider)!.snapshot.phase,
-      MatchPhase.matchEnd,
-    );
+    expect(container.read(matchProvider)!.snapshot.phase, MatchPhase.matchEnd);
 
     match.rematch();
     final again = container.read(matchProvider);

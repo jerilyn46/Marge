@@ -23,7 +23,10 @@ void main() {
       final ledger = PlayerCoinLedger();
       final now = DateTime.utc(2026, 10, 8, 18); // 12:00 MDT Oct 8
       ledger.claimDailyDrip('You', utcNow: now);
-      expect(ledger.nextDailyDripUtc(utcNow: now), DateTime.utc(2026, 10, 9, 6));
+      expect(
+        ledger.nextDailyDripUtc(utcNow: now),
+        DateTime.utc(2026, 10, 9, 6),
+      );
     });
 
     test('across the November DST change (MST = 07:00 UTC)', () {

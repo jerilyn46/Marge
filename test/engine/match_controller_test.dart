@@ -258,42 +258,46 @@ void main() {
       expect(c.snapshot.potCents, 20);
     });
 
-    test('triple-1 first roll: everyone pays 10, roller takes pot, match ends', () {
-      // DiceSet.rollAll uses nextInt(6)+1 three times.
-      // We need 1,1,1 → nextInt returns 0,0,0.
-      final rng = ScriptedRandom([0, 0, 0]);
-      final c = MatchController(
-        config: const MatchConfig(botCount: 3, otherHumanCount: 0),
-        rng: rng,
-      );
-      c.startMatch();
-      expect(c.snapshot.potCents, 40);
-      expect(c.snapshot.currentPlayer.profile.isHuman, isTrue);
-      final before = c.snapshot.currentPlayer.bankCents;
-      final botsBefore = [
-        for (final p in c.snapshot.players.skip(1)) p.bankCents,
-      ];
-      c.roll();
-      final s = c.snapshot;
-      expect(s.lastPayout?.kind, ScoreKind.tripleOnesPotWin);
-      expect(s.lastPayout?.celebratory, isTrue);
-      expect(s.lastPayout?.amountCents, 70); // 3 x 10 + pot 40
-      expect(s.phase, MatchPhase.matchEnd);
-      final winner = s.players.firstWhere((p) => p.profile.isHuman);
-      expect(winner.bankCents, before + 30 + 40);
-      expect([for (final p in s.players.skip(1)) p.bankCents], [
-        for (final b in botsBefore) b - 10,
-      ]);
-      expect(s.potCents, 0);
-      expect(s.winnerId, winner.profile.id);
-      expect(
-        s.endMessage,
-        'You rolled three 1s on the first roll! '
-        'Everyone pays 10 gems and You wins the pot.',
-      );
-      expect(s.lastPayout?.diceValues, [1, 1, 1]);
-      expect(s.lastPayout?.seatIndex, 0);
-    });
+    test(
+      'triple-1 first roll: everyone pays 10, roller takes pot, match ends',
+      () {
+        // DiceSet.rollAll uses nextInt(6)+1 three times.
+        // We need 1,1,1 → nextInt returns 0,0,0.
+        final rng = ScriptedRandom([0, 0, 0]);
+        final c = MatchController(
+          config: const MatchConfig(botCount: 3, otherHumanCount: 0),
+          rng: rng,
+        );
+        c.startMatch();
+        expect(c.snapshot.potCents, 40);
+        expect(c.snapshot.currentPlayer.profile.isHuman, isTrue);
+        final before = c.snapshot.currentPlayer.bankCents;
+        final botsBefore = [
+          for (final p in c.snapshot.players.skip(1)) p.bankCents,
+        ];
+        c.roll();
+        final s = c.snapshot;
+        expect(s.lastPayout?.kind, ScoreKind.tripleOnesPotWin);
+        expect(s.lastPayout?.celebratory, isTrue);
+        expect(s.lastPayout?.amountCents, 70); // 3 x 10 + pot 40
+        expect(s.phase, MatchPhase.matchEnd);
+        final winner = s.players.firstWhere((p) => p.profile.isHuman);
+        expect(winner.bankCents, before + 30 + 40);
+        expect(
+          [for (final p in s.players.skip(1)) p.bankCents],
+          [for (final b in botsBefore) b - 10],
+        );
+        expect(s.potCents, 0);
+        expect(s.winnerId, winner.profile.id);
+        expect(
+          s.endMessage,
+          'You rolled three 1s on the first roll! '
+          'Everyone pays 10 gems and You wins the pot.',
+        );
+        expect(s.lastPayout?.diceValues, [1, 1, 1]);
+        expect(s.lastPayout?.seatIndex, 0);
+      },
+    );
 
     test('three of a kind collects face from others', () {
       // Roll three 4s on first roll: nextInt → 3,3,3

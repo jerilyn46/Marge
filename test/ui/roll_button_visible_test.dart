@@ -37,10 +37,7 @@ void main() {
         overrides: [
           matchProvider.overrideWith(() => _SeededMatchNotifier(view)),
         ],
-        child: MaterialApp(
-          theme: buildMargeTheme(),
-          home: const MatchScreen(),
-        ),
+        child: MaterialApp(theme: buildMargeTheme(), home: const MatchScreen()),
       ),
     );
     await tester.pumpAndSettle();
