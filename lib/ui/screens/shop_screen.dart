@@ -12,6 +12,7 @@ import '../../services/settings_service.dart';
 import '../theme/marge_theme.dart';
 import '../widgets/rewarded_gems_button.dart';
 import '../widgets/daily_drip_card.dart';
+import '../widgets/daily_rewards_card.dart';
 import '../widgets/die_widget.dart';
 import '../widgets/remove_ads_sheet.dart';
 
@@ -89,6 +90,8 @@ class ShopScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 14),
               const DailyDripCard(),
+              const SizedBox(height: 14),
+              const DailyRewardsCard(),
               const SizedBox(height: 14),
               const RemoveAdsTile(),
               const _SectionTitle('Gem packs'),

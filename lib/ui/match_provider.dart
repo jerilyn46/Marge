@@ -9,6 +9,7 @@ import '../engine/engine.dart';
 import '../services/saved_games.dart';
 import '../services/table_gem_book.dart';
 import '../services/coin_ledger.dart';
+import '../services/free_mint.dart';
 import '../services/friends_service.dart';
 import '../services/local_turn_alerts.dart';
 import '../services/settings_service.dart';
@@ -461,6 +462,9 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       _releasedTable = true;
       return;
     }
+    if (c.snapshot.phase == MatchPhase.matchEnd) {
+      ref.read(coinLedgerProvider.notifier).completeGoal(DailyGoal.finishMatch);
+    }
     PlayerState? local;
     for (final p in c.snapshot.players) {
       if (p.profile.id == 'human_0') {
@@ -691,6 +695,11 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       await _sfx.bust();
     }
     c.bank();
+    if (t.lastScore.isScoring) {
+      ref
+          .read(coinLedgerProvider.notifier)
+          .completeGoal(DailyGoal.bankScoringHand);
+    }
     final payout = c.snapshot.lastPayout;
     if (payout?.celebratory == true &&
         c.snapshot.phase == MatchPhase.awaitingHandoff) {
