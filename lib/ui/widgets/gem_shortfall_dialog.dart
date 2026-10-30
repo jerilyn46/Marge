@@ -9,6 +9,7 @@ import '../match_provider.dart';
 import '../theme/marge_theme.dart';
 import 'daily_drip_card.dart';
 import 'get_more_gems_button.dart';
+import 'rewarded_gems_button.dart';
 
 /// Choice when a seated human cannot cover a first-roll trips payment.
 class GemShortfallDialog extends ConsumerWidget {
@@ -69,6 +70,7 @@ class GemShortfallDialog extends ConsumerWidget {
           const DailyDripCard(compact: true),
           const SizedBox(height: 8),
           const GetMoreGemsButton(compact: true),
+          const RewardedShortfallButton(compact: true),
         ],
       ),
       actions: [

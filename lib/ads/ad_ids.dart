@@ -49,8 +49,16 @@ class AdIds {
       'ca-app-pub-3940256099942544/1033173712';
   static const String testRewarded = 'ca-app-pub-3940256099942544/5224354917';
 
-  /// Virtual gems granted to the **main gem bank** after a successful rewarded ad.
-  static const int rewardedChipGrant = 25;
+  /// Virtual gems granted to the **main gem bank** for the shortfall /
+  /// gem-bank "Watch for +50" rewarded ad (locked economy 2026-10-28).
+  static const int rewardedShortfallGrant = 50;
+
+  /// Back-compat alias: the only flat rewarded grant is the shortfall fill.
+  static const int rewardedChipGrant = rewardedShortfallGrant;
+
+  /// Shared cap across every rewarded placement (post-match double +
+  /// shortfall fill), per America/Denver calendar day.
+  static const int rewardedDailyCap = 3;
 
   static String get appId {
     const v = String.fromEnvironment(appIdDefine, defaultValue: '');

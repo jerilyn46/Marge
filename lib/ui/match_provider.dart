@@ -105,6 +105,36 @@ class MatchNotifier extends Notifier<MatchViewState?> {
   String? _savedId;
   bool _releasedTable = false;
 
+  /// Gems the local player brought to this table from the gem bank (sit-down
+  /// + top-ups). Null for resumed tables (stake unknown → no double offer).
+  int? _localStakeGems;
+  bool _doubleClaimed = false;
+
+  /// This finished match's gem winnings for the local player (table bank
+  /// minus what they brought), or 0. Basis for the post-match double.
+  int localMatchWinnings() {
+    final c = _controller;
+    final stake = _localStakeGems;
+    if (c == null || stake == null) return 0;
+    if (c.snapshot.phase != MatchPhase.matchEnd) return 0;
+    final won = c.snapshot.players[localSeat].bankCents - stake;
+    return won > 0 ? won : 0;
+  }
+
+  bool get canOfferDouble => !_doubleClaimed && localMatchWinnings() > 0;
+
+  /// Rewarded post-match double: credit the match winnings again to the gem
+  /// bank, once per match. Returns gems credited or null.
+  int? claimDoubleWinnings() {
+    if (!canOfferDouble) return null;
+    final gems = localMatchWinnings();
+    _doubleClaimed = true;
+    ref
+        .read(coinLedgerProvider.notifier)
+        .grantHumanPlayCoins(_controller!.config.localPlayerName, cents: gems);
+    return gems;
+  }
+
   /// True while the Shop route is on top of this table. Bots wait and the
   /// table is saved so a purchase (or a process kill during Play Billing)
   /// cannot end the match or lose the pot behind the player's back.
@@ -195,6 +225,8 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     }
     _savedId = SavedGame.newId();
     _releasedTable = false;
+    _localStakeGems = sit;
+    _doubleClaimed = false;
     _controller = MatchController(
       config: MatchConfig(
         botCount: botCount,
@@ -251,6 +283,7 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       ledger.grantHumanPlayCoins(name, cents: gems);
       return null;
     }
+    if (_localStakeGems != null) _localStakeGems = _localStakeGems! + gems;
     _publish();
     return next;
   }
@@ -286,6 +319,8 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     _lastNoticeSeatId = null;
     _savedId = id;
     _releasedTable = false;
+    _localStakeGems = null;
+    _doubleClaimed = false;
     final book = TableGemBook();
     for (final player in game.table.players) {
       if (!player.profile.participates) continue;
@@ -380,6 +415,9 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       if (c.addTableGems(pending.payerSeatIndex, need) == null) {
         ledger.grantHumanPlayCoins(name, cents: need);
         return false;
+      }
+      if (pending.payerSeatIndex == localSeat && _localStakeGems != null) {
+        _localStakeGems = _localStakeGems! + need;
       }
     }
     final ok = c.coverShortfall();
