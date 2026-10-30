@@ -9,6 +9,7 @@ import '../engine/player.dart';
 import '../engine/gem_label.dart';
 import '../engine/seat_coin_book.dart';
 import 'denver_time.dart';
+import 'free_mint.dart';
 
 /// One planned lobby chair and the coins to show (null = waiting, no bank).
 class LobbyCoinSeat {
@@ -50,10 +51,15 @@ class PlayerCoinLedger implements SeatCoinBook {
     this.lastBotResetAt,
     this.lastDailyDripDay,
     this.lastDailyDripAtUtc,
+    FreeMintLedger? freeMint,
     this.loaded = false,
     this._prefs,
     this.onChanged,
-  }) : balances = Map<String, int>.from(balances ?? {});
+  }) : balances = Map<String, int>.from(balances ?? {}),
+       freeMint = freeMint ?? FreeMintLedger();
+
+  /// Free-mint caps (85/day, 280/week), daily goals, and streak.
+  final FreeMintLedger freeMint;
 
   static const startingCents = 100;
 
@@ -69,6 +75,7 @@ class PlayerCoinLedger implements SeatCoinBook {
   static const _kLastBotResetAt = 'lastBotResetAt';
   static const _kLastDailyDripDay = 'lastDailyDripDay';
   static const _kLastDailyDripAt = 'lastDailyDripAt';
+  static const _kFreeMint = 'freeMint';
 
   /// Storage key for a playing identity. Humans and bots never share a key.
   static String storageKey(String name, {required bool bot}) {
@@ -201,13 +208,50 @@ class PlayerCoinLedger implements SeatCoinBook {
   int? claimDailyDrip(String name, {DateTime? utcNow}) {
     final now = (utcNow ?? DateTime.now().toUtc()).toUtc();
     if (!canClaimDailyDrip(utcNow: now)) return null;
-    final next = grantHumanPlayCoins(name, cents: dailyDripGems);
-    if (next == null) return null;
+    if (_isWaitingName(localIdentity(name))) return null;
+    final allowed = freeMint.mint(dailyDripGems, now);
+    if (allowed > 0) grantHumanPlayCoins(name, cents: allowed);
     lastDailyDripDay = denverDayKey(now);
     lastDailyDripAtUtc = now;
     _persistNow();
     onChanged?.call();
-    return dailyDripGems;
+    return allowed;
+  }
+
+  /// Mark a daily goal complete (no grant until claimed).
+  bool completeGoal(DailyGoal goal, {DateTime? utcNow}) {
+    final now = (utcNow ?? DateTime.now().toUtc()).toUtc();
+    final fresh = freeMint.completeGoal(goal, now);
+    if (fresh) {
+      _persistNow();
+      onChanged?.call();
+    }
+    return fresh;
+  }
+
+  /// Claim a completed goal once per Denver day; gems clamp to free-mint caps.
+  int? claimGoal(String name, DailyGoal goal, {DateTime? utcNow}) {
+    final now = (utcNow ?? DateTime.now().toUtc()).toUtc();
+    if (_isWaitingName(localIdentity(name))) return null;
+    final allowed = freeMint.claimGoal(goal, now);
+    if (allowed == null) return null;
+    if (allowed > 0) grantHumanPlayCoins(name, cents: allowed);
+    _persistNow();
+    onChanged?.call();
+    return allowed;
+  }
+
+  /// Claim today's streak day (once per Denver day); ladder 10..50 gems,
+  /// clamped to free-mint caps. Null if already claimed today.
+  int? claimStreakDay(String name, {DateTime? utcNow}) {
+    final now = (utcNow ?? DateTime.now().toUtc()).toUtc();
+    if (_isWaitingName(localIdentity(name))) return null;
+    final allowed = freeMint.claimStreakDay(now);
+    if (allowed == null) return null;
+    if (allowed > 0) grantHumanPlayCoins(name, cents: allowed);
+    _persistNow();
+    onChanged?.call();
+    return allowed;
   }
 
   /// Gem bank balance. Missing means the starting stake, not zero.
@@ -261,6 +305,7 @@ class PlayerCoinLedger implements SeatCoinBook {
     lastBotResetAt: lastBotResetAt,
     lastDailyDripDay: lastDailyDripDay,
     lastDailyDripAtUtc: lastDailyDripAtUtc,
+    freeMint: freeMint.copy(),
     loaded: loaded,
     prefs: _prefs,
   );
@@ -274,6 +319,7 @@ class PlayerCoinLedger implements SeatCoinBook {
     if (lastDailyDripDay != null) _kLastDailyDripDay: lastDailyDripDay,
     if (lastDailyDripAtUtc != null)
       _kLastDailyDripAt: lastDailyDripAtUtc!.toUtc().toIso8601String(),
+    _kFreeMint: freeMint.toJson(),
   });
 
   static PlayerCoinLedger decode(
@@ -321,6 +367,7 @@ class PlayerCoinLedger implements SeatCoinBook {
         lastBotResetAt: last,
         lastDailyDripDay: dripDay,
         lastDailyDripAtUtc: dripAt,
+        freeMint: FreeMintLedger.fromJson(decoded[_kFreeMint]),
         loaded: loaded,
         prefs: prefs,
       );
@@ -502,6 +549,24 @@ class CoinLedgerNotifier extends Notifier<PlayerCoinLedger> {
     final live = book;
     live.onChanged = _onLiveChanged;
     return live.claimDailyDrip(name, utcNow: utcNow);
+  }
+
+  bool completeGoal(DailyGoal goal, {DateTime? utcNow}) {
+    final live = book;
+    live.onChanged = _onLiveChanged;
+    return live.completeGoal(goal, utcNow: utcNow);
+  }
+
+  int? claimGoal(String name, DailyGoal goal, {DateTime? utcNow}) {
+    final live = book;
+    live.onChanged = _onLiveChanged;
+    return live.claimGoal(name, goal, utcNow: utcNow);
+  }
+
+  int? claimStreakDay(String name, {DateTime? utcNow}) {
+    final live = book;
+    live.onChanged = _onLiveChanged;
+    return live.claimStreakDay(name, utcNow: utcNow);
   }
 
   int? drawAvailable(String name, int gems) {

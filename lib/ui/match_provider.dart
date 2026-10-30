@@ -9,6 +9,7 @@ import '../engine/engine.dart';
 import '../services/saved_games.dart';
 import '../services/table_gem_book.dart';
 import '../services/coin_ledger.dart';
+import '../services/free_mint.dart';
 import '../services/friends_service.dart';
 import '../services/local_turn_alerts.dart';
 import '../services/settings_service.dart';
@@ -460,6 +461,9 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     if (c == null) {
       _releasedTable = true;
       return;
+    }
+    if (c.snapshot.phase == MatchPhase.matchEnd) {
+      ref.read(coinLedgerProvider.notifier).completeGoal(DailyGoal.finishMatch);
     }
     PlayerState? local;
     for (final p in c.snapshot.players) {
