@@ -54,9 +54,7 @@ void main() {
     });
 
     test('equip owned skin', () {
-      const s = CosmeticsState(
-        owned: {DiceSkinId.classic, DiceSkinId.candy},
-      );
+      const s = CosmeticsState(owned: {DiceSkinId.classic, DiceSkinId.candy});
       final (next, result) = CosmeticsLogic.equip(s, DiceSkinId.candy);
       expect(result.ok, isTrue);
       expect(next.equipped, DiceSkinId.candy);
@@ -136,7 +134,11 @@ void main() {
 
       final notifier = container.read(cosmeticsProvider.notifier);
       // Ensure prefs loaded
-      for (var i = 0; i < 20 && !container.read(cosmeticsProvider).loaded; i++) {
+      for (
+        var i = 0;
+        i < 20 && !container.read(cosmeticsProvider).loaded;
+        i++
+      ) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
       expect(container.read(cosmeticsProvider).loaded, isTrue);
@@ -151,9 +153,11 @@ void main() {
       final container2 = ProviderContainer();
       addTearDown(container2.dispose);
       await Future<void>.delayed(Duration.zero);
-      for (var i = 0;
-          i < 20 && !container2.read(cosmeticsProvider).loaded;
-          i++) {
+      for (
+        var i = 0;
+        i < 20 && !container2.read(cosmeticsProvider).loaded;
+        i++
+      ) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
       final reloaded = container2.read(cosmeticsProvider);

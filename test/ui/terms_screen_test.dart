@@ -38,18 +38,20 @@ void main() {
     expect(text, contains(TermsScreen.effectiveDateToken));
   });
 
-  test('render fills the date, or drops the line when no date (fail closed)',
-      () {
-    final raw = File(TermsScreen.assetPath).readAsStringSync();
-    final filled = TermsScreen.render(raw, effectiveDate: 'October 12, 2026');
-    expect(filled, contains('Effective date: October 12, 2026'));
-    expect(filled, isNot(contains('{{')));
+  test(
+    'render fills the date, or drops the line when no date (fail closed)',
+    () {
+      final raw = File(TermsScreen.assetPath).readAsStringSync();
+      final filled = TermsScreen.render(raw, effectiveDate: 'October 12, 2026');
+      expect(filled, contains('Effective date: October 12, 2026'));
+      expect(filled, isNot(contains('{{')));
 
-    final none = TermsScreen.render(raw, effectiveDate: '');
-    expect(none, isNot(contains('{{')));
-    expect(none, isNot(contains('Effective date')));
-    expect(none, contains('Terms of Use'));
-  });
+      final none = TermsScreen.render(raw, effectiveDate: '');
+      expect(none, isNot(contains('{{')));
+      expect(none, isNot(contains('Effective date')));
+      expect(none, contains('Terms of Use'));
+    },
+  );
 
   testWidgets('rendered Terms (date set) have no {{, [, or DRAFT', (
     tester,
@@ -64,9 +66,9 @@ void main() {
         ),
       ),
     );
-    await tester.runAsync(() => Future<void>.delayed(
-          const Duration(milliseconds: 50),
-        ));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
     await tester.pumpAndSettle();
     final text = _visibleText(tester);
     expect(text, contains('Effective date: October 12, 2026'));

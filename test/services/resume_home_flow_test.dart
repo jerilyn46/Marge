@@ -40,10 +40,9 @@ void main() {
     expect(find.text('Continue'), findsNothing);
     expect(container.read(savedGamesProvider), isEmpty);
 
-    container.read(matchProvider.notifier).start(
-          botCount: 1,
-          playerName: 'Jerilyn',
-        );
+    container
+        .read(matchProvider.notifier)
+        .start(botCount: 1, playerName: 'Jerilyn');
     expect(container.read(matchProvider), isNotNull);
     expect(
       container.read(savedGamesProvider),
@@ -64,73 +63,76 @@ void main() {
     expect(cold.games, isNotEmpty);
   });
 
-  test('reload must not wipe in-memory unsaved upserts before prefs attach',
-      () async {
-    SharedPreferences.setMockInitialValues({});
-    SavedGameStore.bootstrap = null;
+  test(
+    'reload must not wipe in-memory unsaved upserts before prefs attach',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      SavedGameStore.bootstrap = null;
 
-    final container = ProviderContainer();
-    addTearDown(container.dispose);
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
 
-    expect(container.read(savedGamesProvider), isEmpty);
+      expect(container.read(savedGamesProvider), isEmpty);
 
-    final game = SavedGame.fromJson({
-      'id': 'sg-race',
-      'savedAt': '2026-09-14T18:00:00.000Z',
-      'table': {
-        'phase': 'playing',
-        'potCents': 20,
-        'roundNumber': 1,
-        'currentSeatIndex': 0,
-        'config': {
-          'botCount': 1,
-          'otherHumanCount': 0,
-          'onlinePlayerCount': 0,
-          'friendNames': <String>[],
-          'localPlayerName': 'You',
+      final game = SavedGame.fromJson({
+        'id': 'sg-race',
+        'savedAt': '2026-09-14T18:00:00.000Z',
+        'table': {
+          'phase': 'playing',
+          'potCents': 20,
+          'roundNumber': 1,
+          'currentSeatIndex': 0,
+          'config': {
+            'botCount': 1,
+            'otherHumanCount': 0,
+            'onlinePlayerCount': 0,
+            'friendNames': <String>[],
+            'localPlayerName': 'You',
+          },
+          'players': [
+            {
+              'id': 'human_0',
+              'name': 'You',
+              'kind': 'human',
+              'avatarEmoji': '🎲',
+              'colorSeed': 0,
+              'bankCents': 70,
+              'usedHouseStake': false,
+              'eliminated': false,
+            },
+            {
+              'id': 'bot_0',
+              'name': 'Spike',
+              'kind': 'bot',
+              'personality': 'aggressive',
+              'avatarEmoji': '🤖',
+              'colorSeed': 1,
+              'bankCents': 45,
+              'usedHouseStake': false,
+              'eliminated': false,
+            },
+          ],
+          'log': <String>['hi'],
         },
-        'players': [
-          {
-            'id': 'human_0',
-            'name': 'You',
-            'kind': 'human',
-            'avatarEmoji': '🎲',
-            'colorSeed': 0,
-            'bankCents': 70,
-            'usedHouseStake': false,
-            'eliminated': false,
-          },
-          {
-            'id': 'bot_0',
-            'name': 'Spike',
-            'kind': 'bot',
-            'personality': 'aggressive',
-            'avatarEmoji': '🤖',
-            'colorSeed': 1,
-            'bankCents': 45,
-            'usedHouseStake': false,
-            'eliminated': false,
-          },
-        ],
-        'log': <String>['hi'],
-      },
-    });
-    expect(game, isNotNull);
-    container.read(savedGamesProvider.notifier).upsert(game!);
-    expect(container.read(savedGamesProvider), hasLength(1));
+      });
+      expect(game, isNotNull);
+      container.read(savedGamesProvider.notifier).upsert(game!);
+      expect(container.read(savedGamesProvider), hasLength(1));
 
-    await Future<void>.delayed(Duration.zero);
-    await Future<void>.delayed(Duration.zero);
-    await container.read(savedGamesProvider.notifier).ensureReady();
-    await container.read(savedGamesProvider.notifier).flush();
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      await container.read(savedGamesProvider.notifier).ensureReady();
+      await container.read(savedGamesProvider.notifier).flush();
 
-    expect(
-      container.read(savedGamesProvider),
-      hasLength(1),
-      reason: 'reload must not discard games upserted before prefs load finished',
-    );
+      expect(
+        container.read(savedGamesProvider),
+        hasLength(1),
+        reason:
+            'reload must not discard games upserted before prefs load finished',
+      );
 
-    final cold = await SavedGameStore.load();
-    expect(cold.games, hasLength(1));
-  });
+      final cold = await SavedGameStore.load();
+      expect(cold.games, hasLength(1));
+    },
+  );
 }

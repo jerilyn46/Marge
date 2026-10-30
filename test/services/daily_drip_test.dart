@@ -13,7 +13,13 @@ void main() {
       expect(ledger.claimDailyDrip('You', utcNow: morning), 25);
       expect(ledger.availableHumanGems('You'), 125);
       expect(ledger.canClaimDailyDrip(utcNow: morning), isFalse);
-      expect(ledger.claimDailyDrip('You', utcNow: morning.add(const Duration(hours: 2))), isNull);
+      expect(
+        ledger.claimDailyDrip(
+          'You',
+          utcNow: morning.add(const Duration(hours: 2)),
+        ),
+        isNull,
+      );
     });
 
     test('resets on the next Denver day', () async {
@@ -21,7 +27,10 @@ void main() {
       final ledger = await PlayerCoinLedger.load(
         utcNow: DateTime.utc(2026, 9, 14, 18),
       );
-      expect(ledger.claimDailyDrip('You', utcNow: DateTime.utc(2026, 9, 14, 18)), 25);
+      expect(
+        ledger.claimDailyDrip('You', utcNow: DateTime.utc(2026, 9, 14, 18)),
+        25,
+      );
       await ledger.flush();
 
       final nextDay = await PlayerCoinLedger.load(
@@ -29,8 +38,14 @@ void main() {
       );
       // Cold load keeps the stamp from disk.
       expect(nextDay.lastDailyDripDay, '2026-09-14');
-      expect(nextDay.canClaimDailyDrip(utcNow: DateTime.utc(2026, 9, 15, 12)), isTrue);
-      expect(nextDay.claimDailyDrip('You', utcNow: DateTime.utc(2026, 9, 15, 12)), 25);
+      expect(
+        nextDay.canClaimDailyDrip(utcNow: DateTime.utc(2026, 9, 15, 12)),
+        isTrue,
+      );
+      expect(
+        nextDay.claimDailyDrip('You', utcNow: DateTime.utc(2026, 9, 15, 12)),
+        25,
+      );
     });
   });
 }

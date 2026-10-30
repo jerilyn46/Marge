@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../ads/ad_ids.dart';
 import '../../ads/ads_service.dart';
 import '../../debug/settle_log.dart';
+import '../../cosmetics/table_felt.dart';
 import '../../cosmetics/skins_service.dart';
 import '../../engine/engine.dart';
 import '../../engine/gem_label.dart';
@@ -281,14 +282,14 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
         body: Stack(
           children: [
             Container(
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Color(0xFF1B0F3B),
-                    MargeColors.felt,
-                    Color(0xFF0A3D2A),
+                    const Color(0xFF1B0F3B),
+                    ref.watch(tableFeltProvider).equippedDef.color,
+                    ref.watch(tableFeltProvider).equippedDef.deepColor,
                   ],
                 ),
               ),

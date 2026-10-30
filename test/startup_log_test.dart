@@ -16,10 +16,7 @@ void main() {
     final names = dir.listSync().map((e) => e.uri.pathSegments.last).toSet();
     expect(names, {StartupLog.fileName, '${StartupLog.fileName}.1'});
     expect(await file.length(), lessThan(limit + 64));
-    expect(
-      await File('${file.path}.1').length(),
-      lessThan(limit + 64),
-    );
+    expect(await File('${file.path}.1').length(), lessThan(limit + 64));
     expect(await file.readAsString(), contains('line 99'));
   });
 

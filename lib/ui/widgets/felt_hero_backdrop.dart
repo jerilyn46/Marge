@@ -1,23 +1,30 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../cosmetics/table_felt.dart';
 
 import '../theme/marge_theme.dart';
 
 /// Soft felt oval with wood edge and gentle lamp vignette for the lobby hero.
-class FeltHeroBackdrop extends StatelessWidget {
+/// Felt colours follow the equipped table felt (Forest Felt by default).
+class FeltHeroBackdrop extends ConsumerWidget {
   const FeltHeroBackdrop({super.key, required this.child});
 
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
-    return CustomPaint(painter: const _FeltTablePainter(), child: child);
+  Widget build(BuildContext context, WidgetRef ref) {
+    final felt = ref.watch(tableFeltProvider).equippedDef;
+    return CustomPaint(painter: _FeltTablePainter(felt), child: child);
   }
 }
 
 class _FeltTablePainter extends CustomPainter {
-  const _FeltTablePainter();
+  const _FeltTablePainter(this.felt);
+
+  final TableFeltDef felt;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -56,9 +63,9 @@ class _FeltTablePainter extends CustomPainter {
         center: const Alignment(0, -0.2),
         radius: 0.95,
         colors: [
-          MargeColors.feltLight.withValues(alpha: 0.98),
-          MargeColors.felt,
-          const Color(0xFF143526),
+          this.felt.lightColor.withValues(alpha: 0.98),
+          this.felt.color,
+          this.felt.deepColor,
         ],
       ).createShader(table.outerRect);
     canvas.drawRRect(table.deflate(10), felt);
@@ -85,7 +92,8 @@ class _FeltTablePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _FeltTablePainter oldDelegate) =>
+      oldDelegate.felt.id != felt.id;
 }
 
 /// Tiny painted gem chip accent (playful chip, not cash).

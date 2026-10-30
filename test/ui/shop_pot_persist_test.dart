@@ -80,8 +80,7 @@ void main() {
     expect(again.log.any((l) => l.contains('Pot carried over')), isTrue);
   });
 
-  test('a fresh match (not Continue playing) still starts from antes only',
-      () {
+  test('a fresh match (not Continue playing) still starts from antes only', () {
     final match = container.read(matchProvider.notifier);
     match.start(botCount: 2, playerName: 'You');
     expect(container.read(matchProvider)!.snapshot.potCents, 30);

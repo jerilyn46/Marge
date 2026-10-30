@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../ads/ad_ids.dart';
 import '../../cosmetics/dice_skin.dart';
 import '../../cosmetics/skins_service.dart';
+import '../../cosmetics/table_felt.dart';
 import '../../engine/gem_label.dart';
 import '../../services/coin_ledger.dart';
 import '../../services/gem_iap.dart';
@@ -103,6 +104,21 @@ class ShopScreen extends ConsumerWidget {
               const _GemPackList(),
               const SizedBox(height: 6),
               if (kAdmobEnabled) const _RewardedGemsCard(),
+              const SizedBox(height: 18),
+              const _SectionTitle('Table felts'),
+              const SizedBox(height: 4),
+              Text(
+                'Paid felts spend from your gem bank. Equipped felt colors the table.',
+                style: TextStyle(
+                  color: MargeColors.cream.withValues(alpha: 0.7),
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 10),
+              for (final def in TableFeltCatalog.all) ...[
+                _FeltTile(def: def, bank: bank, playerName: name),
+                const SizedBox(height: 10),
+              ],
               const SizedBox(height: 18),
               const _SectionTitle('Designer Collection'),
               const SizedBox(height: 4),
@@ -439,6 +455,116 @@ class _SkinTile extends ConsumerWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _FeltTile extends ConsumerWidget {
+  const _FeltTile({
+    required this.def,
+    required this.bank,
+    required this.playerName,
+  });
+
+  final TableFeltDef def;
+  final int bank;
+  final String playerName;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final felts = ref.watch(tableFeltProvider);
+    final owned = felts.isOwned(def.id);
+    final equipped = felts.equipped == def.id;
+    final canAfford = def.isFree || bank >= def.priceGems;
+
+    Future<void> show(String msg) async {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(msg)));
+    }
+
+    final Widget action;
+    if (equipped) {
+      action = const Chip(label: Text('Equipped'));
+    } else if (owned) {
+      action = FilledButton(
+        key: ValueKey('felt-equip-${def.id.name}'),
+        onPressed: () async {
+          final r = await ref.read(tableFeltProvider.notifier).equip(def.id);
+          await show(r.message);
+        },
+        child: const Text('Equip'),
+      );
+    } else {
+      action = FilledButton(
+        key: ValueKey('felt-buy-${def.id.name}'),
+        onPressed: canAfford
+            ? () async {
+                final r = await ref
+                    .read(tableFeltProvider.notifier)
+                    .buy(
+                      def.id,
+                      bankGems: bank,
+                      spendGems: (g) => ref
+                          .read(coinLedgerProvider.notifier)
+                          .drawAvailable(playerName, g),
+                    );
+                await show(r.message);
+              }
+            : null,
+        child: Text(def.isFree ? 'Free' : gemCount(def.priceGems)),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.25),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: equipped ? MargeColors.gold : Colors.white24,
+          width: equipped ? 2 : 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                colors: [def.lightColor, def.color, def.deepColor],
+              ),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: MargeColors.wood, width: 3),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  def.name,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: MargeColors.cream,
+                  ),
+                ),
+                Text(
+                  def.isFree ? 'Free' : gemCount(def.priceGems),
+                  style: TextStyle(
+                    color: MargeColors.cream.withValues(alpha: 0.7),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          action,
+        ],
       ),
     );
   }
