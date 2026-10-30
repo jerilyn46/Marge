@@ -406,11 +406,18 @@ class PlayerCoinLedger implements SeatCoinBook {
       prefs: store,
       loaded: true,
     );
-    ledger.applyWeeklyBotReset(utcNow ?? DateTime.now().toUtc());
-    if (ledger.lastBotResetAt != null) {
-      await ledger.flush();
+    try {
+      ledger.applyWeeklyBotReset(utcNow ?? DateTime.now().toUtc());
+      if (ledger.lastBotResetAt != null) {
+        await ledger.flush();
+      }
+      return ledger;
+    } catch (e) {
+      // Upgrade-safe: corrupt saved state must never kill cold start.
+      debugPrint('CoinLedger: load repair after $e');
+      await store.remove(prefsKey);
+      return PlayerCoinLedger(loaded: true, prefs: store);
     }
-    return ledger;
   }
 
   /// Lobby chairs in the same order a match will seat them.

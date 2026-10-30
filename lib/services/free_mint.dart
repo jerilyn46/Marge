@@ -72,9 +72,13 @@ class FreeMintLedger {
   static String denverWeek(DateTime utcNow) =>
       DenverTime.weekStartUtc(utcNow.toUtc()).toIso8601String();
 
+  /// Exposed for tests; never throws on malformed keys.
+  static String prevDayForTest(String day) => _prevDay(day);
+
   static String _prevDay(String day) {
-    final p = day.split('-').map(int.parse).toList();
-    final d = DateTime.utc(p[0], p[1], p[2]).subtract(const Duration(days: 1));
+    final p = day.split('-').map(int.tryParse).toList();
+    if (p.length != 3 || p.any((v) => v == null)) return day;
+    final d = DateTime.utc(p[0]!, p[1]!, p[2]!).subtract(const Duration(days: 1));
     return '${d.year}-${d.month.toString().padLeft(2, '0')}-'
         '${d.day.toString().padLeft(2, '0')}';
   }
