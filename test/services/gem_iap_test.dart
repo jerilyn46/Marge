@@ -32,7 +32,7 @@ void main() {
         final next = ledger.grantHumanPlayCoins('You', cents: pack.gems);
         expect(next, before + pack.gems);
       }
-      expect(ledger.savedCents('You', bot: false), 40 + 100 + 500 + 1200);
+      expect(ledger.savedCents('You', bot: false), 40 + 100 + 500 + 1200 + 650);
       expect(ledger.balances.keys.where((k) => k.startsWith('bot:')), isEmpty);
     });
   });

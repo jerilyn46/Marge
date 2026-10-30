@@ -9,6 +9,7 @@ import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 import '../ui/legal_links.dart';
 import 'remove_ads.dart';
 import 'coin_ledger.dart';
+import 'denver_time.dart';
 import 'settings_service.dart';
 
 /// Play Billing gem packs. Virtual gems only — not real money, no cash-out.
@@ -48,7 +49,44 @@ class GemPack {
     blurb: '1200 virtual gems for the table.',
   );
 
-  static const all = <GemPack>[small, medium, large];
+  /// Weekend-only bag. Offered Friday–Sunday America/Denver only.
+  /// SKU is already Active in Play Console — do not rename.
+  static const weekend = GemPack(
+    productId: 'marge_gems_weekend',
+    gems: 650,
+    title: 'Weekend bag',
+    blurb: '650 virtual gems — Fridays to Sundays only (Denver time).',
+  );
+
+  /// Copy shown on the Shop card describing the window.
+  static const weekendWindowCopy =
+      'Available Friday–Sunday (Mountain Time) only.';
+
+  /// Every SKU we query and can credit. Includes [weekend] so a weekend
+  /// purchase that lands/restores on a Monday is still credited.
+  static const all = <GemPack>[small, medium, large, weekend];
+
+  /// Test hook for "now" (UTC).
+  @visibleForTesting
+  static DateTime Function() clock = () => DateTime.now().toUtc();
+
+  /// True Friday 00:00 → Sunday 23:59 America/Denver.
+  static bool isWeekendDenver(DateTime utc) {
+    final wd = DenverTime.wallClock(utc).weekday;
+    return wd == DateTime.friday ||
+        wd == DateTime.saturday ||
+        wd == DateTime.sunday;
+  }
+
+  /// Whether this pack may be bought at [utc] (default: now).
+  bool isOfferedAt([DateTime? utc]) =>
+      productId != weekend.productId || isWeekendDenver(utc ?? clock());
+
+  /// Packs the Shop may offer for purchase at [utc].
+  static List<GemPack> offeredAt([DateTime? utc]) => [
+    for (final p in all)
+      if (p.isOfferedAt(utc)) p,
+  ];
 
   static GemPack? byId(String id) {
     for (final p in all) {
@@ -213,6 +251,10 @@ class GemIapNotifier extends Notifier<GemIapState> {
 
   /// Start a consumable purchase. Credits the main gem bank on success.
   Future<bool> buy(GemPack pack) async {
+    if (!pack.isOfferedAt()) {
+      state = state.copyWith(lastError: 'Weekend bag is back on Friday.');
+      return false;
+    }
     final details = state.products[pack.productId];
     if (details == null) {
       state = state.copyWith(lastError: 'Pack not available yet.');
