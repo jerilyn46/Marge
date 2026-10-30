@@ -35,6 +35,7 @@ void main() {
       'marge_gems_small',
       'marge_gems_medium',
       'marge_gems_large',
+      'marge_gems_weekend',
     });
     expect(GemPack.byId(RemoveAds.productId), isNull);
   });

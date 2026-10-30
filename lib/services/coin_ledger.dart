@@ -156,7 +156,7 @@ class PlayerCoinLedger implements SeatCoinBook {
 
   /// Play Billing gem pack sizes (see [GemPack] / marge_gems_* SKUs).
   /// Kept here for tests that assert bank credit amounts.
-  static const iapPackGems = <int>[100, 500, 1200];
+  static const iapPackGems = <int>[100, 500, 1200, 650];
 
   /// Alias for older call sites / tests.
   static const previewPackGems = iapPackGems;

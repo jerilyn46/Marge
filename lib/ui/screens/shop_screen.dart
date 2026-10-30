@@ -189,7 +189,7 @@ class _GemPackList extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final iap = ref.watch(gemIapProvider);
     final live = [
-      for (final pack in GemPack.all)
+      for (final pack in GemPack.offeredAt())
         if (iap.products.containsKey(pack.productId)) pack,
     ];
     if (live.isEmpty) {
@@ -244,13 +244,21 @@ class _IapPackTile extends ConsumerWidget {
 
     return Card(
       child: ListTile(
-        leading: const Icon(Icons.diamond_outlined, color: MargeColors.gold),
+        key: ValueKey('gem-pack-${pack.productId}'),
+        leading: Icon(
+          pack == GemPack.weekend
+              ? Icons.weekend_outlined
+              : Icons.diamond_outlined,
+          color: MargeColors.gold,
+        ),
         title: Text(
           '${pack.title} · ${gemCount(pack.gems)}',
           style: const TextStyle(fontWeight: FontWeight.w800),
         ),
         subtitle: Text(
-          '${pack.blurb} Virtual gems (not real money). No cash-out.',
+          '${pack.blurb}'
+          '${pack == GemPack.weekend ? ' ${GemPack.weekendWindowCopy}' : ''}'
+          ' Virtual gems (not real money). No cash-out.',
         ),
         trailing: busy
             ? const SizedBox(
