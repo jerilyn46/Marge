@@ -103,14 +103,17 @@ android {
             // Always the upload key. No debug-keystore fallback: a release
             // build without android/key.properties fails (see check below).
             signingConfig = signingConfigs.getByName("release")
-            // R8: shrink + obfuscate Java/Kotlin, drop unused resources.
-            // Flutter's own keep rules are added by the Flutter Gradle plugin.
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro",
-            )
+            // R8 OFF: minify/shrink (PR #26 / 591adf1, 0.1.29) made the app stop
+            // on cold start on Galaxy Z Flip 7. Sideload A/B: 0.1.28 opens,
+            // 0.1.29 stops, 0.1.37 minify-off opens. proguard-rules.pro and
+            // res/raw/keep.xml stay for a later re-enable with a Flip 7 stack
+            // and mapping.txt/usage.txt.
+            isMinifyEnabled = false
+            isShrinkResources = false
+            // proguardFiles(
+            //     getDefaultProguardFile("proguard-android-optimize.txt"),
+            //     "proguard-rules.pro",
+            // )
         }
     }
 }

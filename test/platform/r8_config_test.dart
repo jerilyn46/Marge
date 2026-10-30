@@ -2,14 +2,17 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// Proves the release shrink config is intentional, not accidental.
+/// Release R8 is intentionally off (Flip 7); keep rules stay for re-enable.
 void main() {
   final gradle = File('android/app/build.gradle.kts').readAsStringSync();
   final rules = File('android/app/proguard-rules.pro').readAsStringSync();
 
-  test('release build minifies with our proguard-rules.pro', () {
-    expect(gradle, contains('isMinifyEnabled = true'));
-    expect(gradle, contains('"proguard-rules.pro"'));
+  // R8 is off for release: it broke Flip 7 cold start (591adf1 / PR #26).
+  test('release build has R8 minify and resource shrink off', () {
+    expect(gradle, contains('isMinifyEnabled = false'));
+    expect(gradle, contains('isShrinkResources = false'));
+    expect(gradle, isNot(contains('isMinifyEnabled = true')));
+    expect(gradle, isNot(contains('isShrinkResources = true')));
   });
 
   test('kotlinx.coroutines ServiceLoader classes keep their names', () {
