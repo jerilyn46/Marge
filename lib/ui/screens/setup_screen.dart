@@ -7,7 +7,9 @@ import '../../services/friends_service.dart';
 import '../../services/settings_service.dart';
 import '../match_provider.dart';
 import '../theme/marge_theme.dart';
+import '../../online/online_flags.dart';
 import 'match_screen.dart';
+import 'online_lobby_screen.dart';
 import 'rules_screen.dart';
 
 /// Seat / bots flow after Play — dense controls live here, not on home.
@@ -275,6 +277,21 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
                     : null,
                 child: const Text('START MATCH'),
               ),
+              if (kOnlineInviteEnabled) ...[
+                const SizedBox(height: 8),
+                OutlinedButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => OnlineLobbyScreen(
+                        displayName: settings.playerName,
+                        gemClaim:
+                            ledger.availableHumanGems(settings.playerName),
+                      ),
+                    ),
+                  ),
+                  child: const Text('PLAY ONLINE (INVITE)'),
+                ),
+              ],
               const SizedBox(height: 8),
               Text(
                 'Virtual gems only — no real money.',

@@ -46,6 +46,10 @@ dependencies:
   # free-gems reminder (UTC only, no tz database load).
   timezone: ^0.10.1
   url_launcher: ^6.3.3
+  firebase_core: ^5.1.0
+  firebase_auth: ^7.0.1
+  cloud_firestore: ^7.1.0
+  cloud_functions: ^7.0.1
 
 dev_dependencies:
   flutter_test:
