@@ -266,7 +266,8 @@ class MatchNotifier extends Notifier<MatchViewState?> {
       carryPotGems: carry,
       botCount: cfg?.botCount ?? 3,
       otherHumanCount: otherHumanCount ?? cfg?.otherHumanCount ?? 0,
-      onlinePlayerCount: cfg?.onlinePlayerCount ?? 0,
+      // Online play is Coming soon: never carry old online chairs forward.
+      onlinePlayerCount: 0,
       friendNames: cfg?.friendNames ?? const [],
       playerName: name,
     );

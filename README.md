@@ -9,7 +9,7 @@ A colorful casual dice table game for Android (and web). Configurable seats (bot
 
 ## Rules
 
-- **2–8 seats.** Lobby: **you**, then **0–4 other hotseat humans**, then **0–4 online seats**, then **0–4 bots** filling leftover seats only (at least 1 playable opponent). Default: **3 bots, 0 other humans, 0 online**. There is no live matchmaking; chosen online seats stay **Waiting for player** and are never converted into bots.
+- **2–8 seats.** Lobby: **you**, then **0–4 other hotseat humans**, then **0–4 bots** filling leftover seats only (at least 1 playable opponent). Default: **3 bots, 0 other humans**. **Online play is Coming soon** — the Online players control is disabled in the lobby (no matchmaking yet).
 - **Start bank:** each identity keeps its saved gems (100 gems if new). Humans and friends persist forever. Bots reset to 100 gems every Monday 00:00 America/Denver.
 - **Round ante:** each playing seat pays **10 gems** into the pot. Waiting online chairs do not ante.
 - **Turn:** 3 dice, up to **3 rolls**. Keep any subset between rolls. Bank early once you have a scoring hand.

@@ -49,11 +49,6 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
     setState(() => _applyPlan(_bots, value, _online, friends));
   }
 
-  void _setOnline(int value) {
-    final friends = _seatedFriends(ref.read(friendsProvider));
-    setState(() => _applyPlan(_bots, _otherHumans, value, friends));
-  }
-
   String get _seatSummary {
     final parts = <String>['You'];
     if (_otherHumans > 0) {
@@ -137,23 +132,15 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
                             : null,
                       ),
                       const SizedBox(height: 12),
-                      _CountStepper(
+                      // Online play is not available yet (no matchmaking
+                      // backend). Disabled so nobody reserves chairs that
+                      // never fill. _online stays 0.
+                      const _CountStepper(
                         label: 'Online players',
-                        subtitle:
-                            'Reserved before bots · waiting if no one joins',
-                        value: _online,
-                        onDecrement: _online > 0
-                            ? () => _setOnline(_online - 1)
-                            : null,
-                        onIncrement:
-                            MatchConfig.canIncrementOnline(
-                              _bots,
-                              _otherHumans,
-                              _online,
-                              friendCount,
-                            )
-                            ? () => _setOnline(_online + 1)
-                            : null,
+                        subtitle: 'Coming soon',
+                        value: 0,
+                        onDecrement: null,
+                        onIncrement: null,
                       ),
                       const SizedBox(height: 12),
                       _CountStepper(
