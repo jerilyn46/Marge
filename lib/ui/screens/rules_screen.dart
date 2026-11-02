@@ -34,7 +34,7 @@ class RulesScreen extends ConsumerWidget {
               emoji: '🏦',
               title: 'Banks & ante',
               body:
-                  '2–8 seats. You and local hotseat humans sit first, then named friends (waiting if they are not here), then reserved online chairs, then bots in leftover seats. '
+                  '2–8 seats. You and local hotseat humans sit first, then named friends (waiting if they are not here), then bots in leftover seats. '
                   'The gem bank holds virtual gems (not real money). A new game sits you with up to 100 gems from that bank. '
                   'Each unfinished game keeps its own pot and table gems. Bots on a saved table keep those gems until that game ends. '
                   'Each round, every playing seat antes 10 gems into the pot.',
@@ -80,9 +80,9 @@ class RulesScreen extends ConsumerWidget {
               emoji: '🤖',
               title: 'Bots',
               body:
-                  'Choose 0–4 other local players, 0–4 online seats, and 0–4 bots '
+                  'Choose 0–4 other local players and 0–4 bots '
                   '(at least one bot or local player; max 8 seats including you). '
-                  'Online seats are reserved before bots. There is no live match yet, so they show as Waiting for player and are not filled by bots. '
+                  'Online play vs remote players is coming soon. '
                   'Bots cycle Aggressive / Cautious / Chaotic. '
                   'On a hotseat human turn, pass the device.',
             ),
