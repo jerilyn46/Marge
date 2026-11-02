@@ -1,0 +1,12 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+    // Clients never write; all mutations via Cloud Functions (Admin SDK).
+    match /rooms/{roomId} {
+      allow read: if request.auth != null && request.auth.uid in resource.data.memberUids;
+      match /private/{doc=**} { allow read, write: if false; }
+    }
+    match /users/{uid} { allow read: if request.auth != null && request.auth.uid == uid; }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

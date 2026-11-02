@@ -4,6 +4,12 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Firebase: only applied when the real config exists, so builds without it
+// (current Production track) are unchanged. See docs/multiplayer-invite-mvp.md.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 import java.util.Properties
 import java.io.FileInputStream
 import java.util.Base64
