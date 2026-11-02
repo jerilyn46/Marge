@@ -163,6 +163,21 @@ function checkVersion(room: Record<string, any>, expected: unknown) {
   }
 }
 
+/** Mark seat out of the match; advance turn or finish so others can keep playing. */
+function dropSeat(m: MatchState, i: number) {
+  const s = m.seats[i];
+  s.eliminated = true;
+  s.connected = false;
+  if (m.turn?.seat === i) m.turn = null;
+  const live = m.seats.filter((x) => x.kind !== "open" && !x.eliminated);
+  if (live.length <= 1) { m.status = "finished"; m.winnerSeat = live[0]?.index ?? null; m.turn = null; return; }
+  if (!m.turn) {
+    let n = (i + 1) % m.seats.length;
+    while (m.seats[n].kind === "open" || m.seats[n].eliminated) n = (n + 1) % m.seats.length;
+    m.turn = { seat: n, rollNumber: 0, setNumber: 1, dice: [1, 1, 1], kept: [false, false, false], carried: null, score: null };
+  }
+}
+
 export const leaveRoom = onCall(async (req) => {
   const uid = uidOf(req);
   await withRoom(req.data?.roomId, async (tx, ref, room) => {
@@ -185,16 +200,7 @@ export const leaveRoom = onCall(async (req) => {
         // Leaving keeps your current table bank; you're out of this match.
         tx.set(db.collection("users").doc(uid), { gems: FieldValue.increment(s.bank), escrowRoom: null }, { merge: true });
         s.bank = 0;
-        s.eliminated = true;
-        s.connected = false;
-        if (m.turn?.seat === i) { m.turn = null; }
-        const live = m.seats.filter((x) => x.kind !== "open" && !x.eliminated);
-        if (live.length <= 1) { m.status = "finished"; m.winnerSeat = live[0]?.index ?? null; m.turn = null; }
-        else if (!m.turn) {
-          let n = (i + 1) % m.seats.length;
-          while (m.seats[n].kind === "open" || m.seats[n].eliminated) n = (n + 1) % m.seats.length;
-          m.turn = { seat: n, rollNumber: 0, setNumber: 1, dice: [1, 1, 1], kept: [false, false, false], carried: null, score: null };
-        }
+        dropSeat(m, i);
       }
       commitMatch(tx, ref, m);
     }
@@ -297,14 +303,36 @@ export const sweepRooms = onSchedule("every 1 minutes", async () => {
 export const deleteOnlineData = onCall(async (req) => {
   const uid = uidOf(req);
   const rooms = await db.collection("rooms").where("memberUids", "array-contains", uid).get();
-  const batch = db.batch();
   for (const doc of rooms.docs) {
-    const seats = (doc.data().seats as Array<Record<string, unknown>>).map((s) =>
-      s.uid === uid ? { index: s.index, kind: "open" } : s);
-    batch.update(doc.ref, { seats, memberUids: FieldValue.arrayRemove(uid) });
+    await withRoom(doc.id, async (tx, ref, room) => {
+      const scrub = (s: Seat) => (s.uid === uid ? { index: s.index, kind: "open" } : s);
+      const upd: Record<string, unknown> = { seats: (room.seats as Seat[]).map(scrub), memberUids: FieldValue.arrayRemove(uid) };
+      if (room.status === "playing" && room.match) {
+        const m = room.match as MatchState;
+        const i = m.seats.findIndex((s) => s.uid === uid);
+        if (i >= 0) {
+          const s = m.seats[i];
+          // Escrowed table bank is forfeited into the pot so the table stays whole for others.
+          m.pot += s.bank; s.bank = 0;
+          if (!s.eliminated) dropSeat(m, i);
+          Object.assign(s, { uid: null, displayName: "Left player" });
+        }
+        if (room.hostUid === uid) {
+          const next = m.seats.find((s) => s.uid && !s.eliminated);
+          upd.hostUid = next?.uid ?? null;
+        }
+        tx.update(ref, upd);
+        commitMatch(tx, ref, m);
+        return;
+      }
+      if (room.status === "lobby" && room.hostUid === uid) {
+        upd.status = "abandoned";
+        tx.delete(db.collection("roomCodes").doc(room.code));
+      }
+      tx.update(ref, upd);
+    });
   }
-  batch.delete(db.collection("users").doc(uid));
-  await batch.commit();
+  await db.collection("users").doc(uid).delete();
   await getAuth().deleteUser(uid);
   return { ok: true, roomsScrubbed: rooms.size };
 });

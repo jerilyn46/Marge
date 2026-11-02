@@ -86,3 +86,19 @@ Paste pack (CoS hosts on gh-pages; Eng does not host): `/workspace/marge-growth/
 - Sync online winnings back to offline bank?
 - Server bot difficulty parity with `bot_ai.dart`.
 - iOS config (GoogleService-Info.plist) — out of scope for Android MVP.
+
+## Local emulator smoke (no deploy)
+Ports (`firebase.json`): auth 9099, firestore 8080, functions 5001. Uses demo project id `demo-marge`, so nothing touches `marge-online`.
+Prereqs: Node 20+, Java 21+ (box: `/home/box/sdk/jdk-21*`), `npm i -g firebase-tools` (box: 15.34.2 in `~/.local/bin`).
+```
+cd functions && npm ci && npm run smoke
+```
+`functions/scripts/emulator-smoke.mjs` signs in 3 anonymous users, then: createRoom (1 bot) → joinRoom ×2 → non-host start rejected → startMatch → plays turns via submitRoll/submitKeep → guest **deleteOnlineData mid-match** → room stays playable, next seat plays → host endMatch → finished.
+
+### Mid-match delete (legal)
+`deleteOnlineData` on a playing room: the seat is marked out, uid/name scrubbed ("Left player"), its escrowed table bank is **forfeited into the pot**, turn advances (or match finishes if ≤1 left); if the host deletes, host passes to the next live human. User doc + auth account are deleted.
+
+## When Blaze lands
+1. `firebase deploy --only firestore:rules,functions --project marge-online` (needs deploy credentials).
+2. Add SHA-1/256 fingerprints (needed later for non-anon providers / App Check).
+3. Point `npm run smoke` at prod only with throwaway accounts — or better, keep smoke on emulator and do a 2-device manual test with `--dart-define=MARGE_ONLINE_INVITE=true`.

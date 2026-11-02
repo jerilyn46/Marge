@@ -9,7 +9,8 @@
     "build": "tsc",
     "serve": "npm run build && firebase emulators:start --only functions,firestore,auth",
     "deploy": "firebase deploy --only functions",
-    "test": "node -r ts-node/register --test test/*.test.ts"
+    "test": "node -r ts-node/register --test test/*.test.ts",
+    "smoke": "npm run build && cd .. && firebase emulators:exec --project demo-marge --only auth,firestore,functions \"node functions/scripts/emulator-smoke.mjs\""
   },
   "dependencies": {
     "firebase-admin": "^12.0.0",
