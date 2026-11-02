@@ -1,6 +1,6 @@
 # Remote multiplayer — invite / room-code MVP (Firebase)
 
-Status: **WIP foundation**. Approved shape: invite/room code, Firebase (Auth + Firestore + Cloud Functions), anonymous auth, server-checked gems. Invite-only. **No chat.**
+Status: **WIP — match loop implemented, emulator-ready; Functions deploy blocked on Blaze.** Firebase project `marge-online` exists (Anonymous Auth + Firestore nam5 on; Android app registered; `google-services.json` on the build box only). `.firebaserc` default = `marge-online`. Approved shape: invite/room code, Firebase (Auth + Firestore + Cloud Functions), anonymous auth, server-checked gems. Invite-only. **No chat.**
 
 Feature flag: `--dart-define=MARGE_ONLINE_INVITE=true` (off by default; Production builds unchanged). Local hotseat + bots, offline SharedPreferences gem bank, Ads/IAP: unchanged.
 
@@ -19,17 +19,35 @@ Feature flag: `--dart-define=MARGE_ONLINE_INVITE=true` (off by default; Producti
 - `rooms/{roomId}/private/state`: dice, RNG, turn order — server only.
 - Rules: `firestore.rules` (all client writes denied).
 
-## Cloud Functions (`functions/src/index.ts`)
+## Cloud Functions (`functions/src/`)
+Rules engine: `functions/src/engine.ts` — pure TS port of `lib/engine/hand_evaluator.dart` + payout core of `match_controller.dart`; unit tests in `functions/test/engine.test.ts` (`npm test`). Dice use `crypto.randomInt` on the server.
+
 | Function | State |
 |---|---|
-| createRoom | implemented (needs emulator test) |
-| joinRoom | implemented (needs emulator test) |
-| leaveRoom | TODO |
-| startMatch | TODO (ante debit, private state) |
-| submitRoll / submitKeep | TODO (server dice, validation) |
-| resolveTurn (internal) | TODO (port `hand_evaluator.dart`) |
-| sweeper (scheduled) | TODO (turn timeout, idle lobby, free codes) |
+| createRoom / joinRoom | implemented |
+| leaveRoom | implemented (lobby: free seat / host abandons; playing: you keep your table bank, out of match) |
+| startMatch | implemented (host, ≥2 filled seats, ante check, escrow online balance → table bank, bots 100, open seats stay empty, code freed) |
+| submitRoll | implemented (`keep` indexes, server dice, version check, auto-resolve pot win / 3rd-roll miss) |
+| submitKeep | implemented — **banks** the current scoring hand (resolveTurn) |
+| endMatch | implemented (host ends early; highest bank wins; everyone keeps their table bank) |
+| sweepRooms (every 1 min) | implemented (turn > 60s → server auto-plays that seat like a bot; lobby idle 30 min → abandoned) |
 | deleteOnlineData | implemented |
+
+After every action, bot seats are played server-side until a human is up. On finish each human's table bank is credited back to `users/{uid}.gems`.
+
+## Client
+- `OnlineLobbyScreen`: display name (optional, max 20), bots slider, Create / Join by code, seat list, host Start; auto-opens the match screen when the server starts the match.
+- `OnlineMatchScreen`: listens to `rooms/{id}.match`; seats + banks, pot, last payout, dice; local seat can tap-to-hold, ROLL, BANK; host can End match. Offline `MatchScreen` untouched.
+- Settings → **Delete my online data** (flag-gated), also on the lobby screen.
+
+## Parity risks vs local engine
+- **No House stake** top-up online (local gives a once-per-match stake when short).
+- **No human shortfall choice**: short payers pay what they have; at 0 they're out (local offers cover-with-bank / quit for humans).
+- **No handoff confirm**: turn passes immediately; last payout message is shown instead of the handoff strip.
+- First-roll triple 1s: each other pays 10 (pay what they have), roller takes pot, match ends — same as local, minus shortfall flow.
+- Server bot is a simple policy (hold pairs, bank any score) — not `bot_ai.dart` personalities.
+- No mid-match re-ante round restart (local restarts a round on some sweeps); match ends when ≤1 player remains or host ends.
+- Dice animation / settle-lock UX not reused; plain dice tiles.
 
 ## Auth & display name
 - Anonymous Firebase Auth; uid is the online identity.
@@ -43,7 +61,7 @@ Feature flag: `--dart-define=MARGE_ONLINE_INVITE=true` (off by default; Producti
 
 ## Reconnect / timeout
 - Room doc is the source of truth; app re-subscribes to `rooms/{id}` on resume (rejoin by code is idempotent).
-- Turn timeout 60s → server auto-passes/keeps; disconnected 3 turns → seat played by server bot logic for the rest of the match (only after the match started; does not affect payouts rules TBD).
+- Turn timeout 60s → `sweepRooms` auto-plays that seat (one set) with server bot logic.
 - Idle lobby 30 min → `abandoned`, code freed.
 
 ## Delete my online data (REQUIRED before online Play review)
@@ -55,12 +73,12 @@ Feature flag: `--dart-define=MARGE_ONLINE_INVITE=true` (off by default; Producti
 Paste pack (CoS hosts on gh-pages; Eng does not host): `/workspace/marge-growth/privacy-policy-online.md`, `terms-of-use-online.md`, `play-console-paste-online.md`. `{{EFFECTIVE_DATE}}` filled at publish. Online collects: anonymous ID, optional display name, online gem balance, room participation. No chat.
 
 ## Firebase Console checklist (Jerilyn / CoS)
-1. console.firebase.google.com → Add project, suggested id **`marge-online`** (Analytics optional; off is simpler for Data safety).
-2. Build → Authentication → Get started → Sign-in method → enable **Anonymous**.
-3. Build → Firestore Database → Create (production mode, region e.g. `us-central1`).
-4. Upgrade to **Blaze** plan (required for Cloud Functions; set a budget alert, e.g. $5).
-5. Project settings → Add app → Android, package **`com.jerilynroberts.marge`**, add SHA-1/SHA-256 of upload key and Play app-signing key (Play Console → App integrity).
-6. Download **google-services.json** → place at `android/app/google-services.json` on the build box (gitignored; template `google-services.json.example`).
+1. ✅ console.firebase.google.com → Add project, suggested id **`marge-online`** (Analytics optional; off is simpler for Data safety).
+2. ✅ Build → Authentication → Get started → Sign-in method → enable **Anonymous**.
+3. ✅ (nam5) Build → Firestore Database → Create (production mode, region e.g. `us-central1`).
+4. **(STILL BLOCKED)** Upgrade to **Blaze** plan (required for Cloud Functions; set a budget alert, e.g. $5).
+5. ✅ app registered; SHA fingerprints TODO (not needed for anon). Project settings → Add app → Android, package **`com.jerilynroberts.marge`**, add SHA-1/SHA-256 of upload key and Play app-signing key (Play Console → App integrity).
+6. ✅ Download **google-services.json** → place at `android/app/google-services.json` on the build box (gitignored; template `google-services.json.example`).
 7. Give Eng deploy access: either add a service account key to `/home/box/secrets/` or run `firebase login:ci` and share the token — then Eng runs `firebase deploy --only functions,firestore:rules`.
 
 ## Open questions

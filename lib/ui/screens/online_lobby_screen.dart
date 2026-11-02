@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../online/auth_service.dart';
+import '../../online/delete_online_data.dart';
 import '../../online/room_models.dart';
 import '../../online/room_service.dart';
+import 'online_match_screen.dart';
 
 /// WIP: create or join an invite room by short code.
 /// Hidden behind kOnlineInviteEnabled; gameplay UI for online rooms is the
@@ -23,6 +25,9 @@ class OnlineLobbyScreen extends StatefulWidget {
 
 class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
   final _code = TextEditingController();
+  late final _nameCtl = TextEditingController(text: widget.displayName);
+  String? _uid;
+  bool _opened = false;
   RoomService? _rooms;
   String? _roomId;
   String? _error;
@@ -43,6 +48,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
       if (uid == null) {
         _error = OnlineAuthService.instance.lastError;
       } else {
+        _uid = uid;
         _rooms = RoomService();
       }
     });
@@ -65,42 +71,21 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
     }
   }
 
-  Future<void> _confirmDelete() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Delete my online data?'),
-        content: const Text(
-          'Deletes your online account, display name, online gem balance and room history from our servers. Offline play and your on-device gems are not affected.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(c, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(c, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    setState(() => _busy = true);
-    final done = await OnlineAuthService.instance.deleteOnlineData();
-    if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _rooms = null;
-      _error = done
-          ? 'Online data deleted.'
-          : OnlineAuthService.instance.lastError;
-    });
+  Future<void> _delete() async {
+    final done = await confirmAndDeleteOnlineData(context);
+    if (done && mounted) setState(() => _rooms = null);
+  }
+
+  String get _name {
+    final uid = _uid ?? '';
+    final typed = _nameCtl.text.trim();
+    return OnlineAuthService.seatLabel(typed.isEmpty ? null : typed, uid);
   }
 
   @override
   void dispose() {
     _code.dispose();
+    _nameCtl.dispose();
     super.dispose();
   }
 
@@ -127,6 +112,15 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
               style: const TextStyle(color: Colors.redAccent),
             ),
           ),
+        TextField(
+          key: const ValueKey('online-display-name'),
+          controller: _nameCtl,
+          maxLength: 20,
+          decoration: const InputDecoration(
+            labelText: 'Display name (optional)',
+            helperText: 'Shown to other players. Blank = Player + ID.',
+          ),
+        ),
         Text('Bots in leftover seats: $_bots'),
         Slider(
           value: _bots.toDouble(),
@@ -142,7 +136,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
                     seatCount: 4,
                     botCount: _bots,
                     ante: 10,
-                    displayName: widget.displayName,
+                    displayName: _name,
                     clientGemClaim: widget.gemClaim,
                   )).roomId,
                 ),
@@ -161,7 +155,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
               : () => _run(
                   (r) => r.joinByCode(
                     _code.text,
-                    displayName: widget.displayName,
+                    displayName: _name,
                     clientGemClaim: widget.gemClaim,
                   ),
                 ),
@@ -169,7 +163,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
         ),
         const SizedBox(height: 32),
         TextButton(
-          onPressed: _busy ? null : _confirmDelete,
+          onPressed: _busy ? null : _delete,
           child: const Text('Delete my online data'),
         ),
       ],
@@ -183,6 +177,21 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
         final room = snap.data;
         if (room == null) {
           return const Center(child: CircularProgressIndicator());
+        }
+        if (room.status != RoomStatus.lobby && room.match != null && !_opened) {
+          _opened = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(
+                builder: (_) => OnlineMatchScreen(
+                  rooms: _rooms!,
+                  roomId: room.id,
+                  myUid: _uid!,
+                ),
+              ),
+            );
+          });
         }
         return ListView(
           children: [
@@ -204,7 +213,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
                 ),
                 subtitle: Text(s.kind.name),
               ),
-            if (room.status == RoomStatus.lobby)
+            if (room.status == RoomStatus.lobby && room.hostUid == _uid)
               ElevatedButton(
                 onPressed: _busy
                     ? null

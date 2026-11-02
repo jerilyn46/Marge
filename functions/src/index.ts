@@ -1,15 +1,21 @@
 /**
  * Marge invite-room multiplayer — Cloud Functions (callable, v2).
  * Server is authoritative for deck/dice, ante, pot and payouts.
- * See docs/multiplayer-invite-mvp.md for schema. Bodies marked TODO.
+ * Rules live in ./engine.ts (port of lib/engine). See docs/multiplayer-invite-mvp.md.
  */
 import { initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
-import { FieldValue, getFirestore, Transaction } from "firebase-admin/firestore";
+import { FieldValue, getFirestore, Timestamp, Transaction } from "firebase-admin/firestore";
+import { onSchedule } from "firebase-functions/v2/scheduler";
+import { randomInt } from "node:crypto";
+import {
+  autoPlayTimedOut, bank, BOT_START_BANK, MatchState, newMatch, roll, Rng, RuleError, runBots, SeatState,
+} from "./engine";
 import { HttpsError, onCall, CallableRequest } from "firebase-functions/v2/https";
 
 initializeApp();
 const db = getFirestore();
+db.settings({ ignoreUndefinedProperties: true });
 
 const STARTING_GEMS = 100;
 const MAX_CLIENT_CLAIM = 5000; // MVP cap on first-auth seed (honesty risk)
@@ -99,38 +105,193 @@ export const joinRoom = onCall(async (req) => {
   return { roomId };
 });
 
+const TURN_TIMEOUT_MS = 60_000;
+const LOBBY_IDLE_MS = 30 * 60_000;
+const rng: Rng = () => randomInt(0, 1_000_000) / 1_000_000;
+
+type Seat = Record<string, any>;
+
+function asRuleError(e: unknown): never {
+  if (e instanceof RuleError) throw new HttpsError("failed-precondition", e.message);
+  throw e;
+}
+
+/** Return each human seat's table bank to users/{uid}.gems (escrow release). */
+function settle(tx: Transaction, m: MatchState) {
+  for (const s of m.seats) {
+    if (s.uid && (s.kind === "host" || s.kind === "human")) {
+      tx.set(db.collection("users").doc(s.uid), { gems: FieldValue.increment(s.bank), escrowRoom: null }, { merge: true });
+      s.bank = 0;
+    }
+  }
+}
+
+/** Shared write after any match mutation: bots, settle on finish, version bump. */
+function commitMatch(tx: Transaction, ref: FirebaseFirestore.DocumentReference, m: MatchState) {
+  runBots(m, rng);
+  const finished = m.status === "finished";
+  const display = JSON.parse(JSON.stringify(m)) as MatchState; // banks before settle
+  if (finished) settle(tx, m);
+  tx.update(ref, {
+    match: display, pot: display.pot, turnSeat: display.turn?.seat ?? null,
+    status: finished ? "finished" : "playing", version: FieldValue.increment(1),
+    turnDeadline: finished ? null : Date.now() + TURN_TIMEOUT_MS,
+    lastActivity: FieldValue.serverTimestamp(),
+  });
+}
+
+async function withRoom<T>(roomId: string, fn: (tx: Transaction, ref: FirebaseFirestore.DocumentReference, room: Record<string, any>) => Promise<T>) {
+  return db.runTransaction(async (tx) => {
+    const ref = db.collection("rooms").doc(String(roomId));
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new HttpsError("not-found", "Room not found");
+    return fn(tx, ref, snap.data()!);
+  });
+}
+
+function mySeat(room: Record<string, any>, uid: string): number {
+  const m = room.match as MatchState | undefined;
+  const seats: Seat[] = m?.seats ?? room.seats;
+  const i = seats.findIndex((s) => s.uid === uid);
+  if (i < 0) throw new HttpsError("permission-denied", "Not seated in this room");
+  return i;
+}
+
+function checkVersion(room: Record<string, any>, expected: unknown) {
+  if (typeof expected === "number" && expected !== room.version) {
+    throw new HttpsError("aborted", "Stale state — refresh and retry");
+  }
+}
+
 export const leaveRoom = onCall(async (req) => {
-  uidOf(req);
-  // TODO: free seat in lobby; mark disconnected mid-match (turn timeout handles it).
+  const uid = uidOf(req);
+  await withRoom(req.data?.roomId, async (tx, ref, room) => {
+    const i = mySeat(room, uid);
+    if (room.status === "lobby") {
+      if (room.hostUid === uid) {
+        tx.update(ref, { status: "abandoned", lastActivity: FieldValue.serverTimestamp() });
+        tx.delete(db.collection("roomCodes").doc(room.code));
+        return;
+      }
+      const seats = room.seats as Seat[];
+      seats[i] = { index: i, kind: "open" };
+      tx.update(ref, { seats, memberUids: FieldValue.arrayRemove(uid), version: FieldValue.increment(1) });
+      return;
+    }
+    if (room.status === "playing") {
+      const m = room.match as MatchState;
+      const s = m.seats[i];
+      if (!s.eliminated) {
+        // Leaving keeps your current table bank; you're out of this match.
+        tx.set(db.collection("users").doc(uid), { gems: FieldValue.increment(s.bank), escrowRoom: null }, { merge: true });
+        s.bank = 0;
+        s.eliminated = true;
+        s.connected = false;
+        if (m.turn?.seat === i) { m.turn = null; }
+        const live = m.seats.filter((x) => x.kind !== "open" && !x.eliminated);
+        if (live.length <= 1) { m.status = "finished"; m.winnerSeat = live[0]?.index ?? null; m.turn = null; }
+        else if (!m.turn) {
+          let n = (i + 1) % m.seats.length;
+          while (m.seats[n].kind === "open" || m.seats[n].eliminated) n = (n + 1) % m.seats.length;
+          m.turn = { seat: n, rollNumber: 0, setNumber: 1, dice: [1, 1, 1], kept: [false, false, false], carried: null, score: null };
+        }
+      }
+      commitMatch(tx, ref, m);
+    }
+  });
   return { ok: true };
 });
 
 export const startMatch = onCall(async (req) => {
-  uidOf(req);
-  // TODO (host only): require >=2 non-open seats; open seats stay empty (no auto bot-fill);
-  // debit ante from users/{uid}.gems for each human in one transaction; pot += antes;
-  // write server-only rooms/{id}/private/state (dice RNG seed, turn order); status=playing.
-  throw new HttpsError("unimplemented", "startMatch TODO");
+  const uid = uidOf(req);
+  await withRoom(req.data?.roomId, async (tx, ref, room) => {
+    if (room.hostUid !== uid) throw new HttpsError("permission-denied", "Host only");
+    if (room.status !== "lobby") throw new HttpsError("failed-precondition", "Already started");
+    const lobby = room.seats as Seat[];
+    const filled = lobby.filter((s) => s.kind !== "open");
+    if (filled.length < 2) throw new HttpsError("failed-precondition", "Need at least 2 players");
+    const humans = filled.filter((s) => s.uid);
+    const userSnaps = await Promise.all(humans.map((s) => tx.get(db.collection("users").doc(s.uid))));
+    const banks = new Map<string, number>();
+    userSnaps.forEach((u, k) => {
+      const gems = (u.data()?.gems as number) ?? 0;
+      if (gems < room.ante) throw new HttpsError("failed-precondition", `${humans[k].displayName} lacks the ante`);
+      if (u.data()?.escrowRoom) throw new HttpsError("failed-precondition", `${humans[k].displayName} is in another match`);
+      banks.set(humans[k].uid, gems);
+    });
+    // Escrow: whole online balance moves to the table, returned on settle.
+    for (const [u] of banks) tx.update(db.collection("users").doc(u), { gems: 0, escrowRoom: ref.id });
+    // Open seats stay empty — never auto-filled with bots.
+    const seats: SeatState[] = lobby.map((s, i) => ({
+      index: i, kind: s.kind, uid: s.uid ?? null, displayName: s.displayName ?? null, connected: s.connected ?? false,
+      bank: s.kind === "bot" ? BOT_START_BANK : s.uid ? banks.get(s.uid)! : 0, eliminated: false,
+    }) as SeatState);
+    const m = newMatch(seats, room.ante);
+    tx.delete(db.collection("roomCodes").doc(room.code));
+    commitMatch(tx, ref, m);
+  });
+  return { ok: true };
 });
 
-export const submitRoll = onCall(async (req) => {
-  uidOf(req);
-  // TODO: verify turnSeat belongs to caller + expectedVersion; server rolls dice; bump version.
-  throw new HttpsError("unimplemented", "submitRoll TODO");
-});
-
-export const submitKeep = onCall(async (req) => {
-  uidOf(req);
-  // TODO: validate keep indexes against server dice; advance turn; run bot seats server-side.
-  throw new HttpsError("unimplemented", "submitKeep TODO");
-});
-
-/** Internal: evaluate hands, pay pot to users/{uid}.gems, status=finished. */
-export async function resolveTurn(_roomId: string): Promise<void> {
-  // TODO: port lib/engine/hand_evaluator.dart rules; pay out in a transaction.
+async function act(req: CallableRequest, fn: (m: MatchState, seat: number) => void) {
+  const uid = uidOf(req);
+  await withRoom(req.data?.roomId, async (tx, ref, room) => {
+    if (room.status !== "playing") throw new HttpsError("failed-precondition", "Match not running");
+    checkVersion(room, req.data?.expectedVersion);
+    const m = room.match as MatchState;
+    const seat = mySeat(room, uid);
+    try { fn(m, seat); } catch (e) { asRuleError(e); }
+    commitMatch(tx, ref, m);
+  });
+  return { ok: true };
 }
 
-/** Scheduled sweeper TODO: turn timeout (auto-pass after 60s), abandon lobbies idle 30 min, free codes. */
+/** Roll; optional `keep` = indexes held (ignored on first roll of a set). Server rolls. */
+export const submitRoll = onCall((req) => act(req, (m, seat) => {
+  const keep: number[] = Array.isArray(req.data?.keep) ? req.data.keep : [];
+  roll(m, seat, [0, 1, 2].map((i) => keep.includes(i)), rng);
+}));
+
+/** Bank the current scoring hand (resolveTurn runs inside the engine). */
+export const submitKeep = onCall((req) => act(req, (m, seat) => bank(m, seat)));
+
+/** Host ends the match early: everyone keeps their table bank. */
+export const endMatch = onCall(async (req) => {
+  const uid = uidOf(req);
+  await withRoom(req.data?.roomId, async (tx, ref, room) => {
+    if (room.hostUid !== uid) throw new HttpsError("permission-denied", "Host only");
+    if (room.status !== "playing") return;
+    const m = room.match as MatchState;
+    m.status = "finished";
+    m.turn = null;
+    const best = m.seats.filter((s) => s.kind !== "open" && !s.eliminated).sort((a, b) => b.bank - a.bank)[0];
+    m.winnerSeat = best?.index ?? null;
+    commitMatch(tx, ref, m);
+  });
+  return { ok: true };
+});
+
+/** Every minute: auto-play timed-out turns; abandon idle lobbies and free codes. */
+export const sweepRooms = onSchedule("every 1 minutes", async () => {
+  const now = Date.now();
+  const late = await db.collection("rooms").where("status", "==", "playing").where("turnDeadline", "<", now).limit(50).get();
+  for (const d of late.docs) {
+    await withRoom(d.id, async (tx, ref, room) => {
+      if (room.status !== "playing" || (room.turnDeadline ?? 0) >= now) return;
+      const m = room.match as MatchState;
+      autoPlayTimedOut(m, rng);
+      commitMatch(tx, ref, m);
+    }).catch(() => undefined);
+  }
+  const idle = await db.collection("rooms").where("status", "==", "lobby")
+    .where("lastActivity", "<", Timestamp.fromMillis(now - LOBBY_IDLE_MS)).limit(100).get();
+  for (const d of idle.docs) {
+    const batch = db.batch();
+    batch.update(d.ref, { status: "abandoned" });
+    batch.delete(db.collection("roomCodes").doc(d.data().code));
+    await batch.commit();
+  }
+});
 
 /** "Delete my online data" (required before online Play review). */
 export const deleteOnlineData = onCall(async (req) => {

@@ -59,21 +59,25 @@ class RoomService {
   Future<void> startMatch(String roomId) =>
       _call('startMatch', {'roomId': roomId});
 
-  Future<void> submitRoll(String roomId, {required int expectedVersion}) =>
-      _call('submitRoll', {
-        'roomId': roomId,
-        'expectedVersion': expectedVersion,
-      });
-
-  Future<void> submitKeep(
+  /// Roll; [keepIndexes] are held dice (ignored on the first roll of a set).
+  /// Dice are rolled on the server.
+  Future<void> submitRoll(
     String roomId, {
-    required List<int> keepIndexes,
+    List<int> keepIndexes = const [],
     required int expectedVersion,
-  }) => _call('submitKeep', {
+  }) => _call('submitRoll', {
     'roomId': roomId,
     'keep': keepIndexes,
     'expectedVersion': expectedVersion,
   });
+
+  /// Bank the current scoring hand.
+  Future<void> bank(String roomId, {required int expectedVersion}) => _call(
+    'submitKeep',
+    {'roomId': roomId, 'expectedVersion': expectedVersion},
+  );
+
+  Future<void> endMatch(String roomId) => _call('endMatch', {'roomId': roomId});
 
   Stream<Room?> watchRoom(String roomId) => _db
       .collection('rooms')
