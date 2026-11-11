@@ -95,6 +95,17 @@ cd functions && npm ci && npm run smoke
 ```
 `functions/scripts/emulator-smoke.mjs` signs in 3 anonymous users, then: createRoom (1 bot) → joinRoom ×2 → non-host start rejected → startMatch → plays turns via submitRoll/submitKeep → guest **deleteOnlineData mid-match** → room stays playable, next seat plays → host endMatch → finished.
 
+## Live two-client smoke (marge-online)
+`functions/scripts/live-smoke.mjs` drives the **deployed** backend with the Firebase JS client SDK: separate app instances, each with its own anonymous user, so rules and callables run as they do on a phone. Config comes from env only (nothing committed):
+```
+cd functions/scripts && npm install
+GOOGLE_SERVICES_JSON=/home/box/secrets/marge-firebase/google-services.json RUNS=3 node live-smoke.mjs
+```
+(or `FIREBASE_WEB_CONFIG=<file>` / `FIREBASE_API_KEY` + `FIREBASE_PROJECT_ID`; optional `REGION`, `MAX_TURNS`).
+Scenario A (2 humans): createRoom → wrong code rejected → non-member read denied by rules → joinRoom (lowercase code) → both clients + host listener see both members → non-host start rejected → startMatch (pot = 2×ante, escrow) → code freed → stale version / out-of-turn rejected → alternate full sets to the finish, gems conserved every turn → settle matches final banks.
+Scenario B (2 humans + bot): guest leaveRoom mid-match → keeps table bank, room stays playing, host plays on → settles.
+Cleanup: deleteOnlineData for all 4 users (auth accounts removed). Room docs remain as scrubbed husks (no delete path); finished rooms keep `match.seats[].uid/displayName`.
+
 ### Mid-match delete (legal)
 `deleteOnlineData` on a playing room: the seat is marked out, uid/name scrubbed ("Left player"), its escrowed table bank is **forfeited into the pot**, turn advances (or match finishes if ≤1 left); if the host deletes, host passes to the next live human. User doc + auth account are deleted.
 
