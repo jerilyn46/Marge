@@ -10,7 +10,7 @@
 //   Optional: REGION (us-central1), RUNS (1), MAX_TURNS (200).
 //
 // Every test user is removed at the end via deleteOnlineData (also on failure).
-// Room docs stay behind as scrubbed husks (no client/server delete path exists).
+// Rooms with no member left are deleted by deleteOnlineData (after the pot/scrub fix deploy).
 import { readFileSync } from "node:fs";
 import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, signInAnonymously } from "firebase/auth";

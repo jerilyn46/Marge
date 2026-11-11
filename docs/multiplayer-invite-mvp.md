@@ -29,11 +29,20 @@ Rules engine: `functions/src/engine.ts` — pure TS port of `lib/engine/hand_eva
 | startMatch | implemented (host, ≥2 filled seats, ante check, escrow online balance → table bank, bots 100, open seats stay empty, code freed) |
 | submitRoll | implemented (`keep` indexes, server dice, version check, auto-resolve pot win / 3rd-roll miss) |
 | submitKeep | implemented — **banks** the current scoring hand (resolveTurn) |
-| endMatch | implemented (host ends early; highest bank wins; everyone keeps their table bank) |
-| sweepRooms (every 1 min) | implemented (turn > 60s → server auto-plays that seat like a bot; lobby idle 30 min → abandoned) |
+| endMatch | implemented (host ends early; highest bank wins; everyone keeps their table bank; **leftover pot returned by table bank**, see "Pot left over at the end") |
+| sweepRooms (every 1 min) | implemented (turn > 60s → server auto-plays that seat like a bot; lobby idle 30 min → abandoned + code freed; **finished rooms deleted 24 h after last activity, abandoned rooms 1 h**). Needs the composite indexes in `firestore.indexes.json` (status+turnDeadline, status+lastActivity) — deploy with `--only firestore,functions`. Each phase is isolated and logs its own errors. |
 | deleteOnlineData | implemented |
 
 After every action, bot seats are played server-side until a human is up. On finish each human's table bank is credited back to `users/{uid}.gems`.
+
+### Pot left over at the end (gems are always conserved)
+A normal finish already sweeps the pot to the winner. Any match that finishes with gems still in the pot — host **End match**, a leave/delete that leaves one player, or everyone busting on the same ante — returns that pot to the seats **still in the match, proportional to their table bank** (`settlePot` in `engine.ts`):
+- integer largest-remainder split; leftover single gems go to the largest fractional share, ties to the lower seat index → deterministic;
+- a lone survivor takes the whole pot (same as a normal sweep);
+- **bots count as seats** (they anted too), so a bot's share stays on the bot and leaves the human economy, exactly like gems a bot wins in play;
+- eliminated / left seats get nothing (they already left with their bank or forfeited it);
+- if nobody is still in, equal split over seated humans with a uid and bots.
+The last payout line shows the split, e.g. `Pot of 20 returned by table bank: Xena +13, Yuri +7.` Invariant: sum(table banks) + pot is unchanged, and on settle each human's `users.gems` equals their final bank.
 
 ## Client
 - `OnlineLobbyScreen`: display name (optional, max 20), bots slider, Create / Join by code, seat list, host Start; auto-opens the match screen when the server starts the match.
@@ -66,7 +75,7 @@ After every action, bot seats are played server-side until a human is up. On fin
 
 ## Delete my online data (REQUIRED before online Play review)
 - In-app control: **Delete my online data** (on the online lobby screen now; Settings entry TODO).
-- Calls `deleteOnlineData` → scrubs uid from rooms (seat → open), deletes `users/{uid}` (gems + name), deletes the Firebase Auth user; client signs out. Local offline data untouched. Uninstall alone is not enough, which is why this exists.
+- Calls `deleteOnlineData` → for **every** room the uid is a member of (lobby, playing, finished, abandoned): lobby seat → open, uid removed from `memberUids`, match seat → `uid: null`, name → "Left player", the name is also scrubbed from the last payout line, and host passes to the next member. A running match keeps going for the others (bank forfeited to the pot, seat dropped). A room with **no member left is deleted** (and its code freed). Then deletes `users/{uid}` (gems + name) and the Firebase Auth user; client signs out. Local offline data untouched. Uninstall alone is not enough, which is why this exists. Pure logic: `scrubRoom` in `functions/src/rooms.ts` (unit-tested).
 - TODO: also delete finished-match history once a history collection exists.
 
 ## Legal
@@ -93,7 +102,7 @@ Prereqs: Node 20+, Java 21+ (box: `/home/box/sdk/jdk-21*`), `npm i -g firebase-t
 ```
 cd functions && npm ci && npm run smoke
 ```
-`functions/scripts/emulator-smoke.mjs` signs in 3 anonymous users, then: createRoom (1 bot) → joinRoom ×2 → non-host start rejected → startMatch → plays turns via submitRoll/submitKeep → guest **deleteOnlineData mid-match** → room stays playable, next seat plays → host endMatch → finished.
+`functions/scripts/emulator-smoke.mjs` signs in 3 anonymous users, then: createRoom (1 bot) → joinRoom ×2 → non-host start rejected → startMatch → plays turns via submitRoll/submitKeep → guest **deleteOnlineData mid-match** → room stays playable, next seat plays → host endMatch → finished. Then: the deleted guest's uid/name appear nowhere in the room; gems conserved incl. the forfeit (users + bot = 1100); room deleted once the last human deletes; a 2-player host **endMatch** returns the pot by bank and users' gems sum to the starting 100; deleting from a finished room anonymizes it and the last delete removes it; a lone lobby host delete removes room + code.
 
 ## Live two-client smoke (marge-online)
 `functions/scripts/live-smoke.mjs` drives the **deployed** backend with the Firebase JS client SDK: separate app instances, each with its own anonymous user, so rules and callables run as they do on a phone. Config comes from env only (nothing committed):
@@ -104,7 +113,7 @@ GOOGLE_SERVICES_JSON=/home/box/secrets/marge-firebase/google-services.json RUNS=
 (or `FIREBASE_WEB_CONFIG=<file>` / `FIREBASE_API_KEY` + `FIREBASE_PROJECT_ID`; optional `REGION`, `MAX_TURNS`).
 Scenario A (2 humans): createRoom → wrong code rejected → non-member read denied by rules → joinRoom (lowercase code) → both clients + host listener see both members → non-host start rejected → startMatch (pot = 2×ante, escrow) → code freed → stale version / out-of-turn rejected → alternate full sets to the finish, gems conserved every turn → settle matches final banks.
 Scenario B (2 humans + bot): guest leaveRoom mid-match → keeps table bank, room stays playing, host plays on → settles.
-Cleanup: deleteOnlineData for all 4 users (auth accounts removed). Room docs remain as scrubbed husks (no delete path); finished rooms keep `match.seats[].uid/displayName`.
+Cleanup: deleteOnlineData for all 4 users (auth accounts removed); rooms with no member left are deleted (since the pot/scrub fix; before that deploy they stayed as husks, which sweepRooms now removes).
 
 ### Mid-match delete (legal)
 `deleteOnlineData` on a playing room: the seat is marked out, uid/name scrubbed ("Left player"), its escrowed table bank is **forfeited into the pot**, turn advances (or match finishes if ≤1 left); if the host deletes, host passes to the next live human. User doc + auth account are deleted.

@@ -277,3 +277,43 @@ export function autoPlayTimedOut(m: MatchState, rng: Rng) {
   const seat = m.turn?.seat;
   for (let i = 0; i < 6 && m.status === "playing" && m.turn?.seat === seat; i++) botAct(m, rng);
 }
+
+/** Mark a seat out mid-match (leave / delete); advance the turn or finish so others keep playing. */
+export function dropSeat(m: MatchState, i: number) {
+  const s = m.seats[i];
+  s.eliminated = true;
+  s.connected = false;
+  if (m.turn?.seat === i) m.turn = null;
+  const live = m.seats.filter(plays);
+  if (live.length <= 1) { m.status = "finished"; m.winnerSeat = live[0]?.index ?? null; m.turn = null; return; }
+  if (!m.turn) startTurn(m, firstActive(m, (i + 1) % m.seats.length));
+}
+
+/**
+ * Pot left over when a match finishes (host End match, a leave/delete that
+ * leaves one player, or everyone busting at once) goes back to the seats still
+ * in, proportional to their table bank. Integer largest-remainder split; ties
+ * go to the lower seat index, so it is deterministic. A lone survivor takes it
+ * all (same as a normal sweep). Bots count as seats. If no seat is still in,
+ * fall back to an equal split over seated bots/humans that still have a uid.
+ * Conserves gems: sum(banks) + pot is unchanged. Returns [seat, amount] pairs.
+ */
+export function settlePot(m: MatchState): Array<[number, number]> {
+  const pot = m.pot;
+  if (m.status !== "finished" || pot <= 0) return [];
+  let to = m.seats.filter(plays);
+  let weights = to.map((s) => Math.max(0, s.bank));
+  if (!to.length) {
+    to = m.seats.filter((s) => s.kind === "bot" || ((s.kind === "host" || s.kind === "human") && s.uid));
+    weights = to.map(() => 1);
+  }
+  if (!to.length) return [];
+  let W = weights.reduce((a, b) => a + b, 0);
+  if (W === 0) { weights = to.map(() => 1); W = to.length; }
+  const shares = to.map((s, k) => ({ s, k, amt: Math.floor((pot * weights[k]) / W), rem: (pot * weights[k]) % W }));
+  let left = pot - shares.reduce((a, x) => a + x.amt, 0);
+  [...shares].sort((a, b) => b.rem - a.rem || a.s.index - b.s.index).forEach((x) => { if (left > 0) { x.amt++; left--; } });
+  for (const x of shares) x.s.bank += x.amt;
+  m.pot = 0;
+  return shares.filter((x) => x.amt > 0).map((x) => [x.s.index, x.amt]);
+}

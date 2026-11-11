@@ -9,8 +9,11 @@ import { FieldValue, getFirestore, Timestamp, Transaction } from "firebase-admin
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { randomInt } from "node:crypto";
 import {
-  autoPlayTimedOut, bank, BOT_START_BANK, MatchState, newMatch, roll, Rng, RuleError, runBots, SeatState,
+  autoPlayTimedOut, bank, BOT_START_BANK, dropSeat, MatchState, newMatch, roll, Rng, RuleError, runBots, SeatState,
+  settlePot,
 } from "./engine";
+import { ABANDONED_RETENTION_MS, FINISHED_RETENTION_MS, scrubRoom, sweepAction } from "./rooms";
+import { logger } from "firebase-functions";
 import { HttpsError, onCall, CallableRequest } from "firebase-functions/v2/https";
 
 initializeApp();
@@ -126,13 +129,29 @@ function settle(tx: Transaction, m: MatchState) {
   }
 }
 
-/** Shared write after any match mutation: bots, settle on finish, version bump. */
-function commitMatch(tx: Transaction, ref: FirebaseFirestore.DocumentReference, m: MatchState) {
+/**
+ * Shared write after any match mutation: bots, pot settle + escrow release on
+ * finish, version bump. `extra` = other top-level fields written in the same update.
+ */
+function commitMatch(tx: Transaction, ref: FirebaseFirestore.DocumentReference, m: MatchState,
+  extra: Record<string, unknown> = {}) {
   runBots(m, rng);
   const finished = m.status === "finished";
+  if (finished) {
+    const pot = m.pot;
+    const split = settlePot(m); // leftover pot back to seats still in; conserves gems
+    if (split.length) {
+      const parts = split.map(([i, amt]) => `${m.seats[i].displayName ?? `Seat ${i + 1}`} +${amt}`).join(", ");
+      const note = `Pot of ${pot} returned by table bank: ${parts}.`;
+      m.lastPayout = m.lastPayout
+        ? { ...m.lastPayout, message: `${m.lastPayout.message} ${note}` }
+        : { message: note, kind: "none", amount: pot, seat: m.winnerSeat ?? split[0][0], dice: [] };
+    }
+  }
   const display = JSON.parse(JSON.stringify(m)) as MatchState; // banks before settle
   if (finished) settle(tx, m);
   tx.update(ref, {
+    ...extra,
     match: display, pot: display.pot, turnSeat: display.turn?.seat ?? null,
     status: finished ? "finished" : "playing", version: FieldValue.increment(1),
     turnDeadline: finished ? null : Date.now() + TURN_TIMEOUT_MS,
@@ -160,21 +179,6 @@ function mySeat(room: Record<string, any>, uid: string): number {
 function checkVersion(room: Record<string, any>, expected: unknown) {
   if (typeof expected === "number" && expected !== room.version) {
     throw new HttpsError("aborted", "Stale state — refresh and retry");
-  }
-}
-
-/** Mark seat out of the match; advance turn or finish so others can keep playing. */
-function dropSeat(m: MatchState, i: number) {
-  const s = m.seats[i];
-  s.eliminated = true;
-  s.connected = false;
-  if (m.turn?.seat === i) m.turn = null;
-  const live = m.seats.filter((x) => x.kind !== "open" && !x.eliminated);
-  if (live.length <= 1) { m.status = "finished"; m.winnerSeat = live[0]?.index ?? null; m.turn = null; return; }
-  if (!m.turn) {
-    let n = (i + 1) % m.seats.length;
-    while (m.seats[n].kind === "open" || m.seats[n].eliminated) n = (n + 1) % m.seats.length;
-    m.turn = { seat: n, rollNumber: 0, setNumber: 1, dice: [1, 1, 1], kept: [false, false, false], carried: null, score: null };
   }
 }
 
@@ -277,25 +281,41 @@ export const endMatch = onCall(async (req) => {
   return { ok: true };
 });
 
-/** Every minute: auto-play timed-out turns; abandon idle lobbies and free codes. */
+/**
+ * Every minute: auto-play timed-out turns; abandon idle lobbies (code freed);
+ * delete finished rooms after 24 h and abandoned rooms after 1 h (rooms.ts).
+ * Each phase is isolated so one failing query (e.g. a missing index) can't
+ * block the others. Needs the composite indexes in firestore.indexes.json.
+ */
 export const sweepRooms = onSchedule("every 1 minutes", async () => {
   const now = Date.now();
-  const late = await db.collection("rooms").where("status", "==", "playing").where("turnDeadline", "<", now).limit(50).get();
-  for (const d of late.docs) {
-    await withRoom(d.id, async (tx, ref, room) => {
-      if (room.status !== "playing" || (room.turnDeadline ?? 0) >= now) return;
-      const m = room.match as MatchState;
-      autoPlayTimedOut(m, rng);
-      commitMatch(tx, ref, m);
-    }).catch(() => undefined);
-  }
-  const idle = await db.collection("rooms").where("status", "==", "lobby")
-    .where("lastActivity", "<", Timestamp.fromMillis(now - LOBBY_IDLE_MS)).limit(100).get();
-  for (const d of idle.docs) {
-    const batch = db.batch();
-    batch.update(d.ref, { status: "abandoned" });
-    batch.delete(db.collection("roomCodes").doc(d.data().code));
-    await batch.commit();
+  const phase = async (name: string, q: FirebaseFirestore.Query, fn: (d: FirebaseFirestore.QueryDocumentSnapshot) => Promise<unknown>) => {
+    try {
+      const snap = await q.get();
+      for (const d of snap.docs) await fn(d).catch((e) => logger.warn(`sweepRooms ${name} ${d.id}`, e));
+    } catch (e) { logger.error(`sweepRooms ${name} query failed`, e); }
+  };
+  const rooms = db.collection("rooms");
+  await phase("autoplay", rooms.where("status", "==", "playing").where("turnDeadline", "<", now).limit(50), (d) =>
+    withRoom(d.id, async (tx, ref, room) => {
+      if (sweepAction(room, now, LOBBY_IDLE_MS) !== "autoplay") return;
+      autoPlayTimedOut(room.match as MatchState, rng);
+      commitMatch(tx, ref, room.match as MatchState);
+    }));
+  await phase("abandon", rooms.where("status", "==", "lobby")
+    .where("lastActivity", "<", Timestamp.fromMillis(now - LOBBY_IDLE_MS)).limit(100), (d) =>
+    withRoom(d.id, async (tx, ref, room) => {
+      if (sweepAction(room, now, LOBBY_IDLE_MS) !== "abandon") return;
+      tx.update(ref, { status: "abandoned", lastActivity: FieldValue.serverTimestamp() });
+      tx.delete(db.collection("roomCodes").doc(room.code));
+    }));
+  for (const [status, keepMs] of [["finished", FINISHED_RETENTION_MS], ["abandoned", ABANDONED_RETENTION_MS]] as const) {
+    await phase(`delete-${status}`, rooms.where("status", "==", status)
+      .where("lastActivity", "<", Timestamp.fromMillis(now - keepMs)).limit(200), (d) =>
+      withRoom(d.id, async (tx, ref, room) => {
+        if (sweepAction(room, now, LOBBY_IDLE_MS) !== "delete") return;
+        tx.delete(ref);
+      }));
   }
 });
 
@@ -303,36 +323,30 @@ export const sweepRooms = onSchedule("every 1 minutes", async () => {
 export const deleteOnlineData = onCall(async (req) => {
   const uid = uidOf(req);
   const rooms = await db.collection("rooms").where("memberUids", "array-contains", uid).get();
+  let roomsDeleted = 0;
   for (const doc of rooms.docs) {
     await withRoom(doc.id, async (tx, ref, room) => {
-      const scrub = (s: Seat) => (s.uid === uid ? { index: s.index, kind: "open" } : s);
-      const upd: Record<string, unknown> = { seats: (room.seats as Seat[]).map(scrub), memberUids: FieldValue.arrayRemove(uid) };
-      if (room.status === "playing" && room.match) {
-        const m = room.match as MatchState;
-        const i = m.seats.findIndex((s) => s.uid === uid);
-        if (i >= 0) {
-          const s = m.seats[i];
-          // Escrowed table bank is forfeited into the pot so the table stays whole for others.
-          m.pot += s.bank; s.bank = 0;
-          if (!s.eliminated) dropSeat(m, i);
-          Object.assign(s, { uid: null, displayName: "Left player" });
-        }
-        if (room.hostUid === uid) {
-          const next = m.seats.find((s) => s.uid && !s.eliminated);
-          upd.hostUid = next?.uid ?? null;
-        }
-        tx.update(ref, upd);
-        commitMatch(tx, ref, m);
+      const plan = scrubRoom(room, uid);
+      if (plan.wasPlaying && plan.match && !plan.deleteRoom) {
+        commitMatch(tx, ref, plan.match, plan.fields); // others keep playing (or it finishes + settles)
         return;
       }
-      if (room.status === "lobby" && room.hostUid === uid) {
-        upd.status = "abandoned";
-        tx.delete(db.collection("roomCodes").doc(room.code));
+      if (plan.freeCode && room.code) tx.delete(db.collection("roomCodes").doc(room.code));
+      if (plan.deleteRoom) {
+        // No member left. A running match still settles first so no one loses escrow.
+        if (plan.wasPlaying && plan.match) {
+          plan.match.status = "finished"; plan.match.turn = null;
+          settlePot(plan.match); settle(tx, plan.match);
+        }
+        tx.delete(ref);
+        roomsDeleted++;
+        return;
       }
-      tx.update(ref, upd);
+      tx.update(ref, { ...plan.fields, ...(plan.match ? { match: plan.match } : {}),
+        version: FieldValue.increment(1), lastActivity: FieldValue.serverTimestamp() });
     });
   }
   await db.collection("users").doc(uid).delete();
   await getAuth().deleteUser(uid);
-  return { ok: true, roomsScrubbed: rooms.size };
+  return { ok: true, roomsScrubbed: rooms.size, roomsDeleted };
 });
