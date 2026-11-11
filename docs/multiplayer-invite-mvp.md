@@ -113,3 +113,13 @@ Cleanup: deleteOnlineData for all 4 users (auth accounts removed). Room docs rem
 1. `firebase deploy --only firestore:rules,functions --project marge-online` (needs deploy credentials).
 2. Add SHA-1/256 fingerprints (needed later for non-anon providers / App Check).
 3. Point `npm run smoke` at prod only with throwaway accounts — or better, keep smoke on emulator and do a 2-device manual test with `--dart-define=MARGE_ONLINE_INVITE=true`.
+
+## Side-by-side QA APK (installs next to the Play copy)
+`-PMARGE_QA=true` → applicationId `com.jerilynroberts.marge.qa`, label "Marge QA". Off by default; production builds are unchanged. Needs a `google-services.json` with the `.qa` client (registered in marge-online with the upload-key SHA-1/256). Gradle refuses a QA build carrying any non-sample AdMob ID.
+```
+flutter build apk --release --dart-define=MARGE_ONLINE_INVITE=true \
+  --dart-define=TERMS_EFFECTIVE_DATE="October 12, 2026" \
+  --dart-define=ADMOB_ENABLED=true --dart-define=ADMOB_ALLOW_TEST_IDS=true \
+  -PADMOB_ENABLED=true -PADMOB_ALLOW_TEST_IDS=true -PMARGE_QA=true
+```
+No Play Billing on the QA package (Remove Ads IAP won't resolve); ads are Google test ads.
