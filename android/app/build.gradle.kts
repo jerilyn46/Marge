@@ -4,6 +4,7 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+
 import java.util.Properties
 import java.io.FileInputStream
 import java.util.Base64
@@ -49,6 +50,14 @@ fun dartDefine(name: String): String? {
 }
 val termsEffectiveDate = dartDefine("TERMS_EFFECTIVE_DATE")?.trim()?.takeIf { it.isNotEmpty() }
 
+// Side-by-side QA build (OFF by default): -PMARGE_QA=true installs next to the
+// Play copy as com.jerilynroberts.marge.qa, labelled "Marge QA". Needs a
+// google-services.json that also has the .qa client. QA builds may only carry
+// Google's sample AdMob IDs (checked below) so test taps can't hit the real
+// AdMob account. Production (no flag) is unchanged.
+val margeQa = (project.findProperty("MARGE_QA") as String?)
+    ?.equals("true", ignoreCase = true) == true
+
 android {
     namespace = "com.jerilynroberts.marge"
     compileSdk = flutter.compileSdkVersion
@@ -77,6 +86,10 @@ android {
         // Pair with --dart-define=ADMOB_ENABLED=true. See docs/ads.md.
         // MobileAdsInitProvider is always stripped; Dart bootstraps after first frame.
         manifestPlaceholders["admobAppId"] = if (admobEnabled) admobAppId else "unused"
+        manifestPlaceholders["appLabel"] = if (margeQa) "Marge QA" else "Marge"
+        if (margeQa) {
+            applicationIdSuffix = ".qa"
+        }
     }
 
     sourceSets {
@@ -144,6 +157,20 @@ gradle.taskGraph.whenReady {
     // Ads-on release: never ship Google's sample App ID by accident.
     val sampleAppId = admobInjectedAppId == null ||
         admobInjectedAppId.startsWith("ca-app-pub-3940256099942544")
+    // QA side-by-side build: sample AdMob IDs only, never the real account.
+    val realAdIds = listOfNotNull(
+        admobInjectedAppId,
+        dartDefine("ADMOB_APP_ID"),
+        dartDefine("ADMOB_BANNER_ID"),
+        dartDefine("ADMOB_INTERSTITIAL_ID"),
+        dartDefine("ADMOB_REWARDED_ID"),
+    ).filter { it.isNotBlank() && !it.startsWith("ca-app-pub-3940256099942544") }
+    if (margeQa && realAdIds.isNotEmpty()) {
+        throw GradleException(
+            "MARGE_QA builds must use Google sample AdMob IDs only: drop " +
+                "-PADMOB_APP_ID and the ADMOB_*_ID dart-defines.",
+        )
+    }
     if (wantsRelease && admobEnabled && sampleAppId && !admobAllowTestIds) {
         throw GradleException(
             "Ads-on release needs -PADMOB_APP_ID (real App ID, injected at " +
@@ -165,4 +192,10 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+}
+
+// Firebase: only applied when the real config exists, so builds without it
+// (current Production track) are unchanged. See docs/multiplayer-invite-mvp.md.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
 }
