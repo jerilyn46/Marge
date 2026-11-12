@@ -212,6 +212,17 @@ export const leaveRoom = onCall(async (req) => {
   return { ok: true };
 });
 
+/** Host heartbeat while waiting in the lobby: bumps lastActivity so the 30-min idle sweep keeps the code alive. */
+export const keepLobby = onCall(async (req) => {
+  const uid = uidOf(req);
+  await withRoom(req.data?.roomId, async (tx, ref, room) => {
+    if (room.hostUid !== uid) throw new HttpsError("permission-denied", "Host only");
+    if (room.status !== "lobby") throw new HttpsError("failed-precondition", "Room not open");
+    tx.update(ref, { lastActivity: FieldValue.serverTimestamp() });
+  });
+  return { ok: true };
+});
+
 export const startMatch = onCall(async (req) => {
   const uid = uidOf(req);
   await withRoom(req.data?.roomId, async (tx, ref, room) => {

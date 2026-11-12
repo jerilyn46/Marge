@@ -31,6 +31,7 @@ Rules engine: `functions/src/engine.ts` — pure TS port of `lib/engine/hand_eva
 | submitKeep | implemented — **banks** the current scoring hand (resolveTurn) |
 | endMatch | implemented (host ends early; highest bank wins; everyone keeps their table bank; **leftover pot returned by table bank**, see "Pot left over at the end") |
 | sweepRooms (every 1 min) | implemented (turn > 60s → server auto-plays that seat like a bot; lobby idle 30 min → abandoned + code freed; **finished rooms deleted 24 h after last activity, abandoned rooms 1 h**). Needs the composite indexes in `firestore.indexes.json` (status+turnDeadline, status+lastActivity) — deploy with `--only firestore,functions`. Each phase is isolated and logs its own errors. |
+| keepLobby | host heartbeat in lobby (bumps lastActivity; used by seat-bot) |
 | deleteOnlineData | implemented |
 
 After every action, bot seats are played server-side until a human is up. On finish each human's table bank is credited back to `users/{uid}.gems`.
@@ -114,6 +115,27 @@ GOOGLE_SERVICES_JSON=/home/box/secrets/marge-firebase/google-services.json RUNS=
 Scenario A (2 humans): createRoom → wrong code rejected → non-member read denied by rules → joinRoom (lowercase code) → both clients + host listener see both members → non-host start rejected → startMatch (pot = 2×ante, escrow) → code freed → stale version / out-of-turn rejected → alternate full sets to the finish, gems conserved every turn → settle matches final banks.
 Scenario B (2 humans + bot): guest leaveRoom mid-match → keeps table bank, room stays playing, host plays on → settles.
 Cleanup: deleteOnlineData for all 4 users (auth accounts removed); rooms with no member left are deleted (since the pot/scrub fix; before that deploy they stayed as husks, which sweepRooms now removes).
+
+## One-phone testing: seat bot (box plays the 2nd human seat)
+`functions/scripts/seat-bot.mjs` is a second **human** seat (anonymous user, display name "Box Tester") against live `marge-online`, so the Flip 7 running **Marge QA** can play a real 2-human match. Same env config as live-smoke. Each action is paced 2–4 s; policy: bank any scoring hand, else hold a pair (never a pair of 1s) and reroll. Logs every event, callable error (verbatim) and the end-of-match settlement to `/workspace/online-qa/seatbot-<time>-<mode>-<pid>.log` (path printed first). At match end it logs every seat's start/final table bank, pot, its own online gems before/after and a gem-conservation check, lingers 30 s so the phone can read the result, then calls `deleteOnlineData` for itself. Ctrl-C / SIGTERM → leaveRoom + deleteOnlineData.
+```
+cd /workspace/marge-mp-wt/functions/scripts && npm install      # once
+export GOOGLE_SERVICES_JSON=/home/box/secrets/marge-firebase/google-services.json
+
+# Box hosts, phone joins: prints the code and writes /workspace/online-qa/seatbot-current-code.txt;
+# starts the match as soon as a human joins. Phone: PLAY ONLINE (INVITE) → Join → type the code.
+node seat-bot.mjs --host
+
+# Phone hosts, box joins: phone creates the room and reads out the code.
+node seat-bot.mjs --join ABC234
+
+# "Opponent leaves mid-match": box leaves right after its 2nd turn (log line "LEAVING at turn 2").
+node seat-bot.mjs --host --leave-after-turns 2
+```
+Options: `--timeout-min 90` (whole run), `--leave-after-turns N`, `--claim 100` (box's starting online gems; lower = shorter match, e.g. `--claim 40`), `--pace 2000-4000`, `--linger-sec 30`, host only: `--seats 2 --bots 0 --ante 10 --code-file <path> --keepalive-sec 300`, `--name "Box Tester"`, `--log-dir /workspace/online-qa`.
+Exit codes: 0 finished · 2 lobby abandoned / room gone (it says so; never makes a new code by itself) · 3 timeout · 4 left on purpose · 1 error · 130 signal.
+Lobby lifetime: the server abandons a lobby after 30 min without activity. In `--host` mode the bot calls `keepLobby` every 5 min to hold the code for up to `--timeout-min`; on a backend without `keepLobby` it logs a warning and the code dies ~30 min after creation/last join.
+A 2-player match at 100 gems each runs ~7–15 min with pacing; a 2-human match ends as soon as one player leaves (the stayer gets the pot).
 
 ### Mid-match delete (legal)
 `deleteOnlineData` on a playing room: the seat is marked out, uid/name scrubbed ("Left player"), its escrowed table bank is **forfeited into the pot**, turn advances (or match finishes if ≤1 left); if the host deletes, host passes to the next live human. User doc + auth account are deleted.
