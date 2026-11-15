@@ -11,8 +11,10 @@ Future<bool> confirmAndDeleteOnlineData(BuildContext context) async {
       title: const Text('Delete my online data?'),
       content: const Text(
         'Deletes your online account, display name, online gem balance and '
-        'room history from our servers. Offline play and your on-device gems '
-        'are not affected. This cannot be undone.',
+        'room history from our servers. Your name may still appear on results '
+        'of games that already finished until those rooms clear within 24 '
+        'hours. Offline play and your on-device gems are not affected. This '
+        'cannot be undone.',
       ),
       actions: [
         TextButton(
