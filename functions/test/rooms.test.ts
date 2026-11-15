@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MatchState, newMatch, SeatState, settlePot } from "../src/engine";
-import { ABANDONED_RETENTION_MS, FINISHED_RETENTION_MS, LEFT_NAME, scrubRoom, sweepAction } from "../src/rooms";
+import { dropSeat, MatchState, newMatch, roll, SeatState, settlePot } from "../src/engine";
+import { ABANDONED_RETENTION_MS, FINISHED_RETENTION_MS, LEFT_NAME, scrubRoom, settleFinishedPot, sweepAction } from "../src/rooms";
 
 const human = (i: number, uid: string, name: string, bank: number): SeatState =>
   ({ index: i, kind: i === 0 ? "host" : "human", uid, displayName: name, bank, eliminated: false });
@@ -117,4 +117,43 @@ test("sweepAction: autoplay / abandon / retention deletes", () => {
   assert.equal(sweepAction({ status: "finished", lastActivity: now - 60_000 }, now, idle), null);
   assert.equal(sweepAction({ status: "abandoned", lastActivity: now - ABANDONED_RETENTION_MS - 1 }, now, idle), "delete");
   assert.equal(sweepAction({ status: "abandoned", lastActivity: now - 1 }, now, idle), null);
+});
+
+test("leave mid-match: fresh lastPayout (no stale whiff kind/amount), pot goes to the stayer (Y7PE55)", () => {
+  const m = newMatch([human(0, "a", "Jerilyn", 100), human(1, "b", "Box Tester", 100)], 10);
+  // Seat 0 whiffs (turn → seat 1), seat 1 whiffs (turn → seat 0): lastPayout = Box Tester whiffs, amount 2.
+  let i = 0; const f = [2, 3, 6]; const r = () => (f[i++ % 3] - 1) / 6 + 0.01;
+  for (const seat of [0, 1]) for (let k = 0; k < 3; k++) roll(m, seat, [false, false, false], r);
+  assert.match(m.lastPayout!.message, /Box Tester whiffs/);
+  assert.equal(m.lastPayout!.amount, 2);
+  const pot = m.pot;
+  const stayer = m.seats[1].bank;
+  // leaveRoom: leaver keeps their bank (paid out), seat dropped → match finishes.
+  m.seats[0].bank = 0;
+  dropSeat(m, 0);
+  assert.equal(m.status, "finished");
+  settleFinishedPot(m);
+  assert.equal(m.lastPayout!.message, `Jerilyn left the table. Pot of ${pot} goes to Box Tester.`);
+  assert.equal(m.lastPayout!.kind, "none");
+  assert.equal(m.lastPayout!.amount, 0);
+  assert.equal(m.lastPayout!.seat, 0);
+  assert.deepEqual(m.lastPayout!.dice, []);
+  assert.ok(!m.lastPayout!.message.includes("whiffs"));
+  assert.equal(m.pot, 0);
+  assert.equal(m.seats[1].bank, stayer + pot, "stayer gets the whole pot");
+});
+
+test("leave with 3+ players: '<Name> left the table.' and play continues", () => {
+  const m = newMatch([human(0, "a", "A", 100), human(1, "b", "B", 100), human(2, "c", "C", 100)], 10);
+  m.lastPayout = { message: "B whiffs — 2 gems to the pot.", kind: "none", amount: 2, seat: 1, dice: [2, 3, 6] };
+  dropSeat(m, 2);
+  assert.equal(m.status, "playing");
+  assert.deepEqual(m.lastPayout, { message: "C left the table.", kind: "none", amount: 0, seat: 2, dice: [] });
+});
+
+test("finished pot split over several seats keeps the proportional line", () => {
+  const m = finished([human(0, "a", "A", 30), human(1, "b", "B", 20)], 5);
+  m.lastPayout = { message: "A ended the match.", kind: "none", amount: 0, seat: 0, dice: [] };
+  settleFinishedPot(m);
+  assert.equal(m.lastPayout!.message, "A ended the match. Pot of 5 returned by table bank: A +3, B +2.");
 });

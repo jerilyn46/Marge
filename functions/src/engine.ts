@@ -87,7 +87,13 @@ export interface MatchState {
   lastPayout: Payout | null;
   /** Table bank per seat when the match started (before antes); for the client result screen. */
   startBanks?: number[];
+  /** +1 on every server roll (any seat, bots and timeout autoplay too): clients animate once per roll. */
+  rollSeq?: number;
+  /** The most recent roll, kept after the turn resolves so clients can show/animate it. */
+  lastRoll?: LastRoll | null;
 }
+
+export interface LastRoll { seq: number; seat: number; dice: number[]; held: boolean[]; rollNumber: number; setNumber: number }
 
 export type Rng = () => number; // [0,1)
 
@@ -181,6 +187,8 @@ export function roll(m: MatchState, seat: number, kept: boolean[] | undefined, r
   t.rollNumber = nextRoll;
   t.carried = carried;
   t.score = evaluate(t.dice, nextRoll);
+  m.rollSeq = (m.rollSeq ?? 0) + 1;
+  m.lastRoll = { seq: m.rollSeq, seat, dice: [...t.dice], held: [...hold], rollNumber: nextRoll, setNumber: t.setNumber };
   m.lastPayout = null;
   if (t.score.kind === "tripleOnesPotWin") return resolve(m);
   if (t.score.kind === "none" && nextRoll >= 3) return resolve(m);
@@ -323,6 +331,8 @@ export function autoPlayTimedOut(m: MatchState, rng: Rng) {
 /** Mark a seat out mid-match (leave / delete); advance the turn or finish so others keep playing. */
 export function dropSeat(m: MatchState, i: number) {
   const s = m.seats[i];
+  // Fresh result line: never carry an earlier turn's whiff/score (kind/amount) into the leave.
+  m.lastPayout = { message: `${name(m, i)} left the table.`, kind: "none", amount: 0, seat: i, dice: [] };
   s.eliminated = true;
   s.connected = false;
   if (m.turn?.seat === i) m.turn = null;

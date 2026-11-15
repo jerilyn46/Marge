@@ -6,6 +6,8 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'ads/ad_ids.dart';
 import 'ads/ads_service.dart';
+import 'online/online_flags.dart';
+import 'online/turn_push.dart';
 import 'services/coin_ledger.dart';
 import 'services/daily_gems_reminder.dart';
 import 'services/friends_service.dart';
@@ -17,6 +19,8 @@ import 'services/settings_service.dart';
 import 'ui/match_provider.dart';
 import 'startup_log.dart';
 import 'ui/screens/home_screen.dart';
+import 'ui/screens/online_lobby_screen.dart';
+import 'ui/screens/online_match_screen.dart';
 import 'ui/screens/username_screen.dart';
 import 'ui/system_ui.dart';
 import 'ui/theme/marge_theme.dart';
@@ -105,6 +109,9 @@ Future<void> _bootstrapAdsSafely(ProviderContainer container) async {
   }
 }
 
+/// Root navigator, so a "Your turn" notification tap can open its match.
+final GlobalKey<NavigatorState> margeNavigatorKey = GlobalKey<NavigatorState>();
+
 class MargeApp extends ConsumerStatefulWidget {
   const MargeApp({super.key});
 
@@ -119,6 +126,33 @@ class _MargeAppState extends ConsumerState<MargeApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Online builds only, after the first frame (nothing native before it):
+    // a tap on a "Your turn" push opens / rejoins that match.
+    if (kOnlineInviteEnabled) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(TurnPush.instance.startTapHandling(_openFromPush));
+      });
+    }
+  }
+
+  /// Same path as the "Rejoin your match" card: the lobby on that room goes
+  /// straight to the match screen if it is playing.
+  void _openFromPush(String roomId) {
+    if (!mounted || OnlineMatchScreen.openRoomId.value == roomId) return;
+    final nav = margeNavigatorKey.currentState;
+    if (nav == null) return;
+    final settings = ref.read(settingsProvider);
+    if (!settings.loaded || !settings.hasUsername) return;
+    final name = settings.playerName;
+    nav.push<void>(
+      MaterialPageRoute(
+        builder: (_) => OnlineLobbyScreen(
+          displayName: name,
+          gemClaim: ref.read(coinLedgerProvider).availableHumanGems(name),
+          resumeRoomId: roomId,
+        ),
+      ),
+    );
   }
 
   @override
@@ -159,6 +193,7 @@ class _MargeAppState extends ConsumerState<MargeApp>
     }
 
     return MaterialApp(
+      navigatorKey: margeNavigatorKey,
       title: 'Marge Dice Game',
       debugShowCheckedModeBanner: false,
       theme: buildMargeTheme(),

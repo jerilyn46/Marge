@@ -5,6 +5,7 @@
  */
 import { initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
+import { getMessaging, MulticastMessage } from "firebase-admin/messaging";
 import { FieldValue, getFirestore, Timestamp, Transaction } from "firebase-admin/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { randomInt } from "node:crypto";
@@ -12,7 +13,8 @@ import {
   autoPlayTimedOut, bank, BOT_START_BANK, dropSeat, MatchState, newMatch, roll, Rng, RuleError, runBots, SeatState,
   settlePot,
 } from "./engine";
-import { ABANDONED_RETENTION_MS, FINISHED_RETENTION_MS, scrubRoom, sweepAction } from "./rooms";
+import { mergeTokens, sendTurnPush, TurnPush, turnPushRecipient, TurnSnap, turnSnap, validToken } from "./push";
+import { ABANDONED_RETENTION_MS, FINISHED_RETENTION_MS, scrubRoom, settleFinishedPot, sweepAction } from "./rooms";
 import { logger } from "firebase-functions";
 import { HttpsError, onCall, CallableRequest } from "firebase-functions/v2/https";
 
@@ -129,25 +131,20 @@ function settle(tx: Transaction, m: MatchState) {
   }
 }
 
+/** Who acted and what the turn was before, so commitMatch can pick a "Your turn" push. */
+interface TurnCtx { before: TurnSnap | null; actorUid: string | null; played?: boolean }
+
 /**
  * Shared write after any match mutation: bots, pot settle + escrow release on
  * finish, version bump. `extra` = other top-level fields written in the same update.
+ * With `turn` given, returns the "Your turn" push to send once the transaction
+ * commits (never sent from inside it: transactions can retry).
  */
 function commitMatch(tx: Transaction, ref: FirebaseFirestore.DocumentReference, m: MatchState,
-  extra: Record<string, unknown> = {}) {
+  extra: Record<string, unknown> = {}, turn?: TurnCtx, room?: Record<string, any>): TurnPush | null {
   runBots(m, rng);
   const finished = m.status === "finished";
-  if (finished) {
-    const pot = m.pot;
-    const split = settlePot(m); // leftover pot back to seats still in; conserves gems
-    if (split.length) {
-      const parts = split.map(([i, amt]) => `${m.seats[i].displayName ?? `Seat ${i + 1}`} +${amt}`).join(", ");
-      const note = `Pot of ${pot} returned by table bank: ${parts}.`;
-      m.lastPayout = m.lastPayout
-        ? { ...m.lastPayout, message: `${m.lastPayout.message} ${note}` }
-        : { message: note, kind: "none", amount: pot, seat: m.winnerSeat ?? split[0][0], dice: [] };
-    }
-  }
+  if (finished) settleFinishedPot(m); // leftover pot back to seats still in; conserves gems
   const display = JSON.parse(JSON.stringify(m)) as MatchState; // banks before settle
   if (finished) settle(tx, m);
   tx.update(ref, {
@@ -157,7 +154,23 @@ function commitMatch(tx: Transaction, ref: FirebaseFirestore.DocumentReference, 
     turnDeadline: finished ? null : Date.now() + TURN_TIMEOUT_MS,
     lastActivity: FieldValue.serverTimestamp(),
   });
+  return turn ? turnPushRecipient(turn.before, display, turn.actorUid, ref.id, room?.code, turn.played ?? true) : null;
 }
+
+/** Admin SDK wiring for push.ts. Token values are never logged. */
+const pushTokens = (uid: string) => db.collection("pushTokens").doc(uid);
+const pushDeps = {
+  async getTokens(uid: string) {
+    const t = (await pushTokens(uid).get()).data()?.tokens;
+    return Array.isArray(t) ? t.filter((x): x is string => typeof x === "string") : [];
+  },
+  send: (msg: MulticastMessage) => getMessaging().sendEachForMulticast(msg),
+  async removeTokens(uid: string, dead: string[]) {
+    await pushTokens(uid).set({ tokens: FieldValue.arrayRemove(...dead) }, { merge: true });
+  },
+  log: (msg: string, extra?: Record<string, unknown>) => logger.info(msg, extra),
+};
+const notifyTurn = (p: TurnPush | null) => sendTurnPush(p, pushDeps);
 
 async function withRoom<T>(roomId: string, fn: (tx: Transaction, ref: FirebaseFirestore.DocumentReference, room: Record<string, any>) => Promise<T>) {
   return db.runTransaction(async (tx) => {
@@ -184,21 +197,22 @@ function checkVersion(room: Record<string, any>, expected: unknown) {
 
 export const leaveRoom = onCall(async (req) => {
   const uid = uidOf(req);
-  await withRoom(req.data?.roomId, async (tx, ref, room) => {
+  const push = await withRoom(req.data?.roomId, async (tx, ref, room): Promise<TurnPush | null> => {
     const i = mySeat(room, uid);
     if (room.status === "lobby") {
       if (room.hostUid === uid) {
         tx.update(ref, { status: "abandoned", lastActivity: FieldValue.serverTimestamp() });
         tx.delete(db.collection("roomCodes").doc(room.code));
-        return;
+        return null;
       }
       const seats = room.seats as Seat[];
       seats[i] = { index: i, kind: "open" };
       tx.update(ref, { seats, memberUids: FieldValue.arrayRemove(uid), version: FieldValue.increment(1) });
-      return;
+      return null;
     }
     if (room.status === "playing") {
       const m = room.match as MatchState;
+      const before = turnSnap(m);
       const s = m.seats[i];
       if (!s.eliminated) {
         // Leaving keeps your current table bank; you're out of this match.
@@ -206,9 +220,11 @@ export const leaveRoom = onCall(async (req) => {
         s.bank = 0;
         dropSeat(m, i);
       }
-      commitMatch(tx, ref, m);
+      return commitMatch(tx, ref, m, {}, { before, actorUid: uid, played: false }, room);
     }
+    return null;
   });
+  await notifyTurn(push);
   return { ok: true };
 });
 
@@ -225,7 +241,7 @@ export const keepLobby = onCall(async (req) => {
 
 export const startMatch = onCall(async (req) => {
   const uid = uidOf(req);
-  await withRoom(req.data?.roomId, async (tx, ref, room) => {
+  const push = await withRoom(req.data?.roomId, async (tx, ref, room) => {
     if (room.hostUid !== uid) throw new HttpsError("permission-denied", "Host only");
     if (room.status !== "lobby") throw new HttpsError("failed-precondition", "Already started");
     const lobby = room.seats as Seat[];
@@ -249,21 +265,25 @@ export const startMatch = onCall(async (req) => {
     }) as SeatState);
     const m = newMatch(seats, room.ante);
     tx.delete(db.collection("roomCodes").doc(room.code));
-    commitMatch(tx, ref, m);
+    // room.code stays on the room doc (only roomCodes/{code} is freed), so pushes can name it.
+    return commitMatch(tx, ref, m, {}, { before: null, actorUid: uid }, room);
   });
+  await notifyTurn(push);
   return { ok: true };
 });
 
 async function act(req: CallableRequest, fn: (m: MatchState, seat: number) => void) {
   const uid = uidOf(req);
-  await withRoom(req.data?.roomId, async (tx, ref, room) => {
+  const push = await withRoom(req.data?.roomId, async (tx, ref, room) => {
     if (room.status !== "playing") throw new HttpsError("failed-precondition", "Match not running");
     checkVersion(room, req.data?.expectedVersion);
     const m = room.match as MatchState;
     const seat = mySeat(room, uid);
+    const before = turnSnap(m);
     try { fn(m, seat); } catch (e) { asRuleError(e); }
-    commitMatch(tx, ref, m);
+    return commitMatch(tx, ref, m, {}, { before, actorUid: uid }, room);
   });
+  await notifyTurn(push);
   return { ok: true };
 }
 
@@ -285,6 +305,9 @@ export const endMatch = onCall(async (req) => {
     const m = room.match as MatchState;
     m.status = "finished";
     m.turn = null;
+    // Fresh line: don't carry the last turn's whiff/score into the result.
+    m.lastPayout = { message: `${m.seats[mySeat(room, uid)].displayName ?? "The host"} ended the match.`,
+      kind: "none", amount: 0, seat: mySeat(room, uid), dice: [] };
     const best = m.seats.filter((s) => s.kind !== "open" && !s.eliminated).sort((a, b) => b.bank - a.bank)[0];
     m.winnerSeat = best?.index ?? null;
     commitMatch(tx, ref, m);
@@ -307,12 +330,17 @@ export const sweepRooms = onSchedule("every 1 minutes", async () => {
     } catch (e) { logger.error(`sweepRooms ${name} query failed`, e); }
   };
   const rooms = db.collection("rooms");
-  await phase("autoplay", rooms.where("status", "==", "playing").where("turnDeadline", "<", now).limit(50), (d) =>
-    withRoom(d.id, async (tx, ref, room) => {
-      if (sweepAction(room, now, LOBBY_IDLE_MS) !== "autoplay") return;
-      autoPlayTimedOut(room.match as MatchState, rng);
-      commitMatch(tx, ref, room.match as MatchState);
-    }));
+  await phase("autoplay", rooms.where("status", "==", "playing").where("turnDeadline", "<", now).limit(50), async (d) => {
+    const push = await withRoom(d.id, async (tx, ref, room) => {
+      if (sweepAction(room, now, LOBBY_IDLE_MS) !== "autoplay") return null;
+      const m = room.match as MatchState;
+      const before = turnSnap(m);
+      autoPlayTimedOut(m, rng);
+      // actorUid null: the timed-out player did not act, so they can be told too.
+      return commitMatch(tx, ref, m, {}, { before, actorUid: null }, room);
+    });
+    await notifyTurn(push);
+  });
   await phase("abandon", rooms.where("status", "==", "lobby")
     .where("lastActivity", "<", Timestamp.fromMillis(now - LOBBY_IDLE_MS)).limit(100), (d) =>
     withRoom(d.id, async (tx, ref, room) => {
@@ -336,11 +364,11 @@ export const deleteOnlineData = onCall(async (req) => {
   const rooms = await db.collection("rooms").where("memberUids", "array-contains", uid).get();
   let roomsDeleted = 0;
   for (const doc of rooms.docs) {
-    await withRoom(doc.id, async (tx, ref, room) => {
+    const push = await withRoom(doc.id, async (tx, ref, room): Promise<TurnPush | null> => {
       const plan = scrubRoom(room, uid);
       if (plan.wasPlaying && plan.match && !plan.deleteRoom) {
-        commitMatch(tx, ref, plan.match, plan.fields); // others keep playing (or it finishes + settles)
-        return;
+        // others keep playing (or it finishes + settles)
+        return commitMatch(tx, ref, plan.match, plan.fields, { before: turnSnap(room.match), actorUid: uid, played: false }, room);
       }
       if (plan.freeCode && room.code) tx.delete(db.collection("roomCodes").doc(room.code));
       if (plan.deleteRoom) {
@@ -351,13 +379,33 @@ export const deleteOnlineData = onCall(async (req) => {
         }
         tx.delete(ref);
         roomsDeleted++;
-        return;
+        return null;
       }
       tx.update(ref, { ...plan.fields, ...(plan.match ? { match: plan.match } : {}),
         version: FieldValue.increment(1), lastActivity: FieldValue.serverTimestamp() });
+      return null;
     });
+    await notifyTurn(push);
   }
+  await pushTokens(uid).delete();
   await db.collection("users").doc(uid).delete();
   await getAuth().deleteUser(uid);
   return { ok: true, roomsScrubbed: rooms.size, roomsDeleted };
 });
+
+/**
+ * Store this device's FCM token for "Your turn" pushes (pushTokens/{uid},
+ * server-only). `replaces` = the previous token on refresh. Newest 5 kept.
+ */
+export const registerPushToken = onCall(async (req) => {
+  const uid = uidOf(req);
+  const token = req.data?.token;
+  if (!validToken(token)) throw new HttpsError("invalid-argument", "Bad push token");
+  const ref = pushTokens(uid);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    tx.set(ref, { tokens: mergeTokens(snap.data()?.tokens, token, req.data?.replaces), updatedAt: FieldValue.serverTimestamp() });
+  });
+  return { ok: true };
+});
+

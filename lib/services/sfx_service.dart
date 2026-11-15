@@ -11,6 +11,7 @@ enum SfxCue {
   gemChimeCascade,
   cupRattle,
   dieClack,
+  yourTurn,
 }
 
 /// Lightweight SFX / haptics. Sound hooks are gated by [sfxEnabled];
@@ -50,6 +51,25 @@ class SfxService {
   Future<void> bust() async {
     if (sfxEnabled) debugPrint('[sfx] bust');
     await _haptic(HapticFeedback.selectionClick);
+  }
+
+  /// Online: the turn just passed to this player. Heavy tap + the platform's
+  /// system alert/click sound (no Marge audio asset exists yet; the
+  /// [SfxCue.yourTurn] hook is where a delivered chime would go).
+  Future<void> yourTurn() async {
+    if (sfxEnabled) {
+      play(SfxCue.yourTurn);
+      try {
+        await SystemSound.play(
+          defaultTargetPlatform == TargetPlatform.android
+              ? SystemSoundType.click
+              : SystemSoundType.alert,
+        );
+      } catch (_) {
+        // No system sound on this platform — fine.
+      }
+    }
+    await _haptic(HapticFeedback.heavyImpact);
   }
 
   // --- Pot of gems ---------------------------------------------------------

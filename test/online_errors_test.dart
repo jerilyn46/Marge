@@ -2,10 +2,12 @@ import 'dart:io';
 
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:marge/online/online_errors.dart';
 import 'package:marge/online/room_models.dart';
 import 'package:marge/ui/screens/online_match_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 FirebaseFunctionsException fx(String code, [String msg = '']) =>
     FirebaseFunctionsException(code: code, message: msg);
@@ -124,16 +126,24 @@ void main() {
         ],
         'match': match(start: [100, 100]),
       });
+      SharedPreferences.setMockInitialValues({});
       await tester.pumpWidget(
-        MaterialApp(
-          home: OnlineMatchResult(
-            room: room,
-            match: room.match!,
-            myUid: 'a',
-            onPlayAgain: () => again++,
-            onDone: () => done++,
+        // Result screen uses the equipped felt (tableFeltProvider).
+        ProviderScope(
+          child: MaterialApp(
+            home: OnlineMatchResult(
+              room: room,
+              match: room.match!,
+              myUid: 'a',
+              onPlayAgain: () => again++,
+              onDone: () => done++,
+            ),
           ),
         ),
+      );
+      expect(
+        find.byKey(const ValueKey('table-felt-background')),
+        findsOneWidget,
       );
       expect(find.text('You win with 132 gems!'), findsOneWidget);
       expect(find.text('+32'), findsOneWidget);

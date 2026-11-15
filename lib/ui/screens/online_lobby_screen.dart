@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../online/auth_service.dart';
@@ -5,6 +7,7 @@ import '../../online/delete_online_data.dart';
 import '../../online/online_errors.dart';
 import '../../online/room_models.dart';
 import '../../online/room_service.dart';
+import '../../online/turn_push.dart';
 import '../widgets/rejoin_banner.dart';
 import 'online_match_screen.dart';
 
@@ -72,6 +75,9 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
       }
     });
     if (uid == null) return;
+    // First time online: ask for notifications once (Android 13+) and
+    // register for "Your turn" pushes. Denied → hint below, never re-asked.
+    unawaited(TurnPush.instance.enableForOnline());
     if (widget.resumeRoomId != null) {
       _resume(widget.resumeRoomId!);
     } else if (widget.autoCreate) {
@@ -193,6 +199,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
               style: const TextStyle(color: Colors.redAccent),
             ),
           ),
+        const PushOffHint(),
         TextField(
           key: const ValueKey('online-display-name'),
           controller: _nameCtl,
@@ -274,6 +281,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
         }
         return ListView(
           children: [
+            const PushOffHint(),
             SelectableText(
               'Code: ${room.code}',
               style: Theme.of(context).textTheme.headlineMedium,
@@ -307,4 +315,29 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
       },
     );
   }
+}
+
+/// One quiet line when notifications are off for Marge (no dialog, no
+/// re-asking): the in-app "Your turn!" banner still works while open.
+class PushOffHint extends StatelessWidget {
+  const PushOffHint({super.key});
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<bool?>(
+    valueListenable: TurnPush.instance.permitted,
+    builder: (context, ok, _) => ok == false
+        ? Padding(
+            key: const ValueKey('online-push-off-hint'),
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Text(
+              "Notifications are off, so you'll only see \"Your turn\" while "
+              'Marge is open. You can turn them on in Android Settings.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).hintColor,
+              ),
+            ),
+          )
+        : const SizedBox.shrink(),
+  );
 }

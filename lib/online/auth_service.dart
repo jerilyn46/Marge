@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 
 import 'online_errors.dart';
+import 'turn_push.dart';
 
 /// Lazily initialises Firebase and signs in anonymously.
 ///
@@ -84,6 +85,7 @@ class OnlineAuthService {
     if (user == null) return true;
     try {
       await FirebaseFunctions.instance.httpsCallable('deleteOnlineData').call();
+      await TurnPush.instance.forget();
       await FirebaseAuth.instance.signOut();
       return true;
     } catch (e) {

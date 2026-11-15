@@ -103,6 +103,39 @@ try {
   let codeGone = false; try { await call(W, "joinRoom", { code: r3.code }); } catch (e) { codeGone = /not.found/i.test(e.message); }
   ok((await room(r3.roomId)) === null && codeGone, "lobby room + code deleted when lone host deletes data");
   await call(W, "deleteOnlineData", {});
+
+  // "Your turn" push: token storage is server-only; a turn change still commits when FCM can't be reached
+  // (emulator has no real FCM — the send fails and is logged as "turn push failed", never fails the move).
+  const [Pp, Qq] = [await anonU(), await anonU()];
+  const fake = (n) => `fake-fcm-token-${n}-${"x".repeat(40)}`;
+  await call(Pp.tok, "registerPushToken", { token: fake("p1") });
+  await call(Pp.tok, "registerPushToken", { token: fake("p2"), replaces: fake("p1") });
+  for (let k = 0; k < 7; k++) await call(Qq.tok, "registerPushToken", { token: fake(`q${k}`) });
+  const pt = await docOf(`pushTokens/${Pp.uid}`), qt = await docOf(`pushTokens/${Qq.uid}`);
+  ok(JSON.stringify(pt?.tokens) === JSON.stringify([fake("p2")]), "registerPushToken stores token; refresh replaces the old one");
+  ok(qt?.tokens?.length === 5 && qt.tokens[0] === fake("q6"), "push tokens capped at 5, newest first");
+  let badTok = false; try { await call(Pp.tok, "registerPushToken", { token: "x" }); } catch (e) { badTok = /INVALID_ARGUMENT/.test(e.message); }
+  ok(badTok, "registerPushToken rejects a junk token");
+  const own = await fetch(`${FS}/pushTokens/${Pp.uid}`, { headers: { authorization: `Bearer ${Pp.tok}` } });
+  ok(own.status === 403, `client cannot read its own pushTokens doc (HTTP ${own.status})`);
+  const pr = await call(Pp.tok, "createRoom", { seatCount: 2, botCount: 0, ante: 10, displayName: "Pia", clientGemClaim: 100 });
+  await call(Qq.tok, "joinRoom", { code: pr.code, displayName: "Quin", clientGemClaim: 100 });
+  await call(Pp.tok, "startMatch", { roomId: pr.roomId });
+  let prm = await room(pr.roomId);
+  ok(prm.code === pr.code && (await rawDoc(`roomCodes/${pr.code}`)) === null, "room doc keeps its code after start (roomCodes freed) for the push text");
+  const seat0 = prm.match.turn.seat;
+  const tokBy = { [Pp.uid]: Pp.tok, [Qq.uid]: Qq.tok };
+  for (let k = 0; k < 8 && prm.status === "playing" && prm.match.turn.seat === seat0 && prm.match.turn.setNumber === 1; k++) {
+    const u = prm.match.seats[prm.match.turn.seat].uid;
+    if (prm.match.turn.rollNumber > 0 && prm.match.turn.score && prm.match.turn.score.kind !== "none") {
+      await call(tokBy[u], "submitKeep", { roomId: pr.roomId, expectedVersion: prm.version });
+    } else await call(tokBy[u], "submitRoll", { roomId: pr.roomId, expectedVersion: prm.version });
+    prm = await room(pr.roomId);
+  }
+  ok(prm.status !== "playing" || prm.match.turn.seat !== seat0 || prm.match.turn.setNumber > 1,
+    `moves commit with push attempted (turn ${JSON.stringify(prm.match?.turn)}, status ${prm.status})`);
+  await call(Pp.tok, "deleteOnlineData", {}); await call(Qq.tok, "deleteOnlineData", {});
+  ok((await rawDoc(`pushTokens/${Pp.uid}`)) === null && (await rawDoc(`pushTokens/${Qq.uid}`)) === null, "deleteOnlineData removes push tokens");
 } catch (e) { ok(false, e.message); }
 console.log(fails ? `SMOKE FAILED (${fails})` : "SMOKE OK");
 process.exit(fails ? 1 : 0);

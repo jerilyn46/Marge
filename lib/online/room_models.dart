@@ -126,9 +126,11 @@ class OnlineTurn {
     required this.dice,
     required this.kept,
     this.scoreKind,
+    this.setNumber = 1,
   });
   final int seat;
   final int rollNumber;
+  final int setNumber;
   final List<int> dice;
   final List<bool> kept;
   final String? scoreKind;
@@ -146,6 +148,36 @@ class OnlineTurn {
         .map((e) => e == true)
         .toList(),
     scoreKind: (m['score'] as Map?)?['kind'] as String?,
+    setNumber: _i(m['setNumber'], 1),
+  );
+}
+
+/// The server's most recent roll (any seat, incl. bots / timeout autoplay).
+/// Kept after the turn resolves so the table can show and animate it.
+class OnlineRoll {
+  const OnlineRoll({
+    required this.seq,
+    required this.seat,
+    required this.dice,
+    required this.held,
+    required this.rollNumber,
+  });
+  final int seq;
+  final int seat;
+  final List<int> dice;
+
+  /// Dice held through this roll (they did not tumble).
+  final List<bool> held;
+  final int rollNumber;
+
+  factory OnlineRoll.fromMap(Map<String, dynamic> m) => OnlineRoll(
+    seq: _i(m['seq']),
+    seat: _i(m['seat']),
+    dice: _ints(m['dice']),
+    held: ((m['held'] as List?) ?? const [false, false, false])
+        .map((e) => e == true)
+        .toList(),
+    rollNumber: _i(m['rollNumber']),
   );
 }
 
@@ -159,8 +191,14 @@ class MatchView {
     this.winnerSeat,
     this.lastPayoutMessage,
     this.startBanks,
+    this.rollSeq,
+    this.lastRoll,
   });
   final List<MatchSeat> seats;
+
+  /// +1 per server roll (servers from QA 2046 on); null on older rooms.
+  final int? rollSeq;
+  final OnlineRoll? lastRoll;
 
   /// Table bank per seat when the match started (server >= autoplay change).
   final List<int>? startBanks;
@@ -185,6 +223,10 @@ class MatchView {
     winnerSeat: (m['winnerSeat'] as num?)?.toInt(),
     lastPayoutMessage: (m['lastPayout'] as Map?)?['message'] as String?,
     startBanks: m['startBanks'] is List ? _ints(m['startBanks']) : null,
+    rollSeq: (m['rollSeq'] as num?)?.toInt(),
+    lastRoll: m['lastRoll'] is Map
+        ? OnlineRoll.fromMap(Map<String, dynamic>.from(m['lastRoll'] as Map))
+        : null,
   );
 
   /// Per-seat result rows for the end-of-match screen (occupied seats only).

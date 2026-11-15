@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../ads/ad_ids.dart';
 import '../../ads/ads_service.dart';
 import '../../debug/settle_log.dart';
-import '../../cosmetics/table_felt.dart';
 import '../../cosmetics/skins_service.dart';
 import '../../engine/engine.dart';
 import '../../engine/gem_label.dart';
@@ -28,6 +27,7 @@ import '../widgets/handoff_strip.dart';
 import '../widgets/payout_banner.dart';
 import '../widgets/play_coin_pack_button.dart';
 import '../widgets/player_chip.dart';
+import '../widgets/table_felt_background.dart';
 
 void _moveIntoGame(BuildContext context, WidgetRef ref, int gems) {
   final next = ref.read(matchProvider.notifier).moveFromMainBank(gems);
@@ -281,18 +281,7 @@ class _MatchScreenState extends ConsumerState<MatchScreen> {
       child: Scaffold(
         body: Stack(
           children: [
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    const Color(0xFF1B0F3B),
-                    ref.watch(tableFeltProvider).equippedDef.color,
-                    ref.watch(tableFeltProvider).equippedDef.deepColor,
-                  ],
-                ),
-              ),
+            TableFeltBackground(
               child: SafeArea(
                 child: LayoutBuilder(
                   builder: (context, box) {

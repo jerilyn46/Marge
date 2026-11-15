@@ -1,7 +1,7 @@
 /**
  * Pure room-document helpers (no Firebase), unit-tested in test/rooms.test.ts.
  */
-import { dropSeat, MatchState } from "./engine";
+import { dropSeat, MatchState, settlePot } from "./engine";
 
 export const LEFT_NAME = "Left player";
 export const FINISHED_RETENTION_MS = 24 * 60 * 60_000; // results stay readable a day
@@ -82,4 +82,27 @@ export function sweepAction(room: Room, now: number, lobbyIdleMs: number): Sweep
     case "abandoned": return last < now - ABANDONED_RETENTION_MS ? "delete" : null;
     default: return null;
   }
+}
+
+/** Settlement line for a leftover pot: one survivor "goes to", else the proportional split. */
+export function potNote(m: MatchState, pot: number, split: Array<[number, number]>): string {
+  const nm = (i: number) => m.seats[i].displayName ?? `Seat ${i + 1}`;
+  if (split.length === 1) return `Pot of ${pot} goes to ${nm(split[0][0])}.`;
+  return `Pot of ${pot} returned by table bank: ${split.map(([i, amt]) => `${nm(i)} +${amt}`).join(", ")}.`;
+}
+
+/**
+ * Finished match: split the leftover pot (settlePot) and append the
+ * settlement line to lastPayout (the leave / end-match / final-roll line).
+ */
+export function settleFinishedPot(m: MatchState): Array<[number, number]> {
+  const pot = m.pot;
+  const split = settlePot(m);
+  if (split.length) {
+    const note = potNote(m, pot, split);
+    m.lastPayout = m.lastPayout
+      ? { ...m.lastPayout, message: `${m.lastPayout.message} ${note}` }
+      : { message: note, kind: "none", amount: pot, seat: m.winnerSeat ?? split[0][0], dice: [] };
+  }
+  return split;
 }

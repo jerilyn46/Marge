@@ -70,3 +70,23 @@ test("wrong seat refused; bots run until human", () => {
   runBots(m, Math.random);
   assert.ok(m.status === "finished" || m.turn!.seat === 0);
 });
+
+test("rollSeq/lastRoll: +1 per server roll, kept after the turn resolves", () => {
+  const seats: SeatState[] = [
+    { index: 0, kind: "host", uid: "a", displayName: "A", bank: 100, eliminated: false },
+    { index: 1, kind: "human", uid: "b", displayName: "B", bank: 100, eliminated: false },
+  ];
+  const m = newMatch(seats, 10);
+  assert.equal(m.rollSeq ?? 0, 0);
+  const r = seq([2, 3, 6]); // never scores
+  roll(m, 0, undefined, r);
+  assert.equal(m.rollSeq, 1);
+  assert.deepEqual(m.lastRoll, { seq: 1, seat: 0, dice: [2, 3, 6], held: [false, false, false], rollNumber: 1, setNumber: 1 });
+  roll(m, 0, [true, false, false], r);
+  roll(m, 0, [true, false, false], r); // 3rd roll miss resolves → turn passes
+  assert.equal(m.turn!.seat, 1);
+  assert.equal(m.rollSeq, 3);
+  assert.equal(m.lastRoll!.seat, 0);
+  assert.equal(m.lastRoll!.rollNumber, 3);
+  assert.deepEqual(m.lastRoll!.held, [true, false, false]);
+});
