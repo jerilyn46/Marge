@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
+import 'active_room.dart';
 import 'room_models.dart';
 
 /// Thin client over the room Cloud Functions + a Firestore room listener.
@@ -78,6 +79,20 @@ class RoomService {
   );
 
   Future<void> endMatch(String roomId) => _call('endMatch', {'roomId': roomId});
+
+  /// The live room (lobby or playing) this uid still sits in, if any.
+  /// Same query the rejoin test script runs: `memberUids array-contains uid`
+  /// (allowed by the member-read rule; single-field index, no composite),
+  /// status filtered on the client by [pickActiveRoom].
+  Future<Room?> findMyActiveRoom(String uid) async {
+    final q = await _db
+        .collection('rooms')
+        .where('memberUids', arrayContains: uid)
+        .get();
+    return pickActiveRoom([
+      for (final d in q.docs) Room.fromMap(d.id, d.data()),
+    ], uid);
+  }
 
   Stream<Room?> watchRoom(String roomId) => _db
       .collection('rooms')

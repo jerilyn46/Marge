@@ -5,6 +5,7 @@ import '../../online/delete_online_data.dart';
 import '../../online/online_errors.dart';
 import '../../online/room_models.dart';
 import '../../online/room_service.dart';
+import '../widgets/rejoin_banner.dart';
 import 'online_match_screen.dart';
 
 /// WIP: create or join an invite room by short code.
@@ -19,6 +20,7 @@ class OnlineLobbyScreen extends StatefulWidget {
     this.seatCount = 4,
     this.initialBots = 0,
     this.ante = 10,
+    this.resumeRoomId,
   });
 
   final String displayName;
@@ -30,6 +32,10 @@ class OnlineLobbyScreen extends StatefulWidget {
   final int seatCount;
   final int initialBots;
   final int ante;
+
+  /// "Rejoin your match": open this room directly (lobby view, or straight
+  /// to the match screen if it is already playing).
+  final String? resumeRoomId;
 
   @override
   State<OnlineLobbyScreen> createState() => _OnlineLobbyScreenState();
@@ -65,7 +71,25 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
         _rooms = RoomService();
       }
     });
-    if (uid != null && widget.autoCreate) _create();
+    if (uid == null) return;
+    if (widget.resumeRoomId != null) {
+      _resume(widget.resumeRoomId!);
+    } else if (widget.autoCreate) {
+      _create();
+    }
+  }
+
+  void _resume(String roomId) {
+    final r = _rooms;
+    if (r == null) return;
+    setState(() {
+      _error = null;
+      _opened = false;
+      _roomId = roomId;
+      _roomStream = r.watchRoom(roomId).handleError((Object e) {
+        debugPrint('marge-online[lobby-stream]: $e');
+      });
+    });
   }
 
   void _create() => _run(
@@ -154,6 +178,13 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
     return ListView(
       children: [
         if (_busy) const LinearProgressIndicator(),
+        if (_rooms != null && _uid != null)
+          RejoinPrompt(
+            key: ValueKey('lobby-rejoin-$_uid'),
+            find: () => _rooms!.findMyActiveRoom(_uid!),
+            onRejoin: (room) async => _resume(room.id),
+            leave: (room) => _rooms!.leaveRoom(room.id),
+          ),
         if (_error != null)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),

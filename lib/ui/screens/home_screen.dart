@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../engine/gem_label.dart';
 import '../../engine/match_controller.dart';
+import '../../online/rejoin.dart';
 import '../../services/coin_ledger.dart';
 import '../../services/friends_service.dart';
 import '../../services/saved_games.dart';
@@ -152,6 +153,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               ),
                         ),
                         const SizedBox(height: 28),
+                        // Invite builds only: still seated in a live online
+                        // room (e.g. after the app was closed mid-match)?
+                        liveRejoinPrompt(
+                          context,
+                          key: const ValueKey('home-rejoin'),
+                          displayName: settings.playerName,
+                          gemClaim: ledger.availableHumanGems(
+                            settings.playerName,
+                          ),
+                        ),
                         _PlayPill(
                           onPressed: () {
                             Navigator.of(context).push(

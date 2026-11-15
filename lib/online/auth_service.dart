@@ -32,11 +32,32 @@ class OnlineAuthService {
     }
   }
 
-  /// Returns the anonymous uid, or null if Firebase is unavailable.
-  Future<String?> signInAnonymously() async {
+  /// The persisted anonymous uid from an earlier session, without creating a
+  /// new account (FirebaseAuth keeps the user on disk across app restarts).
+  /// Null if Firebase is unavailable or this device never played online.
+  Future<String?> existingUid() async {
     if (!await ensureFirebase()) return null;
     final auth = FirebaseAuth.instance;
     if (auth.currentUser != null) return auth.currentUser!.uid;
+    try {
+      // On a cold start the persisted user can arrive a moment after init.
+      final u = await auth.authStateChanges().first.timeout(
+        const Duration(seconds: 3),
+      );
+      return u?.uid;
+    } catch (e) {
+      debugPrint('marge-online[existing-uid]: $e');
+      return auth.currentUser?.uid;
+    }
+  }
+
+  /// Returns the anonymous uid, or null if Firebase is unavailable.
+  /// Reuses the persisted user, so the uid is stable across restarts.
+  Future<String?> signInAnonymously() async {
+    if (!await ensureFirebase()) return null;
+    final auth = FirebaseAuth.instance;
+    final existing = await existingUid();
+    if (existing != null) return existing;
     try {
       final cred = await auth.signInAnonymously();
       return cred.user?.uid;
