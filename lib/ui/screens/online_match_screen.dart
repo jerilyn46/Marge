@@ -60,6 +60,12 @@ class _OnlineMatchScreenState extends ConsumerState<OnlineMatchScreen> {
   Timer? _retry;
   List<int>? _firstBanks; // fallback start banks for older rooms
 
+  /// The room as it was when the match finished. The result screen shows
+  /// this frozen copy, so later edits to the room doc (e.g. another player's
+  /// "Delete my online data", or the room's retention delete) never relabel
+  /// the winner or the message while it is open (GPLLGC).
+  Room? _finalRoom;
+
   @override
   void initState() {
     super.initState();
@@ -81,6 +87,12 @@ class _OnlineMatchScreenState extends ConsumerState<OnlineMatchScreen> {
                 return;
               }
               _room = r;
+              final fm = r.match;
+              if (_finalRoom == null &&
+                  fm != null &&
+                  (fm.finished || r.status == RoomStatus.finished)) {
+                _finalRoom = r;
+              }
               final m = r.match;
               if (_firstBanks == null && m != null && !m.finished) {
                 _firstBanks = [for (final s in m.seats) s.bank];
@@ -126,20 +138,20 @@ class _OnlineMatchScreenState extends ConsumerState<OnlineMatchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final room = _room;
-    final m = room?.match;
-    if (room != null &&
-        m != null &&
-        (m.finished || room.status == RoomStatus.finished)) {
+    final done = _finalRoom;
+    if (done != null) {
       return OnlineMatchResult(
-        room: room,
-        match: m,
+        key: const ValueKey('online-result-frozen'),
+        room: done,
+        match: done.match!,
         myUid: widget.myUid,
         fallbackStart: _firstBanks,
         onPlayAgain: _playAgain,
         onDone: _done,
       );
     }
+    final room = _room;
+    final m = room?.match;
     final settings = ref.watch(settingsProvider);
     final skin = ref.watch(cosmeticsProvider).equippedTheme;
     return Scaffold(

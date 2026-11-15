@@ -8,11 +8,14 @@ import 'room_models.dart';
 /// All mutations go through callable functions (server-authoritative).
 class RoomService {
   RoomService({FirebaseFunctions? functions, FirebaseFirestore? firestore})
-    : _fn = functions ?? FirebaseFunctions.instance,
-      _db = firestore ?? FirebaseFirestore.instance;
+    : _fnArg = functions,
+      _dbArg = firestore;
 
-  final FirebaseFunctions _fn;
-  final FirebaseFirestore _db;
+  final FirebaseFunctions? _fnArg;
+  final FirebaseFirestore? _dbArg;
+  // Lazy: Firebase is only touched on first use (fakes in tests never do).
+  late final FirebaseFunctions _fn = _fnArg ?? FirebaseFunctions.instance;
+  late final FirebaseFirestore _db = _dbArg ?? FirebaseFirestore.instance;
 
   Future<Map<String, dynamic>> _call(
     String name,

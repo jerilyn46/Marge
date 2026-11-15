@@ -93,18 +93,47 @@ test("scrubRoom: playing → bank forfeited to pot, seat dropped, room playable,
   assert.equal(room.match.seats[1].uid, "b", "input not mutated");
 });
 
-test("scrubRoom: finished room is anonymized too; host passes on", () => {
+test("scrubRoom: finished room keeps the winner's name and result text (uid removed); host passes on (GPLLGC)", () => {
   const m = finished([human(0, "a", "Alice", 60), human(1, "b", "Bob", 40)], 0);
-  m.lastPayout = { message: "Alice hits three 4s! Bob out of gems. — Alice wins the pot (20 gems).", kind: "threeOfAKind", amount: 4, seat: 0, dice: [4, 4, 4] };
+  const msg = "Alice hits three 4s! Bob out of gems. — Alice wins the pot (20 gems).";
+  m.lastPayout = { message: msg, kind: "threeOfAKind", amount: 4, seat: 0, dice: [4, 4, 4] };
   const room = { status: "finished", hostUid: "a", code: "ABCDEF", memberUids: ["a", "b"], seats: lobbyRoom().seats, match: m };
   const p = scrubRoom(room, "a");
   const blob = JSON.stringify({ ...p.fields, match: p.match });
-  assert.ok(!blob.includes("\"a\"") && !blob.includes("Alice"), blob);
+  assert.ok(!blob.includes("\"a\""), "uid gone everywhere: " + blob);
+  assert.ok(!blob.includes(LEFT_NAME), "a seat that finished the match is never 'Left player': " + blob);
+  assert.equal(p.match!.seats[0].displayName, "Alice");
+  assert.equal(p.match!.seats[0].uid, null);
+  assert.equal(p.match!.winnerSeat, 0);
+  assert.deepEqual(p.match!.lastPayout, { message: msg, kind: "threeOfAKind", amount: 4, seat: 0, dice: [4, 4, 4] },
+    "result/settlement text not rewritten");
   assert.equal(p.fields.hostUid, "b");
   assert.equal(p.match!.seats[0].bank, 60, "finished banks untouched");
   assert.equal(p.wasPlaying, false);
   assert.equal(p.deleteRoom, false);
   assert.equal(scrubRoom({ ...room, memberUids: ["a"] }, "a").deleteRoom, true);
+});
+
+test("scrubRoom: GPLLGC replay — bot won by first-roll triple 1s, then deleted its data", () => {
+  const m = finished([human(0, "j", "Jerilyn", 0), human(1, "bot", "Box Tester", 122)], 0);
+  m.winnerSeat = 1;
+  m.seats[0].eliminated = true;
+  const msg = "Box Tester rolled three 1s on the first roll! Everyone pays 10 and Box Tester wins the pot.";
+  m.lastPayout = { message: msg, kind: "tripleOnesPotWin", amount: 22, seat: 1, dice: [1, 1, 1] };
+  const room = { status: "finished", hostUid: "j", code: "GPLLGC", memberUids: ["j", "bot"], seats: [], match: m };
+  const p = scrubRoom(room, "bot");
+  assert.equal(p.match!.seats[1].displayName, "Box Tester");
+  assert.equal(p.match!.lastPayout!.message, msg);
+  assert.equal(p.match!.seats[1].bank, 122);
+  assert.equal(p.match!.seats[0].displayName, "Jerilyn", "other seats untouched");
+});
+
+test("scrubRoom: in-progress match still labels the deleted seat 'Left player' and scrubs the text", () => {
+  const m = newMatch([human(0, "a", "Alice", 100), human(1, "b", "Bob", 100), human(2, "c", "Cy", 100)], 10);
+  m.lastPayout = { message: "Bob whiffs — 2 gems to the pot.", kind: "none", amount: 2, seat: 1, dice: [2, 3, 6] };
+  const p = scrubRoom({ status: "playing", hostUid: "a", memberUids: ["a", "b", "c"], seats: [], match: m }, "b");
+  assert.equal(p.match!.seats[1].displayName, LEFT_NAME);
+  assert.ok(!JSON.stringify(p.match).includes("Bob"));
 });
 
 test("sweepAction: autoplay / abandon / retention deletes", () => {

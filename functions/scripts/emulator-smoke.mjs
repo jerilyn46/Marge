@@ -88,10 +88,14 @@ try {
   ok(q.status === "finished" && q.match.pot === 0 && potAtStart === 20, `endMatch: pot ${potAtStart} -> ${q.match.pot}: ${q.match.lastPayout?.message}`);
   ok(ux.gems + uy.gems === 100 && ux.gems === q.match.seats[0].bank && uy.gems === q.match.seats[1].bank && !ux.escrowRoom && !uy.escrowRoom,
     `endMatch conserves: users ${ux.gems}+${uy.gems} = 100, escrow cleared`);
-  // Finished room: deleting one player anonymizes; last player deletes the room.
+  // Finished room: deleting one player removes their uid but keeps the finished seat's name
+  // and the result text (never "Left player" — GPLLGC); last player deletes the room.
+  const msgBefore = q.match.lastPayout?.message;
   await call(Y.tok, "deleteOnlineData", {});
   q = await room(r2.roomId);
-  ok(q && !JSON.stringify(q).includes(Y.uid) && !JSON.stringify(q).includes("Yuri") && q.memberUids.length === 1, "finished room scrubbed of deleted player (uid + name)");
+  ok(q && !JSON.stringify(q).includes(Y.uid) && q.memberUids.length === 1, "finished room: deleted player's uid gone");
+  ok(q.match.seats[1].displayName === "Yuri" && !JSON.stringify(q.match).includes("Left player") && q.match.lastPayout?.message === msgBefore,
+    "finished room: seat keeps its name, result text unchanged, no 'Left player'");
   await call(X.tok, "deleteOnlineData", {});
   ok((await room(r2.roomId)) === null, "finished room deleted when last member deletes data");
 

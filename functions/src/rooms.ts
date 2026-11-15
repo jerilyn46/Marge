@@ -24,7 +24,8 @@ export interface ScrubPlan {
 
 /**
  * Remove every trace of `uid` from a room, whatever its status:
- * lobby seat → open; match seat → uid null + "Left player" (and, if the match
+ * lobby seat → open; match seat → uid null + "Left player" (finished match:
+ * uid null, name and result text kept — never "Left player"); (and, if the match
  * is running, its table bank forfeited to the pot and the seat dropped so the
  * others keep playing); the name is also scrubbed from lastPayout; hostUid
  * passes to the next member. If no member is left, the room is deleted.
@@ -41,6 +42,11 @@ export function scrubRoom(room: Room, uid: string): ScrubPlan {
   };
   const wasPlaying = room.status === "playing" && !!room.match;
   let match: MatchState | null = room.match ? (JSON.parse(JSON.stringify(room.match)) as MatchState) : null;
+  // A finished match is a record of who played and won: the seat keeps its name
+  // (uid removed), and the result/settlement text is left as written. Labelling
+  // it "Left player" made a fair winner look like a departed seat (GPLLGC).
+  // The room itself is deleted FINISHED_RETENTION_MS after it finished.
+  const finishedMatch = !!match && (room.status === "finished" || match.status === "finished");
   if (match) {
     const i = match.seats.findIndex((s) => s.uid === uid);
     if (i >= 0) {
@@ -52,9 +58,9 @@ export function scrubRoom(room: Room, uid: string): ScrubPlan {
         if (!s.eliminated) dropSeat(match, i);
       }
       s.uid = null as unknown as undefined;
-      s.displayName = LEFT_NAME;
+      if (!finishedMatch) s.displayName = LEFT_NAME;
     }
-    if (match.lastPayout?.message) {
+    if (!finishedMatch && match.lastPayout?.message) {
       let msg = match.lastPayout.message;
       for (const n of names) msg = msg.split(n).join(LEFT_NAME);
       match.lastPayout.message = msg;
