@@ -136,15 +136,19 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
                       const SizedBox(height: 12),
                       // Online play is not available yet (no matchmaking
                       // backend). Disabled so nobody reserves chairs that
-                      // never fill. _online stays 0.
-                      const _CountStepper(
-                        label: 'Online players',
-                        subtitle: 'Coming soon',
-                        value: 0,
-                        onDecrement: null,
-                        onIncrement: null,
-                      ),
-                      const SizedBox(height: 12),
+                      // never fill. _online stays 0. Hidden when invite
+                      // play is on: PLAY ONLINE (INVITE) is the online path.
+                      if (!kOnlineInviteEnabled) ...[
+                        const _CountStepper(
+                          key: ValueKey('setup-online-coming-soon'),
+                          label: 'Online players',
+                          subtitle: 'Coming soon',
+                          value: 0,
+                          onDecrement: null,
+                          onIncrement: null,
+                        ),
+                        const SizedBox(height: 12),
+                      ],
                       _CountStepper(
                         label: 'Bots',
                         subtitle: 'Fill leftover seats only',
@@ -284,8 +288,9 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
                     MaterialPageRoute(
                       builder: (_) => OnlineLobbyScreen(
                         displayName: settings.playerName,
-                        gemClaim:
-                            ledger.availableHumanGems(settings.playerName),
+                        gemClaim: ledger.availableHumanGems(
+                          settings.playerName,
+                        ),
                       ),
                     ),
                   ),
@@ -311,6 +316,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
 
 class _CountStepper extends StatelessWidget {
   const _CountStepper({
+    super.key,
     required this.label,
     required this.subtitle,
     required this.value,

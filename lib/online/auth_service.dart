@@ -1,6 +1,9 @@
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
+
+import 'online_errors.dart';
 
 /// Lazily initialises Firebase and signs in anonymously.
 ///
@@ -23,7 +26,8 @@ class OnlineAuthService {
       _ready = true;
       return true;
     } catch (e) {
-      lastError = 'Online play is not configured yet ($e)';
+      debugPrint('marge-online[firebase-init]: $e');
+      lastError = 'Online play isn\'t available in this build.';
       return false;
     }
   }
@@ -37,7 +41,7 @@ class OnlineAuthService {
       final cred = await auth.signInAnonymously();
       return cred.user?.uid;
     } catch (e) {
-      lastError = 'Sign-in failed ($e)';
+      lastError = OnlineErrors.friendly(e, where: 'sign-in');
       return null;
     }
   }
@@ -62,7 +66,7 @@ class OnlineAuthService {
       await FirebaseAuth.instance.signOut();
       return true;
     } catch (e) {
-      lastError = 'Delete failed ($e)';
+      lastError = OnlineErrors.friendly(e, where: 'delete-data');
       return false;
     }
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../online/auth_service.dart';
 import '../../online/delete_online_data.dart';
+import '../../online/online_errors.dart';
 import '../../online/room_models.dart';
 import '../../online/room_service.dart';
 import 'online_match_screen.dart';
@@ -14,10 +15,21 @@ class OnlineLobbyScreen extends StatefulWidget {
     super.key,
     required this.displayName,
     required this.gemClaim,
+    this.autoCreate = false,
+    this.seatCount = 4,
+    this.initialBots = 0,
+    this.ante = 10,
   });
 
   final String displayName;
   final int gemClaim;
+
+  /// "Play again" from a finished match as host: create the next room right
+  /// away (same table size, bots and ante) and show its code.
+  final bool autoCreate;
+  final int seatCount;
+  final int initialBots;
+  final int ante;
 
   @override
   State<OnlineLobbyScreen> createState() => _OnlineLobbyScreenState();
@@ -32,7 +44,8 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
   String? _roomId;
   String? _error;
   bool _busy = true;
-  int _bots = 0;
+  late int _bots = widget.initialBots.clamp(0, 3);
+  Stream<Room?>? _roomStream;
 
   @override
   void initState() {
@@ -52,7 +65,18 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
         _rooms = RoomService();
       }
     });
+    if (uid != null && widget.autoCreate) _create();
   }
+
+  void _create() => _run(
+    (r) async => (await r.createRoom(
+      seatCount: widget.seatCount,
+      botCount: _bots.clamp(0, widget.seatCount - 1),
+      ante: widget.ante,
+      displayName: _name,
+      clientGemClaim: widget.gemClaim,
+    )).roomId,
+  );
 
   Future<void> _run(Future<String> Function(RoomService r) op) async {
     final r = _rooms;
@@ -63,9 +87,19 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
     });
     try {
       final id = await op(r);
-      if (mounted) setState(() => _roomId = id);
+      if (mounted) {
+        setState(() {
+          if (id != _roomId) {
+            _roomStream = r.watchRoom(id).handleError((Object e) {
+              debugPrint('marge-online[lobby-stream]: $e');
+            });
+          }
+          _roomId = id;
+        });
+      }
     } catch (e) {
-      if (mounted) setState(() => _error = '$e');
+      final msg = OnlineErrors.friendly(e, where: 'lobby');
+      if (mounted) setState(() => _error = msg);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -81,6 +115,22 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
     final typed = _nameCtl.text.trim();
     return OnlineAuthService.seatLabel(typed.isEmpty ? null : typed, uid);
   }
+
+  /// Back to the entry view (code field) with a friendly note.
+  Widget _ended(String text) => ListView(
+    children: [
+      Text(text, style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 16),
+      OutlinedButton(
+        onPressed: () => setState(() {
+          _roomId = null;
+          _roomStream = null;
+          _opened = false;
+        }),
+        child: const Text('BACK'),
+      ),
+    ],
+  );
 
   @override
   void dispose() {
@@ -129,17 +179,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
           onChanged: (v) => setState(() => _bots = v.round()),
         ),
         ElevatedButton(
-          onPressed: _rooms == null || _busy
-              ? null
-              : () => _run(
-                  (r) async => (await r.createRoom(
-                    seatCount: 4,
-                    botCount: _bots,
-                    ante: 10,
-                    displayName: _name,
-                    clientGemClaim: widget.gemClaim,
-                  )).roomId,
-                ),
+          onPressed: _rooms == null || _busy ? null : _create,
           child: const Text('CREATE ROOM'),
         ),
         const SizedBox(height: 24),
@@ -172,11 +212,17 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
 
   Widget _roomView() {
     return StreamBuilder<Room?>(
-      stream: _rooms!.watchRoom(_roomId!),
+      stream: _roomStream,
       builder: (context, snap) {
         final room = snap.data;
+        if (snap.connectionState == ConnectionState.done && room == null) {
+          return _ended("That room code isn't active.");
+        }
         if (room == null) {
           return const Center(child: CircularProgressIndicator());
+        }
+        if (room.status == RoomStatus.abandoned) {
+          return _ended('This room was closed.');
         }
         if (room.status != RoomStatus.lobby && room.match != null && !_opened) {
           _opened = true;
@@ -188,6 +234,8 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
                   rooms: _rooms!,
                   roomId: room.id,
                   myUid: _uid!,
+                  displayName: _name,
+                  gemClaim: widget.gemClaim,
                 ),
               ),
             );

@@ -85,6 +85,8 @@ export interface MatchState {
   status: "playing" | "finished";
   winnerSeat: number | null;
   lastPayout: Payout | null;
+  /** Table bank per seat when the match started (before antes); for the client result screen. */
+  startBanks?: number[];
 }
 
 export type Rng = () => number; // [0,1)
@@ -155,7 +157,8 @@ export function beginRound(m: MatchState) {
 }
 
 export function newMatch(seats: SeatState[], ante: number): MatchState {
-  const m: MatchState = { seats, ante, pot: 0, round: 0, turn: null, status: "playing", winnerSeat: null, lastPayout: null };
+  const m: MatchState = { seats, ante, pot: 0, round: 0, turn: null, status: "playing", winnerSeat: null, lastPayout: null,
+    startBanks: seats.map((s) => s.bank) };
   beginRound(m);
   return m;
 }
@@ -272,10 +275,49 @@ export function runBots(m: MatchState, rng: Rng, maxSteps = 200) {
   for (let i = 0; i < maxSteps && m.status === "playing" && m.turn && m.seats[m.turn.seat].kind === "bot"; i++) botAct(m, rng);
 }
 
-/** Turn timeout: auto-play the current human seat like a bot (one full set). */
+/** Outs (faces 1–6) that complete a score when [a, b] are held and the third die is rolled. */
+function outsFor(a: number, b: number): number {
+  let n = 0;
+  for (let f = 1; f <= 6; f++) if (evaluate([a, b, f], 2).kind !== "none") n++;
+  return n;
+}
+
+/**
+ * Hold choice for a timed-out HUMAN seat (never used for bots): the two dice
+ * with the most outs to a score, but never a pair of 1s, because missing after
+ * holding 1-1 into the last roll costs MISSED_ONES_PENALTY (10) instead of
+ * BUST_PENALTY (2). Ties prefer the higher faces. No hold if nothing has outs.
+ */
+export function safeHold(dice: number[]): boolean[] {
+  let best: [number, number] | null = null, bestOuts = 0, bestSum = -1;
+  for (let i = 0; i < 3; i++) for (let j = i + 1; j < 3; j++) {
+    const [a, b] = [dice[i], dice[j]];
+    if (a === 1 && b === 1) continue;
+    const outs = outsFor(a, b);
+    if (outs > bestOuts || (outs === bestOuts && outs > 0 && a + b > bestSum)) { best = [i, j]; bestOuts = outs; bestSum = a + b; }
+  }
+  return [0, 1, 2].map((k) => !!best && (k === best[0] || k === best[1]));
+}
+
+/**
+ * Conservative play for a disconnected human whose turn timed out: bank any
+ * scoring hand at once (scores only ever collect), otherwise roll with
+ * safeHold, so a miss costs the plain 2-gem bust and never the 10-gem
+ * missed-triple-ones penalty. A first-roll triple 1s is pure luck, not a choice.
+ */
+export function safeHumanAct(m: MatchState, rng: Rng) {
+  const t = m.turn!;
+  if (t.rollNumber > 0 && t.score && t.score.kind !== "none") return bank(m, t.seat);
+  roll(m, t.seat, t.rollNumber > 0 ? safeHold(t.dice) : [false, false, false], rng);
+}
+
+/** Turn timeout: auto-play ONE set of the current seat (bots keep botAct; humans get safeHumanAct). */
 export function autoPlayTimedOut(m: MatchState, rng: Rng) {
   const seat = m.turn?.seat;
-  for (let i = 0; i < 6 && m.status === "playing" && m.turn?.seat === seat; i++) botAct(m, rng);
+  const set = m.turn?.setNumber;
+  const act = seat !== undefined && m.seats[seat].kind === "bot" ? botAct : safeHumanAct;
+  // One set only: a banked score starts a fresh set on the same seat; the next sweep (or the player) takes it.
+  for (let i = 0; i < 6 && m.status === "playing" && m.turn?.seat === seat && m.turn?.setNumber === set; i++) act(m, rng);
 }
 
 /** Mark a seat out mid-match (leave / delete); advance the turn or finish so others keep playing. */

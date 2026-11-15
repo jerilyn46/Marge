@@ -158,8 +158,12 @@ class MatchView {
     this.turn,
     this.winnerSeat,
     this.lastPayoutMessage,
+    this.startBanks,
   });
   final List<MatchSeat> seats;
+
+  /// Table bank per seat when the match started (server >= autoplay change).
+  final List<int>? startBanks;
   final int pot;
   final int round;
   final bool finished;
@@ -180,5 +184,59 @@ class MatchView {
         : null,
     winnerSeat: (m['winnerSeat'] as num?)?.toInt(),
     lastPayoutMessage: (m['lastPayout'] as Map?)?['message'] as String?,
+    startBanks: m['startBanks'] is List ? _ints(m['startBanks']) : null,
   );
+
+  /// Per-seat result rows for the end-of-match screen (occupied seats only).
+  /// [fallbackStart] is used when the server did not record startBanks
+  /// (rooms started before that field existed), e.g. the first banks the
+  /// client saw.
+  List<SeatResult> results({List<int>? fallbackStart}) {
+    final start = startBanks ?? fallbackStart;
+    return [
+      for (final s in seats)
+        if (s.kind != SeatKind.open)
+          SeatResult(
+            seat: s.index,
+            name: s.displayName ?? 'Seat ${s.index + 1}',
+            uid: s.uid,
+            start: start != null && s.index < start.length
+                ? start[s.index]
+                : null,
+            end: s.bank,
+            winner: s.index == winnerSeat,
+            out: s.eliminated,
+          ),
+    ];
+  }
+}
+
+class SeatResult {
+  const SeatResult({
+    required this.seat,
+    required this.name,
+    required this.end,
+    this.uid,
+    this.start,
+    this.winner = false,
+    this.out = false,
+  });
+  final int seat;
+  final String name;
+  final String? uid;
+  final int? start;
+  final int end;
+  final bool winner;
+  final bool out;
+
+  int? get change => start == null ? null : end - start!;
+
+  /// "+32", "−10", "±0"; null when the start is unknown.
+  String? get changeLabel {
+    final c = change;
+    if (c == null) return null;
+    if (c > 0) return '+$c';
+    if (c < 0) return '−${-c}';
+    return '±0';
+  }
 }

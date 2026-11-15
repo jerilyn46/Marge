@@ -110,8 +110,41 @@ function holdFor(dice) {
 let acting = false, lastPayoutMsg = null, lastStatus = null, lastMembers = [], lastTurnKey = null;
 const waiters = [];
 const changed = () => new Promise((r) => waiters.push(r));
+let lastSnapAt = Date.now(), resubscribes = 0;
+
+// Server truth, bypassing the (possibly stalled) snapshot listener. Used on a
+// 409/400, when a write's snapshot never arrives, and by the watchdog.
+async function refreshRoom(why) {
+  try {
+    const s = await getDocFromServer(doc(db, "rooms", roomId));
+    const r = s.exists() ? { id: s.id, ...s.data() } : null;
+    if (!r || !room || r.version !== room.version || r.status !== room.status) {
+      log(`refresh (${why}): server v${r?.version ?? "-"} ${r?.status ?? "gone"} vs local v${room?.version ?? "-"} — applying server state`);
+      onRoom(r);
+      return true;
+    }
+  } catch (e) { log(`refresh (${why}) failed -> ${errText(e)}`); }
+  return false;
+}
+
+function subscribe() {
+  unsub?.();
+  unsub = onSnapshot(doc(db, "rooms", roomId), (s) => { lastSnapAt = Date.now(); onRoom(s.exists() ? { id: s.id, ...s.data() } : null); },
+    (e) => { log(`room listener error -> ${errText(e)} — resubscribing`); setTimeout(() => !exiting && subscribe(), 2000); });
+}
+
+// Watchdog: if no snapshot for STALL_MS while the room is live, ask the server.
+// If the server is ahead, the listener is stuck: apply server state and resubscribe.
+const STALL_MS = 20_000;
+async function watchdog() {
+  if (exiting || !roomId || !room || !["lobby", "playing"].includes(room.status)) return;
+  if (Date.now() - lastSnapAt < STALL_MS) return;
+  lastSnapAt = Date.now(); // one check per stall window
+  if (await refreshRoom("watchdog: no snapshot for 20s")) { resubscribes++; log(`listener looked stalled — resubscribing (#${resubscribes})`); subscribe(); }
+}
 
 function onRoom(r) {
+  if (r && room && typeof r.version === "number" && r.version < room.version) return; // late/out-of-order snapshot
   const prev = room; room = r;
   if (!r) { log("ROOM GONE (deleted on the server)"); waiters.splice(0).forEach((w) => w()); return; }
   if (r.status !== lastStatus) { log(`status: ${lastStatus ?? "-"} -> ${r.status} (v${r.version})`); lastStatus = r.status; }
@@ -146,7 +179,11 @@ async function playMyTurn() {
   try {
     myTurns++;
     log(`MY TURN #${myTurns}`);
+    const turnStarted = Date.now();
     for (;;) {
+      // Per-turn watchdog: the server autoplays after 60 s, so a turn that runs
+      // past 50 s means we are stuck; re-read the server and let the main loop decide.
+      if (Date.now() - turnStarted > 50_000) { log("turn watchdog: 50s without finishing my turn — re-reading server state"); await refreshRoom("turn watchdog"); break; }
       const m = room?.match, t = m?.turn;
       if (!room || room.status !== "playing" || !t || m.seats[t.seat]?.uid !== uid) break;
       await pace();
@@ -163,12 +200,13 @@ async function playMyTurn() {
           await call("submitRoll", { roomId, expectedVersion: v, keep });
         }
       } catch (e) {
-        if (e?.code === "functions/aborted") { log("stale version, waiting for fresh state"); }
-        else if (e?.code === "functions/failed-precondition") { log("server says not actionable now, re-checking"); }
+        if (e?.code === "functions/aborted") { log("stale version — re-fetching room from server"); await refreshRoom("409 stale"); continue; }
+        else if (e?.code === "functions/failed-precondition") { log("server says not actionable now — re-fetching room from server"); await refreshRoom("400 precondition"); continue; }
         else throw e;
       }
-      // wait for the snapshot reflecting our write
-      for (let k = 0; k < 40 && room && room.version === v; k++) await Promise.race([changed(), sleep(500)]);
+      // wait for the snapshot reflecting our write; fall back to a server read
+      for (let k = 0; k < 16 && room && room.version === v; k++) await Promise.race([changed(), sleep(500)]);
+      if (room && room.version === v) await refreshRoom("no snapshot 8s after my write");
       const nt = room?.match?.turn;
       if (!nt || nt.seat !== cur.seat || nt.setNumber !== cur.setNumber) {
         // set over (banked or busted). A win keeps the seat with a fresh set; that counts as the same turn.
@@ -216,8 +254,8 @@ try {
   }
   gemsBefore = await myGems();
   log(`my online gems before: ${gemsBefore}`);
-  unsub = onSnapshot(doc(db, "rooms", roomId), (s) => onRoom(s.exists() ? { id: s.id, ...s.data() } : null),
-    (e) => { log(`room listener error -> ${errText(e)}`); onRoom(null); });
+  subscribe();
+  setInterval(() => { watchdog().catch(() => {}); }, 5_000).unref();
 
   let lastKeep = Date.now(), keepWarned = false, started = false;
   while (true) {
