@@ -67,7 +67,8 @@ const pace = () => sleep(PACE_MIN + Math.random() * Math.max(0, PACE_MAX - PACE_
 log(`log file: ${LOG}`);
 const CONFIG = loadConfig();
 const app = initializeApp(CONFIG, `seatbot-${process.pid}`);
-const auth = getAuth(app), fns = getFunctions(app, REGION), db = getFirestore(app);
+const auth = getAuth(app), fns = getFunctions(app, REGION);
+let db = getFirestore(app);
 const call = async (name, data) => {
   try { const r = (await httpsCallable(fns, name)(data)).data; return r; }
   catch (e) { log(`CALLABLE ERROR ${name}(${JSON.stringify(data)}) -> ${errText(e)}`); throw e; }
@@ -116,7 +117,19 @@ let lastSnapAt = Date.now(), resubscribes = 0;
 // 409/400, when a write's snapshot never arrives, and by the watchdog.
 async function refreshRoom(why) {
   try {
-    const s = await getDocFromServer(doc(db, "rooms", roomId));
+    // A wedged Firestore channel can make this hang forever (YGGLL3, 2026-11-15):
+    // time out, then rebuild the Firestore client and resubscribe.
+    const s = await Promise.race([
+      getDocFromServer(doc(db, "rooms", roomId)),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("server read timed out after 8s")), 8_000)),
+    ]).catch(async (e) => {
+      if (!String(e?.message).includes("timed out")) throw e;
+      log(`refresh (${why}): server read hung — rebuilding Firestore client`);
+      const old = db; db = null;
+      await Promise.race([terminate(old).catch(() => {}), new Promise((r) => setTimeout(r, 3_000))]);
+      db = getFirestore(app); subscribe();
+      return await getDocFromServer(doc(db, "rooms", roomId));
+    });
     const r = s.exists() ? { id: s.id, ...s.data() } : null;
     if (!r || !room || r.version !== room.version || r.status !== room.status) {
       log(`refresh (${why}): server v${r?.version ?? "-"} ${r?.status ?? "gone"} vs local v${room?.version ?? "-"} — applying server state`);
