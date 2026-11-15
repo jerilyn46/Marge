@@ -77,12 +77,15 @@ const DEAD_TOKEN_CODES = new Set([
   "messaging/invalid-registration-token",
 ]);
 
-export interface SendResult { success: boolean; error?: { code?: string } }
+export interface SendResult { success: boolean; error?: { code?: string; message?: string } }
 
 export function deadTokens(tokens: string[], responses: SendResult[]): string[] {
   return tokens.filter((_, i) => {
     const r = responses[i];
-    return !!r && !r.success && !!r.error?.code && DEAD_TOKEN_CODES.has(r.error.code);
+    if (!r || r.success || !r.error?.code) return false;
+    if (DEAD_TOKEN_CODES.has(r.error.code)) return true;
+    // FCM v1 reports a malformed token as invalid-argument; only prune when it blames the token.
+    return r.error.code === "messaging/invalid-argument" && /registration token/i.test(r.error.message ?? "");
   });
 }
 
@@ -113,8 +116,11 @@ export async function sendTurnPush(p: TurnPush | null, deps: PushDeps): Promise<
     const dead = deadTokens(tokens, res.responses);
     if (dead.length) await deps.removeTokens(p.uid, dead);
     const sent = res.responses.filter((r) => r.success).length;
-    const errors = [...new Set(res.responses.filter((r) => !r.success).map((r) => r.error?.code ?? "unknown"))];
-    deps.log?.("turn push", { roomId: p.roomId, seat: p.seat, tokens: tokens.length, sent, pruned: dead.length, errors });
+    const failed = res.responses.filter((r) => !r.success);
+    const errors = [...new Set(failed.map((r) => r.error?.code ?? "unknown"))];
+    // FCM error text (never the token itself) tells a bad token from a bad payload.
+    const details = [...new Set(failed.map((r) => String(r.error?.message ?? "").replace(/[A-Za-z0-9_:-]{40,}/g, "<redacted>").slice(0, 160)))];
+    deps.log?.("turn push", { roomId: p.roomId, seat: p.seat, tokens: tokens.length, sent, pruned: dead.length, errors, details });
     return { sent, pruned: dead.length };
   } catch (e) {
     deps.log?.("turn push failed", { roomId: p.roomId, seat: p.seat, error: String((e as Error)?.message ?? e) });

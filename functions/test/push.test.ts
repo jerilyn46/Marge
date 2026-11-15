@@ -142,6 +142,11 @@ test("dead tokens are pruned; transient errors are kept", () => {
     { success: false, error: { code: "messaging/invalid-registration-token" } },
   ]);
   assert.deepEqual(dead, ["b", "d"]);
+  // Live FCM (marge-online, 2026-11-15) answers a malformed token with invalid-argument + this text.
+  assert.deepEqual(deadTokens(["x", "y"], [
+    { success: false, error: { code: "messaging/invalid-argument", message: "The registration token is not a valid FCM registration token" } },
+    { success: false, error: { code: "messaging/invalid-argument", message: "Invalid JSON payload received." } },
+  ]), ["x"], "payload errors never prune tokens");
 });
 
 test("sendTurnPush: sends to the recipient's tokens, prunes, never throws", async () => {
