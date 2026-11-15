@@ -216,9 +216,10 @@ export const leaveRoom = onCall(async (req) => {
       const s = m.seats[i];
       if (!s.eliminated) {
         // Leaving keeps your current table bank; you're out of this match.
-        tx.set(db.collection("users").doc(uid), { gems: FieldValue.increment(s.bank), escrowRoom: null }, { merge: true });
+        const carried = s.bank;
+        tx.set(db.collection("users").doc(uid), { gems: FieldValue.increment(carried), escrowRoom: null }, { merge: true });
         s.bank = 0;
-        dropSeat(m, i);
+        dropSeat(m, i, carried); // result screen shows start → carried · left
       }
       return commitMatch(tx, ref, m, {}, { before, actorUid: uid, played: false }, room);
     }

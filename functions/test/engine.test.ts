@@ -90,3 +90,23 @@ test("rollSeq/lastRoll: +1 per server roll, kept after the turn resolves", () =>
   assert.equal(m.lastRoll!.rollNumber, 3);
   assert.deepEqual(m.lastRoll!.held, [true, false, false]);
 });
+
+test("recentRolls: every roll in order (last RECENT_ROLLS), even when one commit holds many", async () => {
+  const { RECENT_ROLLS, autoPlayTimedOut } = await import("../src/engine");
+  const s: SeatState[] = [
+    { index: 0, kind: "host", uid: "a", displayName: "A", bank: 100, eliminated: false },
+    { index: 1, kind: "bot", displayName: "Bot", bank: 100, eliminated: false },
+  ];
+  const m = newMatch(s, 10);
+  let k = 0;
+  const rng = () => [0.0, 0.2, 0.4, 0.9, 0.7, 0.5][k++ % 6];
+  autoPlayTimedOut(m, rng); // one timed-out set for A: up to 3 rolls in one commit
+  runBots(m, rng);
+  const r = m.recentRolls ?? [];
+  assert.ok(r.length >= 1 && r.length <= RECENT_ROLLS);
+  assert.equal(r[r.length - 1].seq, m.rollSeq);
+  r.forEach((x, i) => i && assert.equal(x.seq, r[i - 1].seq + 1));
+  assert.deepEqual(r[r.length - 1].dice, m.lastRoll!.dice);
+  for (let i = 0; i < 20 && m.status === "playing"; i++) { autoPlayTimedOut(m, rng); runBots(m, rng); }
+  assert.ok((m.recentRolls ?? []).length <= RECENT_ROLLS);
+});

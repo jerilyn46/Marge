@@ -101,6 +101,8 @@ class MatchSeat {
     this.displayName,
     required this.bank,
     required this.eliminated,
+    this.left = false,
+    this.leftWith,
   });
   final int index;
   final SeatKind kind;
@@ -109,6 +111,12 @@ class MatchSeat {
   final int bank;
   final bool eliminated;
 
+  /// Left mid-match (leave / delete) rather than busting to 0 (QA 2048+).
+  final bool left;
+
+  /// Table bank the leaver carried out to their online gems (0 if forfeited).
+  final int? leftWith;
+
   factory MatchSeat.fromMap(Map<String, dynamic> m) => MatchSeat(
     index: _i(m['index']),
     kind: _kind(m['kind'] as String?),
@@ -116,6 +124,8 @@ class MatchSeat {
     displayName: m['displayName'] as String?,
     bank: _i(m['bank']),
     eliminated: m['eliminated'] as bool? ?? false,
+    left: m['left'] as bool? ?? false,
+    leftWith: (m['leftWith'] as num?)?.toInt(),
   );
 }
 
@@ -193,8 +203,13 @@ class MatchView {
     this.startBanks,
     this.rollSeq,
     this.lastRoll,
+    this.recentRolls = const [],
   });
   final List<MatchSeat> seats;
+
+  /// The server's last few rolls, oldest first (QA 2048+); empty on older
+  /// rooms. Lets the table animate rolls whose snapshots coalesced.
+  final List<OnlineRoll> recentRolls;
 
   /// +1 per server roll (servers from QA 2046 on); null on older rooms.
   final int? rollSeq;
@@ -227,6 +242,10 @@ class MatchView {
     lastRoll: m['lastRoll'] is Map
         ? OnlineRoll.fromMap(Map<String, dynamic>.from(m['lastRoll'] as Map))
         : null,
+    recentRolls: ((m['recentRolls'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => OnlineRoll.fromMap(Map<String, dynamic>.from(e)))
+        .toList(),
   );
 
   /// Per-seat result rows for the end-of-match screen (occupied seats only).
@@ -245,9 +264,12 @@ class MatchView {
             start: start != null && s.index < start.length
                 ? start[s.index]
                 : null,
-            end: s.bank,
+            // A leaver's bank is zeroed when it goes home: show what they
+            // carried out. Older rooms (no `left`) keep the plain bank/out.
+            end: s.left ? (s.leftWith ?? s.bank) : s.bank,
             winner: s.index == winnerSeat,
-            out: s.eliminated,
+            out: s.eliminated && !s.left,
+            left: s.left,
           ),
     ];
   }
@@ -262,6 +284,7 @@ class SeatResult {
     this.start,
     this.winner = false,
     this.out = false,
+    this.left = false,
   });
   final int seat;
   final String name;
@@ -270,6 +293,12 @@ class SeatResult {
   final int end;
   final bool winner;
   final bool out;
+
+  /// Left the table mid-match (row reads "· left", not "· out").
+  final bool left;
+
+  /// " · left", " · out" or "".
+  String get statusSuffix => left ? ' · left' : (out ? ' · out' : '');
 
   int? get change => start == null ? null : end - start!;
 

@@ -55,7 +55,7 @@ export function scrubRoom(room: Room, uid: string): ScrubPlan {
       if (wasPlaying) {
         // Escrowed table bank is forfeited into the pot so the table stays whole for others.
         match.pot += s.bank; s.bank = 0;
-        if (!s.eliminated) dropSeat(match, i);
+        if (!s.eliminated) dropSeat(match, i, 0); // forfeited, carried nothing out
       }
       s.uid = null as unknown as undefined;
       if (!finishedMatch) s.displayName = LEFT_NAME;

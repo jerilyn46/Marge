@@ -186,3 +186,14 @@ test("finished pot split over several seats keeps the proportional line", () => 
   settleFinishedPot(m);
   assert.equal(m.lastPayout!.message, "A ended the match. Pot of 5 returned by table bank: A +3, B +2.");
 });
+
+test("dropSeat records left + leftWith; a bust stays plain eliminated", async () => {
+  const { scrubRoom } = await import("../src/rooms");
+  const m = newMatch([human(0, "a", "A", 100), human(1, "b", "B", 100), human(2, "c", "C", 100)], 10);
+  m.seats[1].bank = 0; dropSeat(m, 1, 97);
+  assert.equal(m.seats[1].left, true); assert.equal(m.seats[1].leftWith, 97); assert.equal(m.seats[1].eliminated, true);
+  assert.equal(m.seats[0].left, undefined);
+  const plan = scrubRoom({ status: "playing", seats: m.seats.map((x) => ({ ...x })), memberUids: ["a", "b", "c"], match: m }, "c");
+  const c = plan.match!.seats[2];
+  assert.equal(c.left, true); assert.equal(c.leftWith, 0, "delete forfeits the bank: carried nothing out");
+});

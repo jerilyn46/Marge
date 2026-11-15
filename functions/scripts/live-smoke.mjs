@@ -161,6 +161,11 @@ async function scenarioLeave(C, D) {
     `after leave: status ${r.status}, guest seat eliminated, turn on seat ${r.match.turn?.seat}`);
   ok(ud.gems === dBank && ud.escrowRoom === null, `leaver keeps table bank: users gems ${ud.gems} == bank ${dBank}, escrow cleared`);
   ok(tableTotal(r) + ud.gems === total, `conserved after leave: table ${tableTotal(r)} + leaver ${ud.gems} = ${total}`);
+  { const ls = r.match.seats[dSeat];
+    ok(ls.left === true && ls.leftWith === dBank && ls.bank === 0, `leaver seat: left ${ls.left}, leftWith ${ls.leftWith} == ${dBank} (result row 'start → ${dBank} · left')`); }
+  { const rr = r.match.recentRolls ?? [];
+    ok(rr.length > 0 && rr.length <= 8 && rr[rr.length - 1].seq === r.match.rollSeq && rr.every((x, i) => !i || x.seq === rr[i - 1].seq + 1),
+      `recentRolls: ${rr.length} contiguous, last seq ${rr[rr.length - 1]?.seq} == rollSeq ${r.match.rollSeq}`); }
   const v0 = r.version;
   r = await playSet(byUid, r);
   ok(r.version > v0, `remaining host took a turn after leave (v${v0}->v${r.version}, status ${r.status})`);

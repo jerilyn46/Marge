@@ -66,6 +66,13 @@ class _OnlineMatchScreenState extends ConsumerState<OnlineMatchScreen> {
   /// the winner or the message while it is open (GPLLGC).
   Room? _finalRoom;
 
+  /// The finishing snapshot carried a new roll (e.g. first-roll triple 1s,
+  /// or the bust that ended it): keep the table up until that roll has
+  /// played, then show the result. [_resultHoldGuard] caps the wait.
+  bool _holdResult = false;
+  Timer? _resultHoldGuard;
+  static const resultHoldMax = Duration(seconds: 15);
+
   @override
   void initState() {
     super.initState();
@@ -86,12 +93,20 @@ class _OnlineMatchScreenState extends ConsumerState<OnlineMatchScreen> {
                 _gone = true;
                 return;
               }
+              final prevSeq = _room?.match?.rollSeq;
+              final hadRoom = _room?.match != null;
               _room = r;
               final fm = r.match;
               if (_finalRoom == null &&
                   fm != null &&
                   (fm.finished || r.status == RoomStatus.finished)) {
                 _finalRoom = r;
+                final seq = fm.rollSeq;
+                if (hadRoom && seq != null && seq > (prevSeq ?? 0)) {
+                  _holdResult = true;
+                  _resultHoldGuard?.cancel();
+                  _resultHoldGuard = Timer(resultHoldMax, _releaseResult);
+                }
               }
               final m = r.match;
               if (_firstBanks == null && m != null && !m.finished) {
@@ -118,6 +133,7 @@ class _OnlineMatchScreenState extends ConsumerState<OnlineMatchScreen> {
     }
     _retry?.cancel();
     _sub?.cancel();
+    _resultHoldGuard?.cancel();
     super.dispose();
   }
 
@@ -136,10 +152,15 @@ class _OnlineMatchScreenState extends ConsumerState<OnlineMatchScreen> {
     }
   }
 
+  void _releaseResult() {
+    _resultHoldGuard?.cancel();
+    if (mounted && _holdResult) setState(() => _holdResult = false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final done = _finalRoom;
-    if (done != null) {
+    if (done != null && !_holdResult) {
       return OnlineMatchResult(
         key: const ValueKey('online-result-frozen'),
         room: done,
@@ -150,7 +171,8 @@ class _OnlineMatchScreenState extends ConsumerState<OnlineMatchScreen> {
         onDone: _done,
       );
     }
-    final room = _room;
+    // While holding for the final roll, the table shows the finished room.
+    final room = done ?? _room;
     final m = room?.match;
     final settings = ref.watch(settingsProvider);
     final skin = ref.watch(cosmeticsProvider).equippedTheme;
@@ -195,6 +217,7 @@ class _OnlineMatchScreenState extends ConsumerState<OnlineMatchScreen> {
                         skinTheme: skin,
                         sfxEnabled: settings.sfxEnabled,
                         hapticsEnabled: settings.hapticsEnabled,
+                        onIdle: _holdResult ? _releaseResult : null,
                         onRoll: (keep) => _do(
                           () => widget.rooms.submitRoll(
                             room.id,
@@ -258,10 +281,14 @@ class _OnlineMatchScreenState extends ConsumerState<OnlineMatchScreen> {
 /// The live online table for one room snapshot. Pure UI over [room]: no
 /// Firebase, so widget tests drive it with plain [Room] values.
 ///
-/// Every new server roll (tracked by [OnlineRollTracker]) bumps the
-/// [DiceTray] roll serial once, so the tumble + throw haptic + die-landed
-/// clicks play for every seat's roll, and never on the first snapshot,
-/// a rebuild, or a reconnect that re-delivers the same roll. When the turn
+/// Every server roll the table has not shown yet ([OnlineRollTracker],
+/// incl. rolls that coalesced into one snapshot via `recentRolls`) is played
+/// through [RollPlayback]: one tumble + throw haptic + die-landed clicks per
+/// roll, in order, each result held briefly before the next. Never on the
+/// first snapshot, a rebuild, or a reconnect that re-delivers the same roll.
+/// The tray keeps a fixed slot in the layout, so lines appearing/vanishing
+/// in the same snapshot (payout message, turn label) never re-create it
+/// mid-throw — that re-creation is what swallowed tumbles up to QA 2047. When the turn
 /// passes to you ([YourTurnDetector]) a "Your turn!" banner shows with a
 /// heavy haptic and the system sound.
 class OnlineTable extends StatefulWidget {
@@ -277,7 +304,12 @@ class OnlineTable extends StatefulWidget {
     this.sfxEnabled = true,
     this.hapticsEnabled = true,
     this.sfx,
+    this.onIdle,
   });
+
+  /// Called (from a timer, never during build) when the last queued roll
+  /// has landed and been on show for [RollPlayback.dwell].
+  final VoidCallback? onIdle;
 
   final Room room;
   final String myUid;
@@ -300,6 +332,7 @@ class OnlineTable extends StatefulWidget {
 
 class OnlineTableState extends State<OnlineTable> {
   final _rolls = OnlineRollTracker();
+  final _play = RollPlayback();
   final _turns = YourTurnDetector();
   late final SfxService _sfx =
       widget.sfx ??
@@ -309,13 +342,16 @@ class OnlineTableState extends State<OnlineTable> {
       );
   List<bool> _hold = [false, false, false];
   int _holdForVersion = -1;
-  int _settledSerial = 0;
   bool _banner = false;
   Timer? _bannerTimer;
   Timer? _settleGuard;
+  Timer? _dwellTimer;
 
-  /// Local roll serial fed to the [DiceTray] (one bump per server roll).
-  int get rollSerial => _rolls.serial;
+  /// Local roll serial fed to the [DiceTray] (one bump per throw played).
+  int get rollSerial => _play.serial;
+
+  /// True while server rolls are still being played on the tray.
+  bool get playingRolls => _play.busy || _play.resting;
 
   /// True while the "Your turn!" banner is up.
   bool get showingYourTurn => _banner;
@@ -339,20 +375,7 @@ class OnlineTableState extends State<OnlineTable> {
 
   void _observe() {
     final m = widget.room.match;
-    if (_rolls.observe(m)) {
-      unawaited(_sfx.roll()); // throw tap; the tray adds rattle + landings
-      _settleGuard?.cancel();
-      final serial = _rolls.serial;
-      // Never leave the buttons locked if a settle report is lost.
-      _settleGuard = Timer(
-        const Duration(milliseconds: DiceTray.dieMs + 1100),
-        () {
-          if (mounted && _settledSerial < serial) {
-            setState(() => _settledSerial = serial);
-          }
-        },
-      );
-    }
+    if (_play.add(_rolls.take(m))) _startNext();
     if (_turns.observe(m, widget.myUid)) {
       unawaited(_sfx.yourTurn());
       _banner = true;
@@ -365,10 +388,38 @@ class OnlineTableState extends State<OnlineTable> {
     }
   }
 
+  /// Starts the next queued throw (state only; callers rebuild).
+  void _startNext() {
+    if (!_play.next()) return;
+    unawaited(_sfx.roll()); // throw tap; the tray adds rattle + landings
+    _settleGuard?.cancel();
+    final serial = _play.serial;
+    // Never stall the queue / lock the buttons if a settle report is lost.
+    _settleGuard = Timer(
+      const Duration(milliseconds: DiceTray.dieMs + 1100),
+      () => _onSettled(serial),
+    );
+  }
+
+  void _onSettled(int serial) {
+    if (!mounted || !_play.settled(serial)) return;
+    _settleGuard?.cancel();
+    setState(() {});
+    _dwellTimer?.cancel();
+    _dwellTimer = Timer(RollPlayback.dwell, () {
+      if (!mounted) return;
+      setState(() {
+        if (_play.rested()) _startNext();
+      });
+      if (!playingRolls) widget.onIdle?.call();
+    });
+  }
+
   @override
   void dispose() {
     _bannerTimer?.cancel();
     _settleGuard?.cancel();
+    _dwellTimer?.cancel();
     super.dispose();
   }
 
@@ -384,184 +435,208 @@ class OnlineTableState extends State<OnlineTable> {
       _hold = turn.rollNumber == 0 ? [false, false, false] : [...turn.kept];
     }
     String label(int i) => m.seats[i].displayName ?? 'Seat ${i + 1}';
-    final settling = _rolls.serial != _settledSerial;
+    final settling = _play.busy;
 
-    // Faces on the table: the turn in progress, else the last server roll
-    // (e.g. the opponent's third-roll miss that already passed the turn).
+    // Faces on the table: the roll being played back (queued rolls show in
+    // order), else the turn in progress, else the last server roll (e.g. the
+    // opponent's third-roll miss that already passed the turn, or the roll
+    // that ended the match).
     final last = m.lastRoll;
-    final List<int>? faces = turn != null && turn.hasRolled
-        ? turn.dice
-        : last?.dice;
-    final List<bool> held = turn != null && turn.hasRolled
-        ? (myTurn ? _hold : turn.kept)
-        : (last?.held ?? const [false, false, false]);
+    final playing = settling ? _play.current : null;
+    final List<int>? faces =
+        playing?.dice ??
+        (turn != null && turn.hasRolled ? turn.dice : last?.dice);
+    final List<bool> held =
+        playing?.held ??
+        (turn != null && turn.hasRolled
+            ? (myTurn ? _hold : turn.kept)
+            : (last?.held ?? const [false, false, false]));
     final List<bool> rolledHeld =
+        _play.current?.held ??
         last?.held ??
         (turn != null && turn.hasRolled
             ? turn.kept
             : const [false, false, false]);
     final canHold = myTurn && turn.hasRolled && turn.canRoll && !settling;
+    final showTray = turn != null || faces != null;
 
     return LayoutBuilder(
       builder: (context, box) {
         final dieSize = ((box.maxWidth - 64) / 3.6).clamp(48.0, 72.0);
-        return ListView(
+        // A Column (not a lazy ListView) with fixed slots: the tray's element
+        // is never re-created when the payout line or turn label comes and
+        // goes in the same snapshot as a roll.
+        return SingleChildScrollView(
           padding: const EdgeInsets.all(16),
-          children: [
-            Text(
-              'Round ${m.round} · Pot ${m.pot} gems',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: MargeColors.gold,
-                fontWeight: FontWeight.w800,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Round ${m.round} · Pot ${m.pot} gems',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: MargeColors.gold,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            for (final s in m.seats)
-              if (s.kind != SeatKind.open)
-                ListTile(
-                  dense: true,
-                  leading: Icon(
-                    turn?.seat == s.index ? Icons.casino : Icons.person_outline,
-                    color: turn?.seat == s.index ? MargeColors.gold : null,
-                  ),
-                  title: Text(
-                    '${label(s.index)}${s.index == mySeat ? ' (you)' : ''}',
-                    style: TextStyle(
-                      fontWeight: turn?.seat == s.index
-                          ? FontWeight.w800
-                          : FontWeight.w500,
+              const SizedBox(height: 8),
+              for (final s in m.seats)
+                if (s.kind != SeatKind.open)
+                  ListTile(
+                    dense: true,
+                    leading: Icon(
+                      turn?.seat == s.index
+                          ? Icons.casino
+                          : Icons.person_outline,
+                      color: turn?.seat == s.index ? MargeColors.gold : null,
                     ),
-                  ),
-                  subtitle: Text(s.eliminated ? 'Out' : s.kind.name),
-                  trailing: Text('${s.bank} gems'),
-                ),
-            const Divider(),
-            if (m.lastPayoutMessage != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  m.lastPayoutMessage!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: MargeColors.cream,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              child: _banner
-                  ? Container(
-                      key: const ValueKey('online-your-turn-banner'),
-                      margin: const EdgeInsets.symmetric(vertical: 6),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 10,
+                    title: Text(
+                      '${label(s.index)}${s.index == mySeat ? ' (you)' : ''}',
+                      style: TextStyle(
+                        fontWeight: turn?.seat == s.index
+                            ? FontWeight.w800
+                            : FontWeight.w500,
                       ),
-                      decoration: BoxDecoration(
-                        color: MargeColors.gold.withValues(alpha: 0.22),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: MargeColors.gold),
-                      ),
-                      child: const Text(
-                        '🎲 Your turn!',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: MargeColors.gold,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 20,
+                    ),
+                    subtitle: Text(
+                      s.left ? 'Left' : (s.eliminated ? 'Out' : s.kind.name),
+                    ),
+                    trailing: Text('${s.bank} gems'),
+                  ),
+              const Divider(),
+              KeyedSubtree(
+                key: const ValueKey('online-payout-slot'),
+                child: m.lastPayoutMessage == null
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Text(
+                          m.lastPayoutMessage!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: MargeColors.cream,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                    )
-                  : const SizedBox.shrink(),
-            ),
-            if (turn != null) ...[
-              Text(
-                myTurn
-                    ? 'Your turn · roll ${turn.rollNumber}/3'
-                    : "${label(turn.seat)}'s turn · roll ${turn.rollNumber}/3",
-                key: const ValueKey('online-turn-label'),
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 16,
-                ),
               ),
-              const SizedBox(height: 16),
-              Center(
-                child: DiceTray(
-                  // Keyed so banner rows coming and going never re-create
-                  // the tray mid-throw (same reason as offline).
-                  key: const ValueKey('online-dice-tray'),
-                  values: faces ?? const [1, 1, 1],
-                  dim: faces == null,
-                  rollSerial: _rolls.serial,
-                  kept: [
-                    for (var i = 0; i < 3; i++)
-                      faces != null && i < held.length && held[i],
-                  ],
-                  animate: [
-                    for (var i = 0; i < 3; i++)
-                      !(i < rolledHeld.length && rolledHeld[i]),
-                  ],
-                  enabled: [for (var i = 0; i < 3; i++) canHold],
-                  onTap: (i) => setState(() => _hold[i] = !_hold[i]),
-                  size: dieSize,
-                  theme: widget.skinTheme,
-                  sfx: _sfx,
-                  onSettled: (serial) {
-                    if (mounted && serial > _settledSerial) {
-                      setState(() => _settledSerial = serial);
-                    }
-                  },
-                ),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: _banner
+                    ? Container(
+                        key: const ValueKey('online-your-turn-banner'),
+                        margin: const EdgeInsets.symmetric(vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: MargeColors.gold.withValues(alpha: 0.22),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: MargeColors.gold),
+                        ),
+                        child: const Text(
+                          '🎲 Your turn!',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: MargeColors.gold,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 20,
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
               ),
-              if (canHold)
-                const Padding(
-                  padding: EdgeInsets.only(top: 8),
-                  child: Text('Tap dice to hold.', textAlign: TextAlign.center),
+              if (turn != null)
+                Text(
+                  myTurn
+                      ? 'Your turn · roll ${turn.rollNumber}/3'
+                      : "${label(turn.seat)}'s turn · roll ${turn.rollNumber}/3",
+                  key: const ValueKey('online-turn-label'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                  ),
+                )
+              else
+                const SizedBox(key: ValueKey('online-turn-label-none')),
+              if (showTray) ...[
+                const SizedBox(height: 16),
+                Center(
+                  key: const ValueKey('online-tray-slot'),
+                  child: DiceTray(
+                    // Keyed so banner rows coming and going never re-create
+                    // the tray mid-throw (same reason as offline).
+                    key: const ValueKey('online-dice-tray'),
+                    values: faces ?? const [1, 1, 1],
+                    dim: faces == null,
+                    rollSerial: _play.serial,
+                    kept: [
+                      for (var i = 0; i < 3; i++)
+                        faces != null && i < held.length && held[i],
+                    ],
+                    animate: [
+                      for (var i = 0; i < 3; i++)
+                        !(i < rolledHeld.length && rolledHeld[i]),
+                    ],
+                    enabled: [for (var i = 0; i < 3; i++) canHold],
+                    onTap: (i) => setState(() => _hold[i] = !_hold[i]),
+                    size: dieSize,
+                    theme: widget.skinTheme,
+                    sfx: _sfx,
+                    onSettled: _onSettled,
+                  ),
                 ),
-              const SizedBox(height: 12),
-              if (myTurn)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    ElevatedButton(
-                      key: const ValueKey('online-roll'),
-                      onPressed: widget.busy || settling || !turn.canRoll
-                          ? null
-                          : () => widget.onRoll([
-                              for (var i = 0; i < 3; i++)
-                                if (_hold[i]) i,
-                            ]),
-                      child: Text(
-                        turn.hasRolled
-                            ? 'ROLL (${turn.rollsLeft} left)'
-                            : 'ROLL',
+                if (canHold)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Tap dice to hold.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                if (myTurn)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      ElevatedButton(
+                        key: const ValueKey('online-roll'),
+                        onPressed: widget.busy || settling || !turn.canRoll
+                            ? null
+                            : () => widget.onRoll([
+                                for (var i = 0; i < 3; i++)
+                                  if (_hold[i]) i,
+                              ]),
+                        child: Text(
+                          turn.hasRolled
+                              ? 'ROLL (${turn.rollsLeft} left)'
+                              : 'ROLL',
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    OutlinedButton(
-                      key: const ValueKey('online-bank'),
-                      onPressed: widget.busy || settling || !turn.isScoring
-                          ? null
-                          : widget.onBank,
-                      child: const Text('BANK'),
-                    ),
-                  ],
+                      const SizedBox(width: 12),
+                      OutlinedButton(
+                        key: const ValueKey('online-bank'),
+                        onPressed: widget.busy || settling || !turn.isScoring
+                            ? null
+                            : widget.onBank,
+                        child: const Text('BANK'),
+                      ),
+                    ],
+                  ),
+              ],
+              if (widget.error != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(
+                    widget.error!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.redAccent),
+                  ),
                 ),
             ],
-            if (widget.error != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Text(
-                  widget.error!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.redAccent),
-                ),
-              ),
-          ],
+          ),
         );
       },
     );
@@ -657,8 +732,8 @@ class OnlineMatchResult extends StatelessWidget {
                             ),
                             subtitle: Text(
                               r.start == null
-                                  ? '${r.end} gems${r.out ? ' · out' : ''}'
-                                  : '${r.start} → ${r.end} gems${r.out ? ' · out' : ''}',
+                                  ? '${r.end} gems${r.statusSuffix}'
+                                  : '${r.start} → ${r.end} gems${r.statusSuffix}',
                             ),
                             trailing: r.changeLabel == null
                                 ? null

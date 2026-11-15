@@ -55,6 +55,10 @@ export interface SeatState {
   connected?: boolean;
   bank: number;
   eliminated: boolean;
+  /** Left mid-match (leave / delete), as opposed to busting to 0. Set by dropSeat. */
+  left?: boolean;
+  /** Table bank the leaver carried out to their online gems (0 when forfeited by a delete). */
+  leftWith?: number;
 }
 
 export interface TurnState {
@@ -91,7 +95,12 @@ export interface MatchState {
   rollSeq?: number;
   /** The most recent roll, kept after the turn resolves so clients can show/animate it. */
   lastRoll?: LastRoll | null;
+  /** The last RECENT_ROLLS rolls, oldest first, so a client whose snapshots coalesced can animate every roll in order. */
+  recentRolls?: LastRoll[];
 }
+
+/** How many rolls recentRolls keeps (covers a timeout auto-play set plus a bot's run). */
+export const RECENT_ROLLS = 8;
 
 export interface LastRoll { seq: number; seat: number; dice: number[]; held: boolean[]; rollNumber: number; setNumber: number }
 
@@ -189,6 +198,7 @@ export function roll(m: MatchState, seat: number, kept: boolean[] | undefined, r
   t.score = evaluate(t.dice, nextRoll);
   m.rollSeq = (m.rollSeq ?? 0) + 1;
   m.lastRoll = { seq: m.rollSeq, seat, dice: [...t.dice], held: [...hold], rollNumber: nextRoll, setNumber: t.setNumber };
+  m.recentRolls = [...(m.recentRolls ?? []), { ...m.lastRoll, dice: [...t.dice], held: [...hold] }].slice(-RECENT_ROLLS);
   m.lastPayout = null;
   if (t.score.kind === "tripleOnesPotWin") return resolve(m);
   if (t.score.kind === "none" && nextRoll >= 3) return resolve(m);
@@ -329,8 +339,10 @@ export function autoPlayTimedOut(m: MatchState, rng: Rng) {
 }
 
 /** Mark a seat out mid-match (leave / delete); advance the turn or finish so others keep playing. */
-export function dropSeat(m: MatchState, i: number) {
+export function dropSeat(m: MatchState, i: number, leftWith?: number) {
   const s = m.seats[i];
+  s.left = true;
+  if (leftWith !== undefined) s.leftWith = leftWith;
   // Fresh result line: never carry an earlier turn's whiff/score (kind/amount) into the leave.
   m.lastPayout = { message: `${name(m, i)} left the table.`, kind: "none", amount: 0, seat: i, dice: [] };
   s.eliminated = true;
