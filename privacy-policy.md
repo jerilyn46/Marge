@@ -1,77 +1,100 @@
 # Privacy Policy — Marge
 
-**Effective date:** September 15, 2026  
+**Effective date:** November 15, 2026  
 **App:** Marge (Android), package `com.jerilynroberts.marge`  
 **Developer:** Jerilyn Roberts  
 **Contact:** jerilyn46@gmail.com
 
 ## What this app is
 
-Marge is a casual dice pot game for adults (18+). Gameplay uses **virtual gems only**. Virtual gems have no cash value. You cannot deposit real money into a cashable balance, withdraw gems, sell gems to other people, or cash out for money, gift cards, or other prizes of real-world value.
+Marge is a casual dice pot game for adults (18+). Gameplay uses **virtual gems only**. Virtual gems have no cash value. You cannot deposit real money into a cashable balance, withdraw gems, sell or trade gems to other people, or cash out for money, gift cards, or any other prize of real-world value. There is no real-money gambling in this app.
 
-There is no real-money gambling in this app.
+Optional in-app purchases through Google Play Billing buy more virtual gems for use only in Marge. Google bills those purchases. We never receive your card number.
 
-Optional in-app purchases (via Google Play Billing) buy **more virtual gems** for use only in Marge. Those purchases are billed by Google. We never receive your credit-card number.
+You can play offline (against bots, or pass-and-play on one phone) or online with friends using a room code. There is **no chat** in Marge.
 
-## Information we collect
+## Offline play
 
-This version of Marge does **not** ask you to create an account. We do not ask for your email, phone number, or payment card inside the app.
+Offline, your username, settings, offline gem balance, and progress are stored **on your phone only**. We don't receive them.
 
-On first launch you may choose a **username**. That username is stored **on your device only**. Game settings and your virtual-gem balance also stay **on your device**. We do not operate a server that receives your gem balance or match history.
+## Online play and your anonymous online account
 
-We do not knowingly sell personal information. We do not knowingly collect personal information from children.
+When you choose to play online, Marge creates an **anonymous online account** using Google Firebase Authentication. We don't ask for your email, phone number, password, or real name. To run online games we use Google Firebase services (Authentication, Cloud Firestore, Cloud Functions, and Cloud Messaging), which process data for us on Google's servers.
 
-## Ads (Google AdMob)
+For online play we store:
 
-This version **shows ads** using **Google AdMob** (Google Mobile Ads SDK) and Google’s **User Messaging Platform (UMP)** consent form where required (including the EEA, UK, and Switzerland).
+- **Your anonymous account ID**, created by Firebase.
+- **Your display name.** You can choose one; if you don't, we show "Player" plus a few characters of your account ID. Other players in your room can see it.
+- **Room information:** room codes, who is seated, and the moves, dice, pot, and results needed to run and settle each game.
+- **Your online gem balance**, which is kept on our server so online games stay fair. It is separate from your offline gems.
+- **A notification token** for your device, so we can send you a "your turn" notification in an online game.
+- **Basic technical logs** our server functions write to keep online play working and to catch errors or cheating.
 
-Google may collect and process data as described in Google’s policies, including:
+We use this data only to run online games, deliver your-turn notifications, keep gem balances fair, and protect the service from cheating and abuse. We don't use it for advertising and we don't sell it.
 
-- Advertising identifiers (Android Advertising ID) and other device identifiers
-- IP address, which may be used to estimate approximate location
-- App activity related to ads (for example launches, taps, and ad / video views)
-- Diagnostic and performance data about the app and the ads SDK
-
-That data is used for advertising, measuring ads, analytics, and fraud prevention. It is shared with Google. We do not sell it.
-
-You can reset or limit your advertising ID in Android settings. Where UMP is required, we ask for consent before personalized ads. Settings in the app includes a privacy / ad-consent control when Google requires a privacy-options entry point.
-
-See Google’s ads and privacy materials and the Play Data safety disclosures for the Google Mobile Ads SDK.
-
-## In-app purchases
-
-If you buy a virtual-gem pack, **Google Play Billing** processes the payment. Google collects payment details under Google’s terms. The app receives enough purchase information from Play to grant the gems (for example product ID and purchase status). We do not store payment cards.
+Don't put private information in your display name, because other players in your room will see it.
 
 ## Notifications
 
-The app may show **on-device** “your turn” notifications. These are local to the phone. They are not push messages to other people, and we do not run a notification server.
+Marge can show "your turn" notifications. In online games, our server sends them through Firebase Cloud Messaging using your device's notification token. Some reminders are created on your phone only. You can turn notifications off at any time in Android settings.
 
-## Children’s privacy
+## Ads (Google AdMob)
 
-Marge is intended for **adults 18 and older**. It is not directed to children under 13, and it is not a “Designed for Families” app. We do not knowingly collect personal information from children. If you believe a child has provided personal information, email jerilyn46@gmail.com and we will delete it where we are required to.
+Marge shows ads using Google AdMob and, where required (including the EEA, UK, and Switzerland), Google's User Messaging Platform consent form.
 
-## Data sharing
+Google may collect and process data as described in Google's policies, including:
 
-We share ad-related data with **Google (AdMob)** as described above. Purchase processing is handled by **Google Play**. We may disclose information if required by law, or to protect the rights, safety, or property of users or the developer.
+- your advertising ID and other device identifiers
+- your IP address, which may be used to estimate your approximate location
+- app activity related to ads, such as app launches, taps, and ad or video views
+- diagnostic and performance data about the app and the ads SDK
 
-We do not sell personal information.
+Google uses this data for advertising, ad measurement, analytics, and fraud prevention. It is shared with Google. We don't sell it.
 
-## Retention and security
+You can reset or delete your advertising ID in Android settings. Where consent is required, we ask before showing personalized ads, and Settings includes a privacy and ad-consent option.
 
-On-device username, gem balances, and settings stay on your device until you clear the app’s data or uninstall it.
+## In-app purchases
 
-Ad and payments providers retain data per their policies. Google states that Mobile Ads SDK data is encrypted in transit. No method is 100% secure.
+If you buy a gem pack, Google Play Billing processes the payment, and Google collects your payment details under Google's terms. The app receives only the purchase information it needs to give you the gems, such as the product ID and purchase status. We don't receive or store card numbers.
 
-## Your choices
+## Children
 
-- Opt out of personalized ads via Android advertising-ID settings and the in-app consent / privacy-options form where offered
-- Uninstall the app, or clear its storage, to delete on-device game data
-- Email jerilyn46@gmail.com with privacy requests. Because we do not operate user accounts, we cannot look up an account by name. We will delete on-device-related data we control where required, and we will point you to Google’s ad and Play purchase controls for data Google holds
-- Google Play purchase history and refunds are managed in your Google account
+Marge is intended for **adults 18 and older**. It is not directed to children and is not part of Google Play's Designed for Families program. We don't knowingly collect personal information from children. If you believe a child has given us personal information, email jerilyn46@gmail.com and we will delete it.
+
+## Who we share data with
+
+- **Google Firebase** processes online-play data for us as our service provider.
+- **Google AdMob** receives ad-related data as described above.
+- **Google Play** handles purchases.
+- **Other players in your room** see your display name and your game moves.
+- We may disclose information if the law requires it, or to protect the rights, safety, or property of players or the developer.
+
+We don't sell personal information.
+
+## How long we keep data
+
+- **Finished online games:** the room, including the display names shown on its results, is deleted automatically **within 24 hours** after the game ends.
+- **Abandoned rooms:** a room nobody is using is deleted within about **1 hour**.
+- **Your online account, display name, online gem balance, and notification token:** kept until you delete your online data (see below), or until we shut down online play.
+- **On-phone data:** kept until you clear the app's storage or uninstall it.
+- **Ad and purchase data:** kept by Google under Google's own policies.
+
+Data sent to and from Firebase and AdMob is encrypted in transit. No method of storage or transfer is 100% secure.
+
+## Deleting your data
+
+**In the app:** go to **Settings → Delete my online data** (it's also in the online lobby). This permanently deletes your anonymous online account, display name, online gem balance, notification token, and your seat in any open rooms. If you leave a game that's in progress, it carries on for the other players. Your name may still appear on the results of games that already finished until those rooms are deleted, within 24 hours. Offline play and your offline gems are not affected.
+
+**Uninstalling** deletes on-phone data, but it does **not** delete your online data. Please use Delete my online data before you uninstall. If you've already uninstalled, email jerilyn46@gmail.com. Because online accounts are anonymous, we may need details such as your display name and roughly when you last played online to find your data.
+
+**Other choices:**
+
+- Reset your advertising ID, or opt out of personalized ads, in Android settings and through the in-app privacy and ad-consent option.
+- Manage Google Play purchase history and refunds in your Google account.
 
 ## Changes
 
-We may update this policy. The effective date above will change when we do. If a change is material, we will update this page before that version is offered on Google Play.
+We may update this policy. When we do, we will change the effective date above. If a change is significant, we will update this page before the new version of the app is offered on Google Play.
 
 ## Contact
 
