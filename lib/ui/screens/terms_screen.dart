@@ -4,14 +4,14 @@ import 'package:flutter/services.dart';
 import '../theme/marge_theme.dart';
 
 /// Effective date for the Terms, injected at build time:
-/// `--dart-define=TERMS_EFFECTIVE_DATE="October 12, 2026"`.
+/// `--dart-define=TERMS_EFFECTIVE_DATE="November 15, 2026"`.
 const String kTermsEffectiveDate = String.fromEnvironment(
   'TERMS_EFFECTIVE_DATE',
 );
 
 /// In-app Terms of Use. Content is Legal's final text, shipped byte for byte
 /// as the asset `assets/legal/terms-of-use.md` (copied from
-/// marge-growth/terms-of-use.md). Do not edit the wording here.
+/// marge-growth/terms-of-use-online.md). Do not edit the wording here.
 ///
 /// The asset keeps its `{{EFFECTIVE_DATE}}` token; it is filled at runtime
 /// from [kTermsEffectiveDate]. Fail closed: with no define, the whole

@@ -24,7 +24,7 @@ String _visibleText(WidgetTester tester) {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const legalFile = '/workspace/marge-growth/terms-of-use.md';
+  const legalFile = '/workspace/marge-growth/terms-of-use-online.md';
 
   test('bundled asset is Legal\'s final file byte for byte', () {
     final asset = File(TermsScreen.assetPath).readAsBytesSync();
@@ -42,8 +42,8 @@ void main() {
     'render fills the date, or drops the line when no date (fail closed)',
     () {
       final raw = File(TermsScreen.assetPath).readAsStringSync();
-      final filled = TermsScreen.render(raw, effectiveDate: 'October 12, 2026');
-      expect(filled, contains('Effective date: October 12, 2026'));
+      final filled = TermsScreen.render(raw, effectiveDate: 'November 15, 2026');
+      expect(filled, contains('Effective date: November 15, 2026'));
       expect(filled, isNot(contains('{{')));
 
       final none = TermsScreen.render(raw, effectiveDate: '');
@@ -62,7 +62,7 @@ void main() {
       MaterialApp(
         home: TermsScreen(
           bundle: _FileBundle(),
-          effectiveDate: 'October 12, 2026',
+          effectiveDate: 'November 15, 2026',
         ),
       ),
     );
@@ -71,7 +71,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     final text = _visibleText(tester);
-    expect(text, contains('Effective date: October 12, 2026'));
+    expect(text, contains('Effective date: November 15, 2026'));
     expect(text, contains('Virtual gems only'));
     expect(text, isNot(contains('{{')));
     expect(text, isNot(contains('[')));
