@@ -5,6 +5,8 @@ import '../../debug/settle_log.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../ads/ads_service.dart';
+import '../../online/delete_online_data.dart';
+import '../../online/online_flags.dart';
 import '../../services/settings_service.dart';
 import '../legal_links.dart';
 import '../theme/marge_theme.dart';
@@ -143,6 +145,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 fallback: LegalLinks.supportEmail,
               ),
             ),
+            if (kOnlineInviteEnabled) const DeleteOnlineDataTile(),
             const SizedBox(height: 24),
             // Long-press the version for the dice-lock breadcrumbs (support).
             GestureDetector(

@@ -1,0 +1,8 @@
+{
+  "name": "marge-live-smoke",
+  "private": true,
+  "type": "module",
+  "description": "Two-client smoke against a LIVE Firebase project. See live-smoke.mjs.",
+  "scripts": { "live": "node live-smoke.mjs" },
+  "dependencies": { "firebase": "^12.0.0" }
+}

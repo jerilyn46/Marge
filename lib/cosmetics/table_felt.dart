@@ -72,8 +72,10 @@ class TableFeltCatalog {
     ),
   ];
 
-  static TableFeltDef byId(TableFeltId id) => all.firstWhere((d) => d.id == id,
-      orElse: () => all.firstWhere((d) => d.id == defaultId));
+  static TableFeltDef byId(TableFeltId id) => all.firstWhere(
+    (d) => d.id == id,
+    orElse: () => all.firstWhere((d) => d.id == defaultId),
+  );
 
   static TableFeltDef? tryParse(String raw) {
     for (final d in all) {

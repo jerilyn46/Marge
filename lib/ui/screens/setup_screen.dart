@@ -7,7 +7,11 @@ import '../../services/friends_service.dart';
 import '../../services/settings_service.dart';
 import '../match_provider.dart';
 import '../theme/marge_theme.dart';
+import '../../online/online_flags.dart';
+import '../../online/rejoin.dart';
+import '../widgets/rejoin_banner.dart';
 import 'match_screen.dart';
+import 'online_lobby_screen.dart';
 import 'rules_screen.dart';
 
 /// Seat / bots flow after Play — dense controls live here, not on home.
@@ -22,6 +26,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
   int _bots = 3;
   int _otherHumans = 0;
   int _online = 0;
+  final _rejoinKey = GlobalKey<RejoinPromptState>();
 
   int _seatedFriends(FriendsState friends) => friends.seatedNames.length;
 
@@ -101,6 +106,12 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
             children: [
+              liveRejoinPrompt(
+                context,
+                key: _rejoinKey,
+                displayName: settings.playerName,
+                gemClaim: ledger.availableHumanGems(settings.playerName),
+              ),
               Text(
                 'Hello, ${settings.playerName}! You are Player 1.',
                 style: TextStyle(
@@ -134,15 +145,19 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
                       const SizedBox(height: 12),
                       // Online play is not available yet (no matchmaking
                       // backend). Disabled so nobody reserves chairs that
-                      // never fill. _online stays 0.
-                      const _CountStepper(
-                        label: 'Online players',
-                        subtitle: 'Coming soon',
-                        value: 0,
-                        onDecrement: null,
-                        onIncrement: null,
-                      ),
-                      const SizedBox(height: 12),
+                      // never fill. _online stays 0. Hidden when invite
+                      // play is on: PLAY ONLINE (INVITE) is the online path.
+                      if (!kOnlineInviteEnabled) ...[
+                        const _CountStepper(
+                          key: ValueKey('setup-online-coming-soon'),
+                          label: 'Online players',
+                          subtitle: 'Coming soon',
+                          value: 0,
+                          onDecrement: null,
+                          onIncrement: null,
+                        ),
+                        const SizedBox(height: 12),
+                      ],
                       _CountStepper(
                         label: 'Bots',
                         subtitle: 'Fill leftover seats only',
@@ -275,6 +290,24 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
                     : null,
                 child: const Text('START MATCH'),
               ),
+              if (kOnlineInviteEnabled) ...[
+                const SizedBox(height: 8),
+                OutlinedButton(
+                  onPressed: () => Navigator.of(context)
+                      .push(
+                        MaterialPageRoute(
+                          builder: (_) => OnlineLobbyScreen(
+                            displayName: settings.playerName,
+                            gemClaim: ledger.availableHumanGems(
+                              settings.playerName,
+                            ),
+                          ),
+                        ),
+                      )
+                      .then((_) => _rejoinKey.currentState?.refresh()),
+                  child: const Text('PLAY ONLINE (INVITE)'),
+                ),
+              ],
               const SizedBox(height: 8),
               Text(
                 'Virtual gems only — no real money.',
@@ -294,6 +327,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
 
 class _CountStepper extends StatelessWidget {
   const _CountStepper({
+    super.key,
     required this.label,
     required this.subtitle,
     required this.value,

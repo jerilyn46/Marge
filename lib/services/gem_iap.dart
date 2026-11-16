@@ -100,8 +100,10 @@ class GemPack {
   /// SKUs queried at IAP bootstrap (cold start). Excludes [weekend]: querying
   /// it at launch crashed Flip 7 on 0.1.43. The weekend SKU is queried lazily
   /// by [GemIapNotifier.loadWeekendProduct] when the Shop opens.
-  static Set<String> get bootstrapProductIds =>
-      {for (final p in all) if (p.productId != weekend.productId) p.productId};
+  static Set<String> get bootstrapProductIds => {
+    for (final p in all)
+      if (p.productId != weekend.productId) p.productId,
+  };
 }
 
 /// Purchase / store readiness for the Shop UI.
@@ -225,8 +227,10 @@ class GemIapNotifier extends Notifier<GemIapState> {
     state = state.copyWith(loading: true, clearError: true);
     try {
       final response = await _iap
-          .queryProductDetails(
-              {...GemPack.bootstrapProductIds, RemoveAds.productId})
+          .queryProductDetails({
+            ...GemPack.bootstrapProductIds,
+            RemoveAds.productId,
+          })
           .timeout(billingTimeout);
       if (response.error != null) {
         debugPrint('GemIap: query error ${response.error}');
