@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../online/online_flags.dart';
 import '../../services/settings_service.dart';
 import '../theme/marge_theme.dart';
+
+/// Online sentence on the Bots card: only when invite play is built in.
+const String _onlinePlayLine = kOnlineInviteEnabled
+    ? 'To play friends on their own phones, tap Play online (invite) '
+          'and share the room code. '
+    : '';
 
 class RulesScreen extends ConsumerWidget {
   const RulesScreen({super.key, this.fromOnboarding = false});
@@ -82,7 +89,7 @@ class RulesScreen extends ConsumerWidget {
               body:
                   'Choose 0–4 other local players and 0–4 bots '
                   '(at least one bot or local player; max 8 seats including you). '
-                  'Online play vs remote players is coming soon. '
+                  '$_onlinePlayLine'
                   'Bots cycle Aggressive / Cautious / Chaotic. '
                   'On a hotseat human turn, pass the device.',
             ),

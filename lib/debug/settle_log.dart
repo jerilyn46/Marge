@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 /// App version shown in Settings (kept in step with pubspec by a test).
-const kAppVersion = '0.1.44+44';
+const kAppVersion = '0.1.45+45';
 
 /// One breadcrumb for the dice "settling" input lock. Ids and counters only:
 /// nothing personal (no names, gems or device ids).
