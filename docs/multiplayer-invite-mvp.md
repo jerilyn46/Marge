@@ -149,7 +149,7 @@ A 2-player match at 100 gems each runs ~7–15 min with pacing; a 2-human match 
 `-PMARGE_QA=true` → applicationId `com.jerilynroberts.marge.qa`, label "Marge QA". Off by default; production builds are unchanged. Needs a `google-services.json` with the `.qa` client (registered in marge-online with the upload-key SHA-1/256). Gradle refuses a QA build carrying any non-sample AdMob ID.
 ```
 flutter build apk --release --dart-define=MARGE_ONLINE_INVITE=true \
-  --dart-define=TERMS_EFFECTIVE_DATE="October 12, 2026" \
+  --dart-define=TERMS_EFFECTIVE_DATE="November 15, 2026" \
   --dart-define=ADMOB_ENABLED=true --dart-define=ADMOB_ALLOW_TEST_IDS=true \
   -PADMOB_ENABLED=true -PADMOB_ALLOW_TEST_IDS=true -PMARGE_QA=true
 ```

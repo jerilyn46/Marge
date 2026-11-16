@@ -40,7 +40,7 @@ non-empty. One flag satisfies both the app and the guard:
 
 ```
 flutter build appbundle --release \
-  --dart-define=TERMS_EFFECTIVE_DATE="October 12, 2026"
+  --dart-define=TERMS_EFFECTIVE_DATE="November 15, 2026"
 ```
 
 (Add the usual ads flags from `docs/ads.md` when building ads-on.) Flutter
