@@ -65,11 +65,11 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('Continue playing'), findsOneWidget);
+    expect(find.text('Play again'), findsOneWidget);
     expect(ads.completed, 1);
     expect(ads.breaks, 0, reason: 'no interstitial on results appearing');
 
-    await tester.tap(find.text('Continue playing'));
+    await tester.tap(find.text('Play again'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     expect(ads.breaks, 1);

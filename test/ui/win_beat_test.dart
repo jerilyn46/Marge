@@ -97,6 +97,6 @@ void main() {
       find.textContaining('rolled three 1s on the first roll'),
       findsOneWidget,
     );
-    expect(find.text('Continue playing or quit?'), findsOneWidget);
+    expect(find.text('Play again or head home?'), findsOneWidget);
   });
 }

@@ -304,6 +304,9 @@ class MatchCheckpoint {
     if (p.missedTripleOnes) 'missedTripleOnes': true,
     if (p.diceValues != null) 'diceValues': p.diceValues,
     if (p.seatIndex != null) 'seatIndex': p.seatIndex,
+    if (p.potWinReason != null) 'potWinReason': p.potWinReason!.name,
+    if (p.potWinNote != null) 'potWinNote': p.potWinNote,
+    if (p.potCents != null) 'potCents': p.potCents,
   };
 
   static PayoutEvent? _payoutFromJson(Object? raw) {
@@ -319,6 +322,13 @@ class MatchCheckpoint {
       missedTripleOnes: raw['missedTripleOnes'] == true,
       diceValues: _diceFromJson(raw['diceValues']),
       seatIndex: _asInt(raw['seatIndex']),
+      potWinReason: PotWinReason.values
+          .where((r) => r.name == raw['potWinReason'])
+          .firstOrNull,
+      potWinNote: raw['potWinNote'] is String
+          ? raw['potWinNote'] as String
+          : null,
+      potCents: _asInt(raw['potCents']),
     );
   }
 

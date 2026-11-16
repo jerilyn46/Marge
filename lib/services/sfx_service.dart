@@ -48,6 +48,18 @@ class SfxService {
     await _haptic(HapticFeedback.heavyImpact);
   }
 
+  /// Pot-win moment: gems landed in the winner's bank. Plays the pot-win
+  /// stinger hook (chime cascade) and a haptic: heavy when the player on
+  /// this phone won, medium when someone else did. Gated by the SFX and
+  /// haptics settings separately, like every other cue.
+  Future<void> potWinMoment({required bool mine}) async {
+    if (sfxEnabled) debugPrint('[sfx] pot-win stinger');
+    play(SfxCue.gemChimeCascade);
+    await _haptic(
+      mine ? HapticFeedback.heavyImpact : HapticFeedback.mediumImpact,
+    );
+  }
+
   Future<void> bust() async {
     if (sfxEnabled) debugPrint('[sfx] bust');
     await _haptic(HapticFeedback.selectionClick);

@@ -26,6 +26,7 @@ import '../widgets/gem_shortfall_dialog.dart';
 import '../widgets/handoff_strip.dart';
 import '../widgets/payout_banner.dart';
 import '../widgets/play_coin_pack_button.dart';
+import '../widgets/pot_win_card.dart';
 import '../widgets/player_chip.dart';
 import '../widgets/table_felt_background.dart';
 
@@ -977,6 +978,9 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
     Navigator.of(context).popUntil((r) => r.isFirst);
   }
 
+  // Every offline pot award ends the match, so there is no "keep playing"
+  // on this screen: the choices are a new game at the same table (gems
+  // still in the pot, if nobody took it, carry over) or Home.
   Widget _continueBtn(PlayerState? asked, {bool short = false}) {
     final onPressed = asked != null ? () => _answer(true) : _rematch;
     const key = ValueKey('match-end-continue');
@@ -985,22 +989,30 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
       return FilledButton(
         key: key,
         onPressed: onPressed,
-        child: const FittedBox(child: Text('Continue playing')),
+        child: const FittedBox(child: Text('Play again')),
       );
     }
     return FilledButton.icon(
       key: key,
       onPressed: onPressed,
       icon: const Icon(Icons.replay_rounded),
-      label: const Text('Continue playing', textAlign: TextAlign.center),
+      label: const Text('Play again', textAlign: TextAlign.center),
     );
   }
 
-  Widget _quitBtn(PlayerState? asked, {bool short = false}) => TextButton(
-    key: const ValueKey('match-end-quit'),
-    onPressed: asked != null ? () => _answer(false) : _leaveQuiet,
-    child: short ? const FittedBox(child: Text('Quit')) : const Text('Quit'),
-  );
+  /// "Home" for the phone's owner; "Sit out" for another hotseat player
+  /// (they drop out of the next game, the table goes on).
+  Widget _quitBtn(PlayerState? asked, {bool short = false}) {
+    final local =
+        asked == null ||
+        asked.profile.name == widget.snapshot.config.localPlayerName;
+    final label = local ? 'Home' : 'Sit out';
+    return TextButton(
+      key: const ValueKey('match-end-quit'),
+      onPressed: asked != null ? () => _answer(false) : _leaveQuiet,
+      child: short ? FittedBox(child: Text(label)) : Text(label),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1018,6 +1030,8 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
         byId ?? (ranked.isEmpty ? snapshot.players.first : ranked.first);
     final humans = _humans;
     final asked = _hotseat && _asking < humans.length ? humans[_asking] : null;
+    final potWin = PotWin.fromSnapshot(snapshot);
+    final settings = ref.watch(settingsProvider);
 
     final mq = MediaQuery.of(context);
     final short =
@@ -1045,26 +1059,47 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text(
-                        '🏆 Match over',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineMedium
-                            ?.copyWith(
-                              fontWeight: FontWeight.w900,
-                              color: MargeColors.gold,
-                            ),
-                      ),
-                      const SizedBox(height: 8),
+                      if (potWin != null) ...[
+                        // The pot-win moment: winner, pot, why; gems fly to
+                        // the winner's bank. Tap to skip.
+                        PotWinCard(
+                          key: const ValueKey('match-end-pot-win'),
+                          win: potWin,
+                          sfx: SfxService(
+                            sfxEnabled: settings.sfxEnabled,
+                            hapticsEnabled: settings.hapticsEnabled,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ] else ...[
+                        Text(
+                          '🏆 Match over',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.headlineMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w900,
+                                color: MargeColors.gold,
+                              ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
                       Text(
                         snapshot.endMessage ??
                             '${winner.profile.avatarEmoji} ${winner.profile.name} '
                                 'wins with ${gemCount(winner.bankCents)}',
                         key: const ValueKey('match-end-message'),
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                        ),
+                        style: potWin != null
+                            ? TextStyle(
+                                fontSize: 13,
+                                color: MargeColors.cream.withValues(
+                                  alpha: 0.75,
+                                ),
+                              )
+                            : const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                              ),
                       ),
                       const SizedBox(height: 24),
                       for (
@@ -1107,7 +1142,7 @@ class _MatchEndViewState extends ConsumerState<_MatchEndView> {
                       asked != null
                           ? '${asked.profile.avatarEmoji} ${asked.profile.name}, '
                                 'play another game?'
-                          : 'Continue playing or quit?',
+                          : 'Play again or head home?',
                       key: const ValueKey('play-again-prompt'),
                       textAlign: TextAlign.center,
                       maxLines: 2,

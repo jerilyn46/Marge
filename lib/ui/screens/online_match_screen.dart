@@ -13,6 +13,7 @@ import '../../services/settings_service.dart';
 import '../../services/sfx_service.dart';
 import '../theme/marge_theme.dart';
 import '../visuals/dice_3d.dart';
+import '../widgets/pot_win_card.dart';
 import '../widgets/table_felt_background.dart';
 import 'online_lobby_screen.dart';
 
@@ -71,6 +72,8 @@ class _OnlineMatchScreenState extends ConsumerState<OnlineMatchScreen> {
   /// played, then show the result. [_resultHoldGuard] caps the wait.
   bool _holdResult = false;
   Timer? _resultHoldGuard;
+  SfxService? _resultSfx;
+  final _tableKey = GlobalKey<OnlineTableState>();
   static const resultHoldMax = Duration(seconds: 15);
 
   @override
@@ -102,7 +105,11 @@ class _OnlineMatchScreenState extends ConsumerState<OnlineMatchScreen> {
                   (fm.finished || r.status == RoomStatus.finished)) {
                 _finalRoom = r;
                 final seq = fm.rollSeq;
-                if (hadRoom && seq != null && seq > (prevSeq ?? 0)) {
+                // Hold for a new finishing roll, or for earlier rolls still
+                // tumbling on the table (e.g. a leave right after a roll).
+                final tumbling = _tableKey.currentState?.playingRolls ?? false;
+                if ((hadRoom && seq != null && seq > (prevSeq ?? 0)) ||
+                    tumbling) {
                   _holdResult = true;
                   _resultHoldGuard?.cancel();
                   _resultHoldGuard = Timer(resultHoldMax, _releaseResult);
@@ -160,7 +167,11 @@ class _OnlineMatchScreenState extends ConsumerState<OnlineMatchScreen> {
   @override
   Widget build(BuildContext context) {
     final done = _finalRoom;
+    final settings = ref.watch(settingsProvider);
     if (done != null && !_holdResult) {
+      // Shown only after the finishing roll has tumbled and rested on the
+      // table (_holdResult / RollPlayback), so the winning roll lands
+      // before the pot-win card.
       return OnlineMatchResult(
         key: const ValueKey('online-result-frozen'),
         room: done,
@@ -168,13 +179,17 @@ class _OnlineMatchScreenState extends ConsumerState<OnlineMatchScreen> {
         myUid: widget.myUid,
         fallbackStart: _firstBanks,
         onPlayAgain: _playAgain,
+        onLobby: done.hostUid == widget.myUid ? _backToLobby : null,
         onDone: _done,
+        sfx: _resultSfx ??= SfxService(
+          sfxEnabled: settings.sfxEnabled,
+          hapticsEnabled: settings.hapticsEnabled,
+        ),
       );
     }
     // While holding for the final roll, the table shows the finished room.
     final room = done ?? _room;
     final m = room?.match;
-    final settings = ref.watch(settingsProvider);
     final skin = ref.watch(cosmeticsProvider).equippedTheme;
     return Scaffold(
       appBar: AppBar(
@@ -210,6 +225,7 @@ class _OnlineMatchScreenState extends ConsumerState<OnlineMatchScreen> {
                     : room == null || m == null
                     ? const Center(child: CircularProgressIndicator())
                     : OnlineTable(
+                        key: _tableKey,
                         room: room,
                         myUid: widget.myUid,
                         busy: _busy,
@@ -269,6 +285,19 @@ class _OnlineMatchScreenState extends ConsumerState<OnlineMatchScreen> {
           initialBots:
               room?.seats.where((s) => s.kind == SeatKind.bot).length ?? 0,
           ante: room?.ante ?? 10,
+        ),
+      ),
+    );
+  }
+
+  /// Host: back to the online lobby without opening a new room.
+  /// (A joiner's Play again already goes to the lobby to enter a code.)
+  void _backToLobby() {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => OnlineLobbyScreen(
+          displayName: widget.displayName,
+          gemClaim: widget.gemClaim,
         ),
       ),
     );
@@ -644,8 +673,11 @@ class OnlineTableState extends State<OnlineTable> {
 }
 
 /// End-of-match result for an online room, styled like the local match-end
-/// screen: winner, each seat's gem change, the pot outcome, and
-/// "play another game?" with Play again / Done.
+/// screen: the pot-win card when one seat took the pot (first-roll triple
+/// 1s, last opponent out of gems, opponent left, host ended with one seat
+/// left), each seat's gem change, the pot outcome, and "What next?" with
+/// Play again / Back to lobby (host) / Home. Every server pot award ends the
+/// match, so there is no "keep playing" here.
 class OnlineMatchResult extends StatelessWidget {
   const OnlineMatchResult({
     super.key,
@@ -654,7 +686,9 @@ class OnlineMatchResult extends StatelessWidget {
     required this.myUid,
     required this.onPlayAgain,
     required this.onDone,
+    this.onLobby,
     this.fallbackStart,
+    this.sfx,
   });
 
   final Room room;
@@ -663,6 +697,12 @@ class OnlineMatchResult extends StatelessWidget {
   final List<int>? fallbackStart;
   final VoidCallback onPlayAgain;
   final VoidCallback onDone;
+
+  /// Null hides "Back to lobby" (a joiner's Play again is the lobby).
+  final VoidCallback? onLobby;
+
+  /// Pot-win stinger / haptic (null = silent).
+  final SfxService? sfx;
 
   @override
   Widget build(BuildContext context) {
@@ -674,6 +714,7 @@ class OnlineMatchResult extends StatelessWidget {
         : winner.uid == myUid
         ? 'You win with ${winner.end} gems!'
         : '${winner.name} wins with ${winner.end} gems';
+    final potWin = match.potWin(myUid);
     return Scaffold(
       body: TableFeltBackground(
         child: SafeArea(
@@ -686,16 +727,25 @@ class OnlineMatchResult extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text(
-                        '🏆 Match over',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineMedium
-                            ?.copyWith(
-                              fontWeight: FontWeight.w900,
-                              color: MargeColors.gold,
-                            ),
-                      ),
-                      const SizedBox(height: 8),
+                      if (potWin != null) ...[
+                        PotWinCard(
+                          key: const ValueKey('online-result-pot-win'),
+                          win: potWin,
+                          sfx: sfx,
+                        ),
+                        const SizedBox(height: 12),
+                      ] else ...[
+                        Text(
+                          '🏆 Match over',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.headlineMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w900,
+                                color: MargeColors.gold,
+                              ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
                       Text(
                         headline,
                         key: const ValueKey('online-result-winner'),
@@ -771,7 +821,7 @@ class OnlineMatchResult extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      'Play another game?',
+                      'What next?',
                       key: const ValueKey('online-play-again-prompt'),
                       textAlign: TextAlign.center,
                       style: TextStyle(
@@ -786,11 +836,19 @@ class OnlineMatchResult extends StatelessWidget {
                       onPressed: onPlayAgain,
                       child: const Text('PLAY AGAIN'),
                     ),
+                    if (onLobby != null) ...[
+                      const SizedBox(height: 6),
+                      OutlinedButton(
+                        key: const ValueKey('online-lobby'),
+                        onPressed: onLobby,
+                        child: const Text('BACK TO LOBBY'),
+                      ),
+                    ],
                     const SizedBox(height: 4),
                     TextButton(
                       key: const ValueKey('online-done'),
                       onPressed: onDone,
-                      child: const Text('DONE'),
+                      child: const Text('HOME'),
                     ),
                   ],
                 ),

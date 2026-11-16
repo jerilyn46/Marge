@@ -4,3 +4,4 @@ export 'hand_evaluator.dart';
 export 'match_controller.dart';
 export 'player.dart';
 export 'turn_state.dart';
+export 'pot_win.dart' show PotWin;

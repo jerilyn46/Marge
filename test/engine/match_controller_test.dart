@@ -5,6 +5,7 @@ import 'package:marge/engine/dice.dart';
 import 'package:marge/engine/hand_evaluator.dart';
 import 'package:marge/engine/match_controller.dart';
 import 'package:marge/engine/player.dart';
+import 'package:marge/engine/turn_state.dart' show PotWinReason;
 
 /// Deterministic RNG that yields a fixed sequence of nextInt results.
 class ScriptedRandom implements Random {
@@ -404,11 +405,21 @@ void main() {
         expect(c.snapshot.players[1].bankCents, owedBefore);
         expect(c.snapshot.players[1].eliminated, isFalse);
         final rollerBefore = c.snapshot.players[0].bankCents;
+        final pot = c.snapshot.potCents;
+        expect(pot, greaterThan(0));
 
         c.quitShortfall();
         expect(c.snapshot.players[1].bankCents, 0);
         expect(c.snapshot.players[1].eliminated, isTrue);
-        expect(c.snapshot.players[0].bankCents, rollerBefore + owedBefore);
+        // Only the roller is left, so they also take the pot (QA 2049:
+        // this path used to end the match with the pot left on the table).
+        expect(
+          c.snapshot.players[0].bankCents,
+          rollerBefore + owedBefore + pot,
+        );
+        expect(c.snapshot.potCents, 0);
+        expect(c.snapshot.phase, MatchPhase.matchEnd);
+        expect(c.snapshot.lastPayout?.potWinReason, PotWinReason.opponentQuit);
         expect(c.snapshot.pendingShortfall, isNull);
       },
     );

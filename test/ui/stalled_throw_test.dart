@@ -295,7 +295,7 @@ void main() {
     _ticking.value = true;
     await tester.pump();
     await _settle(tester);
-    await _tap(tester, 'Continue playing'); // match over: next game
+    await _tap(tester, 'Play again'); // match over: next game
     await _tap(tester, 'ROLL'); // 4,6,6
     expect(
       _enabled(tester, _btn('KEEP ROLLING')),
@@ -321,7 +321,7 @@ void main() {
       AppLifecycleState.resumed,
     ]);
     await _settle(tester);
-    await _tap(tester, 'Continue playing'); // match over: next game
+    await _tap(tester, 'Play again'); // match over: next game
     await _tap(tester, 'ROLL');
     expect(
       _enabled(tester, _btn('KEEP ROLLING')),

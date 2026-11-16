@@ -133,7 +133,7 @@ void main() {
       'You rolled three 1s on the first roll! '
       'Everyone pays 10 gems and You wins the pot.',
     );
-    expect(find.text('Continue playing'), findsOneWidget);
+    expect(find.text('Play again'), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 3));
     await rolling;

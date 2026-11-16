@@ -844,6 +844,9 @@ class MatchController {
       celebratory: true,
       diceValues: List<int>.unmodifiable(_turn!.dice.values),
       seatIndex: roller,
+      potWinReason: PotWinReason.tripleOnes,
+      potWinNote: 'Three 1s on the first roll',
+      potCents: pot,
     );
     _log.add(
       '$message (+${gemCount(collected)} paid, '
@@ -934,6 +937,11 @@ class MatchController {
         celebratory: true,
         diceValues: List<int>.unmodifiable(_turn!.dice.values),
         seatIndex: roller,
+        potWinReason: PotWinReason.opponentOut,
+        potWinNote:
+            'Three ${score.faceValue}s on the first roll · '
+            '$names ${kicked.length == 1 ? 'is' : 'are'} out of gems',
+        potCents: pot,
       );
       _log.add(message);
       final winnerId = _players[roller].profile.id;
@@ -1049,12 +1057,22 @@ class MatchController {
     final message =
         '$outName $reason and is out of gems — '
         '$name wins the pot (${gemCount(pot)}).';
+    final quit = reason == 'quits';
     _lastPayout = PayoutEvent(
       message: message,
       kind: ScoreKind.tripleOnesPotWin,
       amountCents: pot,
       celebratory: true,
       seatIndex: winner,
+      potWinReason: quit ? PotWinReason.opponentQuit : PotWinReason.opponentOut,
+      potWinNote: switch (reason) {
+        'quits' => '$outName quit the game',
+        'paid the ante' => '$outName ran out of gems on the ante',
+        'whiffs' => '$outName whiffed and ran out of gems',
+        'missed triple ones' => '$outName missed triple 1s and ran out of gems',
+        _ => '$outName ran out of gems',
+      },
+      potCents: pot,
     );
     _log.add(message);
     final winnerId = _players[winner].profile.id;
@@ -1141,7 +1159,7 @@ class MatchController {
         final quitter = _players[pending.payerSeatIndex].profile.name;
         if (_playableCount <= 1) {
           if (_plays(_players[_seat])) {
-            _sweepPotToRoller('$quitter quits');
+            _sweepPotToRoller(quitter);
           } else {
             // The roller (or an ante payer) quit: the other player takes it.
             _sweepPotToLastPlayer(quitter, reason: 'quits');
@@ -1169,6 +1187,17 @@ class MatchController {
       if (score != null && score.isFirstRollTripsPay) {
         _noteTripsPayout(score, waiting: false);
         if (_kickAfterFirstRollTrips(score)) return;
+        // A human who could not cover chose to quit and only the roller is
+        // left: the roller takes the pot (same rule as every other "last
+        // player standing" end), instead of the match ending with the pot
+        // still on the table.
+        if (_playableCount == 1 && _plays(_players[_seat])) {
+          final payer = _players[pending.payerSeatIndex];
+          _sweepPotToRoller(
+            payer.eliminated ? payer.profile.name : 'Everyone else',
+          );
+          return;
+        }
         if (_offerZeroBankChoice()) return;
       }
       _continueSameSeatAfterWin(restartRound: false);
@@ -1359,14 +1388,15 @@ class MatchController {
     return true;
   }
 
-  /// A human at 0 quit and only the roller is left: roller takes the pot.
-  void _sweepPotToRoller(String why) {
+  /// A human quit (at 0, or short on a payment) and only the roller is
+  /// left: the roller takes the pot.
+  void _sweepPotToRoller(String quitter) {
     final roller = _seat;
     final name = _players[roller].profile.name;
     final pot = _pot;
     _credit(roller, pot);
     _pot = 0;
-    final message = '$why — $name wins the pot (${gemCount(pot)}).';
+    final message = '$quitter quits — $name wins the pot (${gemCount(pot)}).';
     _lastPayout = PayoutEvent(
       message: message,
       kind: ScoreKind.tripleOnesPotWin,
@@ -1376,6 +1406,9 @@ class MatchController {
           ? null
           : List<int>.unmodifiable(_turn!.dice.values),
       seatIndex: roller,
+      potWinReason: PotWinReason.opponentQuit,
+      potWinNote: '$quitter quit the game',
+      potCents: pot,
     );
     _log.add(message);
     final winnerId = _players[roller].profile.id;
@@ -1409,6 +1442,11 @@ class MatchController {
       celebratory: true,
       diceValues: List<int>.unmodifiable(_turn!.dice.values),
       seatIndex: roller,
+      potWinReason: PotWinReason.opponentOut,
+      potWinNote:
+          '${_scoreLabel(score)} · $out '
+          '${kicked.length == 1 ? 'is' : 'are'} out of gems',
+      potCents: pot,
     );
     _log.add(message);
     final winnerId = _players[roller].profile.id;
@@ -1416,6 +1454,14 @@ class MatchController {
     _winnerId = winnerId;
     _endMessage = message;
   }
+
+  static String _scoreLabel(ScoreResult score) => switch (score.kind) {
+    ScoreKind.straight => 'A straight',
+    ScoreKind.threeOfAKind => 'Three ${score.faceValue}s',
+    ScoreKind.tripleOnesPay => 'Triple 1s',
+    ScoreKind.tripleOnesPotWin => 'Triple 1s',
+    ScoreKind.none => 'No score',
+  };
 
   void _credit(int index, int cents) {
     if (cents <= 0) return;

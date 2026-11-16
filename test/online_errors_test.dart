@@ -149,7 +149,7 @@ void main() {
       expect(find.text('+32'), findsOneWidget);
       expect(find.text('−32'), findsOneWidget);
       expect(find.textContaining('three 1s'), findsOneWidget);
-      expect(find.text('Play another game?'), findsOneWidget);
+      expect(find.text('What next?'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('online-play-again')));
       await tester.tap(find.byKey(const ValueKey('online-done')));
       expect([again, done], [1, 1]);
