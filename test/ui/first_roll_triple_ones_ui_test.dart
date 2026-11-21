@@ -142,12 +142,12 @@ void main() {
       findsOneWidget,
     );
     expect(_prompt(t), contains('Jerilyn, play another game?'));
-    await _tap(t, 'Continue playing');
+    await _tap(t, 'Play again');
     expect(_prompt(t), contains('Player 2, play another game?'));
-    await t.tap(find.text('Quit')); // Player 2 drops out
+    await t.tap(find.text('Sit out')); // Player 2 drops out
     await _settle(t);
     expect(_prompt(t), contains('Player 3, play another game?'));
-    await _tap(t, 'Continue playing');
+    await _tap(t, 'Play again');
     await _settle(t);
     final s = c.read(matchProvider)!.snapshot;
     expect(s.phase, isNot(MatchPhase.matchEnd));
@@ -162,8 +162,8 @@ void main() {
     await _settle(t);
     await _tap(t, 'ROLL');
     await _settle(t);
-    expect(_prompt(t), 'Continue playing or quit?');
-    await _tap(t, 'Continue playing');
+    expect(_prompt(t), 'Play again or head home?');
+    await _tap(t, 'Play again');
     expect(c.read(matchProvider)!.snapshot.players.length, 2);
     await _tap(t, 'ROLL');
     expect(_enabled(t, _btn('KEEP ROLLING')), isTrue);

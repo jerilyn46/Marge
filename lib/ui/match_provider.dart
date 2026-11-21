@@ -627,7 +627,9 @@ class MatchNotifier extends Notifier<MatchViewState?> {
     if (payout?.kind == ScoreKind.tripleOnesPotWin) {
       // Show the dice first, then the pot-win notification.
       await _revealPotWin(potBefore);
-      await _sfx.potWin();
+      // A pot win ends the match: the results' pot-win card plays the
+      // stinger + haptic when its gems land, so no second buzz here.
+      if (c.snapshot.phase != MatchPhase.matchEnd) await _sfx.potWin();
       await _applyLocalCosmetics(seat, payout);
       // Winner keeps the seat on a fresh set. Confetti only — no handoff.
       _publish(confetti: true);
@@ -818,7 +820,9 @@ class MatchNotifier extends Notifier<MatchViewState?> {
         // Bot pot win: same beat as a human — dice first, then the banner.
         await _revealPotWin(potBefore);
         if (_controller == null) return;
-        await _sfx.potWin();
+        if (_controller!.snapshot.phase != MatchPhase.matchEnd) {
+          await _sfx.potWin();
+        }
         _publish(confetti: true);
         Future<void>.delayed(const Duration(seconds: 2), () {
           if (state != null) state = state!.copyWith(showConfetti: false);

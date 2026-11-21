@@ -101,6 +101,24 @@ class TurnState {
   );
 }
 
+/// Why a seat took the whole pot (every pot award ends the match).
+enum PotWinReason {
+  /// Three 1s on the first roll: everyone pays 10 and the roller takes it.
+  tripleOnes,
+
+  /// The last opponent ran out of gems (a payout, a whiff, the ante).
+  opponentOut,
+
+  /// The last opponent left the table (online leave / delete).
+  opponentLeft,
+
+  /// The last opponent chose to quit at 0 gems (offline shortfall).
+  opponentQuit,
+
+  /// The host ended the match and one seat was left to take the pot.
+  hostEnded,
+}
+
 /// Banner / log event shown in the UI after a payout.
 class PayoutEvent {
   const PayoutEvent({
@@ -111,7 +129,20 @@ class PayoutEvent {
     this.diceValues,
     this.seatIndex,
     this.missedTripleOnes = false,
+    this.potWinReason,
+    this.potWinNote,
+    this.potCents,
   });
+
+  /// Set when [seatIndex] took the whole pot (the pot-win moment card).
+  final PotWinReason? potWinReason;
+
+  /// Short reason line for the card, e.g. "Bob ran out of gems".
+  final String? potWinNote;
+
+  /// Gems that came out of the pot itself (excludes gems collected from
+  /// players in the same payout, e.g. the 10s paid for first-roll 1s).
+  final int? potCents;
 
   /// A bust after holding two 1s for the 3rd roll (10 gems to the pot).
   final bool missedTripleOnes;

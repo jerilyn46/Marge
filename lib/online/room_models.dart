@@ -3,6 +3,8 @@
 /// only writer of room state; clients read and call functions.
 library;
 
+import '../engine/pot_win.dart';
+
 enum RoomStatus { lobby, playing, finished, abandoned }
 
 enum SeatKind { host, human, bot, open }
@@ -200,6 +202,9 @@ class MatchView {
     this.turn,
     this.winnerSeat,
     this.lastPayoutMessage,
+    this.lastPayoutKind,
+    this.lastPayoutAmount = 0,
+    this.lastPayoutSeat,
     this.startBanks,
     this.rollSeq,
     this.lastRoll,
@@ -224,6 +229,11 @@ class MatchView {
   final int? winnerSeat;
   final String? lastPayoutMessage;
 
+  /// Server `lastPayout.kind` ("tripleOnesPotWin" for every pot sweep).
+  final String? lastPayoutKind;
+  final int lastPayoutAmount;
+  final int? lastPayoutSeat;
+
   factory MatchView.fromMap(Map<String, dynamic> m) => MatchView(
     seats: ((m['seats'] as List?) ?? const [])
         .whereType<Map>()
@@ -237,6 +247,9 @@ class MatchView {
         : null,
     winnerSeat: (m['winnerSeat'] as num?)?.toInt(),
     lastPayoutMessage: (m['lastPayout'] as Map?)?['message'] as String?,
+    lastPayoutKind: (m['lastPayout'] as Map?)?['kind'] as String?,
+    lastPayoutAmount: _i((m['lastPayout'] as Map?)?['amount']),
+    lastPayoutSeat: ((m['lastPayout'] as Map?)?['seat'] as num?)?.toInt(),
     startBanks: m['startBanks'] is List ? _ints(m['startBanks']) : null,
     rollSeq: (m['rollSeq'] as num?)?.toInt(),
     lastRoll: m['lastRoll'] is Map
@@ -247,6 +260,114 @@ class MatchView {
         .map((e) => OnlineRoll.fromMap(Map<String, dynamic>.from(e)))
         .toList(),
   );
+
+  /// The pot-win moment for a finished match, read from the server's own
+  /// result line (no extra server fields): first-roll triple 1s, a sweep
+  /// when the last opponent ran out of gems, or the settle note
+  /// "Pot of N goes to Y" after a leave / delete / host End match. Null
+  /// while playing, or when the pot was split between several seats.
+  PotWin? potWin(String myUid) {
+    if (!finished) return null;
+    final msg = lastPayoutMessage ?? '';
+    String nameOf(int i) => i >= 0 && i < seats.length
+        ? (seats[i].displayName ?? 'Seat ${i + 1}')
+        : 'Seat ${i + 1}';
+    PotWin build(
+      int seat,
+      int gems,
+      PotWinReason reason,
+      String line, {
+      bool table = false,
+    }) {
+      final s = seat >= 0 && seat < seats.length ? seats[seat] : null;
+      return PotWin(
+        winnerSeat: seat,
+        winnerName: nameOf(seat),
+        mine: s != null && s.uid != null && s.uid == myUid,
+        gems: gems,
+        reason: reason,
+        reasonLine: line,
+        bankAfter: s?.bank,
+        includesTableGems: table,
+      );
+    }
+
+    if (lastPayoutKind == 'tripleOnesPotWin') {
+      final seat = lastPayoutSeat ?? winnerSeat;
+      if (seat == null) return null;
+      if (msg.contains('three 1s on the first roll')) {
+        return build(
+          seat,
+          lastPayoutAmount,
+          PotWinReason.tripleOnes,
+          'Three 1s on the first roll',
+          table: true,
+        );
+      }
+      // "<why> — <winner> wins the pot (N gems)."
+      final why = msg.split(' — ').first.trim();
+      final pot =
+          int.tryParse(
+            RegExp(r'wins the pot \((\d+)').firstMatch(msg)?.group(1) ?? '',
+          ) ??
+          lastPayoutAmount;
+      return build(seat, pot, PotWinReason.opponentOut, _outLine(why));
+    }
+
+    final settled = RegExp(r'Pot of (\d+) goes to (.+)\.$').firstMatch(msg);
+    if (settled == null) return null;
+    final gems = int.parse(settled.group(1)!);
+    final toName = settled.group(2)!;
+    var seat = winnerSeat ?? -1;
+    if (seat < 0 || nameOf(seat) != toName) {
+      final byName = seats.indexWhere((s) => s.displayName == toName);
+      if (byName >= 0) seat = byName;
+    }
+    if (seat < 0) return null;
+    final head = msg.substring(0, settled.start).trim();
+    if (head.endsWith(' left the table.')) {
+      return build(
+        seat,
+        gems,
+        PotWinReason.opponentLeft,
+        head.substring(0, head.length - 1),
+      );
+    }
+    if (head.endsWith(' ended the match.')) {
+      return build(
+        seat,
+        gems,
+        PotWinReason.hostEnded,
+        head.substring(0, head.length - 1),
+      );
+    }
+    return build(seat, gems, PotWinReason.opponentOut, 'Last player standing');
+  }
+
+  /// Server sweep reasons → one short line.
+  static String _outLine(String why) {
+    // "Ann hits a straight! Collects 5 gems. Bob out of gems."
+    final hit = RegExp(r'hits (.+?)!').firstMatch(why);
+    final out = RegExp(r'\. ([^.]+) out of gems\.?$').firstMatch(why);
+    if (hit != null) {
+      final label = hit.group(1)!;
+      final pretty = label == 'triple ones'
+          ? 'Triple 1s'
+          : label[0].toUpperCase() + label.substring(1);
+      return out == null
+          ? pretty
+          : '$pretty · ${out.group(1)} ${out.group(1)!.contains(',') ? 'are' : 'is'} out of gems';
+    }
+    const ante = ' paid the ante and is out';
+    if (why.endsWith(ante)) {
+      return '${why.substring(0, why.length - ante.length)} ran out of gems on the ante';
+    }
+    const busted = ' is out of gems';
+    if (why.endsWith(busted)) {
+      return '${why.substring(0, why.length - busted.length)} ran out of gems';
+    }
+    return why.isEmpty ? 'Last player standing' : why;
+  }
 
   /// Per-seat result rows for the end-of-match screen (occupied seats only).
   /// [fallbackStart] is used when the server did not record startBanks

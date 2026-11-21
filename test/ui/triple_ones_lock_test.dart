@@ -138,6 +138,10 @@ void _tw(String name, Future<void> Function(WidgetTester) body) {
     await body(tester);
     _last?.read(matchProvider.notifier).endMatch();
     await tester.pump(const Duration(seconds: 6));
+    // Let the results' pot-win card play out (its landing haptic is a
+    // 40 ms mock-device timer here), then drain that timer.
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump(const Duration(milliseconds: 200));
     await tester.pump(const Duration(seconds: 6));
   });
 }
@@ -176,7 +180,7 @@ void _suite(int haptic) {
           find.textContaining('rolled three 1s on the first roll'),
           findsOneWidget,
         );
-        await _tap(tester, 'Continue playing');
+        await _tap(tester, 'Play again');
       } else if (s.turn!.hasRolled && s.turn!.canBank) {
         final bank = find.byKey(const ValueKey('bank-only'));
         expect(bank, findsOneWidget, reason: 'Bank shown');
